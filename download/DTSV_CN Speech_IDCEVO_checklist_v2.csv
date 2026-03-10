@@ -1,0 +1,511 @@
+﻿Test Scope,Test Type,Test Module,Attribute,Component,Probability,Impact,Risk & Priority,,Customer Cases,Test Step,Ticket,CW52-02,Ticket,CW03,Ticket,CW04,Ticket,CW06-07,Ticket,CW09,Ticket,CW10,Ticket,CW11,Ticket,CW12,Ticket,CW13,Ticket,CW14,Ticket,CW15,Ticket,CW16,Ticket,CW17,Ticket,CW19,Ticket,CW20,Ticket,CW21,Ticket,CW22,Ticket,CW23,Ticket,CW24,Ticket,CW25,Ticket,CW26,Ticket
+,,,,,,,,,SW Version,,,I450_24w50.3-1,,24w51.4-6,,25w03.1-1,,25w06.2-2,,25w07.2-1,,2507_25w09.2-1,,2507_25w10.1-2,,2507_25w11.2-1,,2507_25w11.7-1,,2507_25w13.3-1,,,,2507_25w15.1-1,,2507_25w16.1-1,,I490_25w18.2-1,,2507_25w19.3-6,,2507_29w19.7-1,,,,,,,,,,,
+,,,,,,,,,Speech App Version,,,5.0.1218002507,,5.1.108002507,,5.1.115002507,,5.1.122002507,,5.1.212002507,,5.1.226012507,,5.1.305012507,,5.1.312002507,,5.1.319002507,,5.1.326002507,,,,5.1.409002507,,5.1.416002507,,5.1.428002507,,5.1.428002507,,5.2.514002511,,,,,,,,,,,
+,,,,,,,,,Persinal assistant app version,,,2.0.23,,2.0.25,,,,2.0.29,,2.0.30,,2.0.33,,2.0.33,,2.0.33,,2.0.35,,2.0.36,,,,2.0.37,,2.0.39,,2.0.40,,2.0.41,,2.0.40,,,,,,,,,,,
+,,,,,,,,,IM app,,,,,,,,,8.7.1,,8.7.1,,8.7.4,,8.7.4,,8.7.5,,8.7.7,,8.7.7,,,,8.7.8,,8.7.11,,8.7.13,,8.7.14,,8.7.16,,,,,,,,,,,
+,,,,,,,,,Reporter,,,Ma Lijia,,Ma Lijia,,Weining,,Yunwei,,Weining,,Lijia&Weining,,weining,,Zhao Weining,,Zhao Weining,,Zhao Weining,,Zhao Weining,,Zhao Weining,,Zhao Weining,,Zhao Weining,,Zhao Weining,,Zhao Weining,,Zhao Weining,,Gao Yunwei,,Ma Lijia,,Zhao Weining,,Gao Yunwei,
+,,,,,,,,,Vehicle,,,,,,,,,,,,,BBG,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,Time Cost,,,,,3,,2,,2,,3,,,,3,,3,,3,,3,,,,3,,3,,3,,3,,,,,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Robustness
+成熟性","Voice recognition （Noise, multi speakers）
+语音识别  (噪声下，多人说话识别)",,,High Rate,High Impact,16,"speech activation(real car best)
+语音唤醒(唤醒率测试建议实车)","WuW under outside noise of city road driving
+城市工况行驶，环境噪音影响","A/C  20° auto, window closed, city road + speed 40-80km/h, first wakeup >= 90%
+1.WuW城市道路行驶
+唤醒词首次成功率不小于90%",,No Run,,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,Blocked,,Fail,2205696,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Robustness
+成熟性","Voice recognition （Noise, multi speakers）
+语音识别  (噪声下，多人说话识别)",,,Low Rate,High Impact,12,,"WuW under outside noise of highway driving
+高速工况行使，环境噪音影响","A/C  20° auto, window closed, highway + speed 100-140km/h, first wakeup>= 90%
+2.高速道路行驶
+唤醒词首次成功率不小于90%",,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,Blocked,,Blocked,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Robustness
+成熟性","Voice recognition （Noise, multi speakers）
+语音识别  (噪声下，多人说话识别)",,,Low Rate,High Impact,12,,"WuW under inner noise of Max A/C
+空调最大风量，内部噪音影响","A/C  20°, window closed, Fan speed Max, first wakeup >= 90%
+3.空调风力影响
+自动到最大，唤醒词首次成功率不小于90%",,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,Blocked,,Blocked,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,Extremely Low Rate,High Impact,8,," PTT activation
+使用PPT物理按键唤醒","activate speech via PTT single clicking >=95%
+4.PTT唤醒
+唤醒成功率不小于95%,可取多个LC(>=5),总计次数不小于50次",,No Run,,Pass,,Fail,2129271,Fail,2123374,Pass,,Pass,,Pass,,Pass,,Fail,2207456,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,High Rate,High Impact,16,"ECNR(real car best)
+语音对话质量","ECNR
+噪音和回声消除","speech only listens to the direction of activation and never record its own sound
+5.唤醒分区
+语音只会聆听当前唤醒区域的指令（尤其是4mic的车型）
+6.噪音清除
+其他位置的正常对话声音不会干扰当前通话（用唤醒词抢麦除外)
+7.回声消除
+语音不会记录并响应自身TTS",,blocked,,blocked,,blocked,,blocked,,blocked,,Pass,,Pass,,Pass,,Pass,,Pass,,Fail,"2208152
+2118386",Fail,"2208152
+2118386",Fail,"2208152
+2118386",Fail,"2208152
+2118386",Fail,2208152 2118386,Fail,2208152 (08 need na6 retest),,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Robustness
+成熟性","sound direction detection
+音区识别",,,High Rate,High Impact,16,,"multi-zone recognition
+多音区唤醒","sound direction should follow wake-up direction
+8. 唤醒区域控制
+主驾不能被关闭,会有提示;其他位置均可正常关闭/开启,并且收音跟随变化
+9. 检验音区错误的概率不高于10%",,Fail,2108966,Fail,2108966,Fail,"2108966
+(contact Doris)",Fail,"2108966
+(maybe block)",Fail,2108966 still 01,pass,,Fail,2184755,Fail,2184755,Blocked,,Blocked,,Fail,2224124 follow 2208152,Fail,2208152,Fail,2208152,Fail,2208152,Fail,2208152,Fail,2208152,,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Robustness
+成熟性","Startup
+应用恢复启动",,,Low Rate,High Impact,12,"speech Engine initialization
+语音引擎启动","on STR startup
+STR启动","check speech activation after STR startup
+10.STR语音引擎启动
+STR启动后PTT trigger, speech是否能正常工作,初始化时间<20s",2102821,Fail,2113081,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Robustness
+成熟性","Startup
+应用恢复启动",,,Low Rate,High Impact,12,,"on account switching
+账号切换","check speech activation when switching  switch from main user to others, speechc ould be activated normally (allow <20s initialization)
+11.切换账号后启动
+账号切换完成后PTT trigger, speech是否能正常工作,如果触发初始化,时间<20s",,Fail,,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Robustness
+成熟性","Startup
+应用恢复启动",,,Low Rate,High Impact,12,,"on language change
+语言切换","switch Mandarin to EN=> install language automatically, and WuW changes, switch back to Mandarin, Mandarin is set for IPA and no need re-initialization
+12.切语言后启动
+切换系统语言,唤醒词跟随IPA语言发生相应变化,并可立即生效无需初始化",,pass,,pass,,pass,,pass,,Fail,2166317,pass,,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,High Rate,High Impact,16,TC114 topics,"TC114-microphone: check if microphone can be enabled 
+检查是否能够正确激活microphone权限","if microphone access can be eanbled normally (can set microphone off in DPM first)
+13. press PTT - 点击PTT会提示开启权限，点击ok会正确跳转DPM页面
+14. press dictation - 点击speller听写，会提示开启权限，点击ok会跳转DPM页面",,No Run,,No Run,,No Run,,,,Fail,2166321,Fail,2175515,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,High Rate,Low Impact,8,,"TC114-GPS: check speech intents related to location
+开关DPM中位置权限，检查位置相关指令的feedback
+","location off and use speech to check location based functions
+15. query weather of current location - 查当前位置天气/查其他城市天气(不受影响)
+16. POI search/query location - 导航到POI/问当前位置",,No Run,,No Run,,No Run,,,,Fail,new ticket needed 当前位置天气可以查,pass,,pass,,Fail,2196946,Fail,2196946,Fail,2196946,Pass,,Fail,2236569,Fail,2236569,Fail,2236569,Fail,2236569,Fail,2236569,,,,,,,,,,
+,,,,,Low Rate,Low Impact,6,,"TC114-interior camera: check speech intents related to camera
+开关DPM中相机权限，检查内饰相机相关指令的feedback","camera off and use speech to check interior camera releated functions
+17. take photo/video - 拍照/连续拍照/自拍, 拍摄视频
+18. view gallery - 查看图库",blocked,blocked,blocked,blocked,blocked,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,2249108,Fail,2249108,No Run,,,,,,,,,,,
+,,,,,Very High Rate,High Impact,20,"speech setting and persistance
+语音设置和同步","IPA options setting and adaption
+语音设置和变化","IPA options can work normally and adapt with IPA language
+19. IPA options on/off -  speech的各种设置开关
+20. IPA options adaption - 切换IPA语言检查设置变化 (请参考分享给大家的语音功能支持表格)
+",2102447,Fail,"2108965
+2112375",Fail,2108965,Fail,2129271,Fail,2129271,Fail,2168044,Fail,2177267,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Fail,2272215,,,,,,,,,,
+,,,,,High Rate,High Impact,16,,"persistance in new LCs
+设置在新LC能够保持","chose main user and modify IPA setting, check if it changes in new LC
+21.账号设置新LC保持
+同一账号(尤其是主账号)的语音设置，检验新LC设置是否一致",,Fail,2113081,Fail,2129282,pass,,pass,,Fail,2167548,Fail,2167548,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,High Rate,High Impact,16,,"language package download
+语言包下载","language package only need to download once
+22.语音包下载
+切换粤语/英语,能够自动触发相应语言包下载,并仅在更新app或恢复出厂后需要重新下载
+23.唤醒词变化
+当切换到新的语言包后,对应的唤醒词也会发生变化,如粤语和英语",,pass,,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Fail,2267494*,,,,,,,,,,
+,,,,,Low Rate,Moderate Impact,9,,"persistance of different accounts
+设置在切账号后不会丢失","modify speech settings of main user, and switch to other accounts then change back, check if changes are synced
+24.账号设置切换后保持
+改变主账号的语音设置，切换其他账号再切换回来，检查设置是否一致",,pass,,Fail,2129282,pass,,pass,,Fail,2167548,Fail,2167548,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Reliability
+可靠性","Stability
+系统稳定性",,,High Rate,High Impact,16,"speech performance
+语音使用性能","speech stability after long time using
+系统运行是否足够稳定","speech can keep working stable without stuck or ends abnormaly 
+25.连续使用稳定性
+语音在高强度连续多轮对话时保持稳定，并正确响应输入，无严重performance问题
+26.长时运行稳定性
+系统长时间运行(连续1小时左右)，speech能保持稳定,无Elli stuck或无响应
+27.高资源占用场景稳定性
+高资源韩永时,检验唤醒以及Elli出现的performance,唤醒延时1秒内，对话反馈2.5秒内",,Fail,2111259,Fail,2111259,Fail,2135578,Fail,2135578,blocked,2168387,Fail,2183142,pass,,Pass,,Pass,,Pass,,Fail,"2225070
+2223183 new
+2228685 new
+2228686 new",Fail,"2226508
+2228685
+2228686
+2226508 ",Fail,"2228685
+2228686 
+2241245",Fail,"2228686 
+2241245",Fail,2228686,Fail,2228686,,,,,,,,,,
+,"Reliability
+可靠性","System RSU
+RSU升级后的可用性",,,Low Rate,High Impact,12,,"speech persistance after system RSU
+RSU更新后语音是否正常使用","RSU update should not influence user data, so speech should always work normally after RSU
+28.RSU更新系统后可用性
+系统RSU后，语音能够正常使用",,No Run,,No Run,,No Run,,No Run,,No Run,,No Run,,No Run,,No Run,,No Run,,No Run,,No Run,,No Run,,Blocked,,Blocked,,Blocked,,Blocked,,,,,,,,,,,
+,"Reliability
+可靠性","App update
+应用升级后的可用性",,,Low Rate,High Impact,12,,"speech persistance after speech app update
+app更新后语音是否正常使用","speech function should be normal after app update
+29.App更新后可用性
+每周speech发版更新后，语音能够正常使用",,pass,,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Fail,2205697,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Blocked,2267494*,,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Reliability
+可靠性","Network
+网络波动",,,High Rate,High Impact,16,,"speech recover under poor network
+网络稳定性测试","check speech capability during weak network
+30.弱网环境可用性
+检验弱网/无网环境，onboard指令切换(如车窗控制、地图显示控制), 在线语音在网络恢复后,能立即工作(如POI搜索)
+31.正常行驶稳定性
+检查正常行驶时，是否频繁出现timeout (单个LC出现超过3次以上)",,Fail,2109400,Pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Pass,,Fail,"2223183
+2213967(master)",Fail,2213967(master),Fail,2213967(master),Fail,2242346,Fail,2242346,Fail,2242346,,,,,,,,,,
+"Special test on demand
+按需测试","RBT- Risk based testing
+基于风险的测试","Other Test
+其他识别到的风险",,,Low Rate,Moderate Impact,9,"*function change based testing
+基于功能变化的测试(需要动态评估)","function change based on other features(e.g. NAV)
+功能变化验证-基于feature","speech should change according to feature change
+32.new functions
+如导航2503新增BMW超级充电站,语音新增的mee too,主动问候等",,Pass,,Pass,,Fail,2135575,Fail,2135575,Fail,2135575,pass,,Fail,2190577,Fail,2190577,Fail,2190577,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Market
+基于市场","HK / MO
+香港/ 澳门","Right hand drive 
+基于右舵",,,Low Rate,Extremely High Impact,15,"specific cases for different markets
+基于特定市场的测试","HK/MC right-hand driving-activation 
+特定市场-港澳右舵","press PTT button to activate speech, only driver side(right hand) can input command 
+33.香港右舵唤醒音区
+主驾mic定义在右侧，因此PTT唤醒后识别位在右侧",,blocked,,blocked,,blocked,,blocked,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Market
+基于市场","HK / MO
+香港/ 澳门","Speech - Traditional Chinese
+使用语言-粤语",,,Low Rate,Moderate Impact,9,,"STT and TTS Cantonese
+特定市场-STT和TTS粤语适配","STT is in traditional Chinese; TTS is Cantonese 
+34.粤语TTS
+TTS播报为粤语，STT显示为繁体",,Pass,,Pass,,Pass,,Pass,,Pass,,Fail,2177267,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Interoperability
+互操作性","Cross ECU
+跨控制器",CID,,,Almost Impossible,High Impact,4,"use speech to control other ECUs
+语音跨ECU控制","interaction with CID - CCM
+CCM 显示时语音交互","should follow ABK priority matrix
+35.speech activation when CCM exists
+CCM显示时，无法唤醒语音",,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,Fail,2191301,Fail,2191301,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,Low Rate,Low Impact,6,,unbund case on PHUD,"36.语言输入'确认','好的'等,能够正确响应e.g. IPA 'yes, please'",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Fail,2262796,Fail,2262796,,,,,,,,,,
+,,,,,High Rate,Moderate Impact,12,,"interaction with PHUD
+IPA visual 虚拟形象显示","acitvate speech and check IPA visual appear/disappear
+37.IPA visual形象显示
+正常无缺失，并可自由切换和调整显示
+38.IPA visual performance
+无明显延时,尤其是在有导航时或其他particle contents时",2099826,Fail,"2111155
+2110979",Fail,2110979,Fail,2103889,Pass,,Fail,"2168056
+2110979",Fail,"2110979
+2182347
+2185333
+2182353
+2182348
+2182512",Fail,"2110979
+2182347
+2182353
+2182348
+2158519",Fail,2110979,Fail,"2110979
+2200115 ",Fail,"2110979
+2200115 
+2158519
+2178798",Fail,"2110979
+2225418 dup to 2158519",Fail,"2110979
+2158519",Fail,"2110979
+2158519",Fail,"2110979
+2158519
+2226919",Fail,"2158519
+2226919
+2263333",Fail,"2158519
+2263333",,,,,,,,,,
+"Interoperability
+互操作性","Cross ECU
+跨控制器",PADI,,,High Rate,High Impact,16,"use speech for vehicle control
+语音车控测试","control A/C of multi temp zone 
+控制多温区空调(G48/G68/G70LCI...)","39. A/C on/off front seat
+空调开关及相关热词
+40.adjust FAN speed front seat
+调节风量及相关热词,自动空调,车窗除雾
+41.adjust temp front seat
+调节温度及相关热词
+42. A/C on/off rear seat
+后排空调开关及相关热词
+43.adjust FAN speed rear seat
+后排调节风量及相关热词,自动空调,车窗除雾
+44.adjust temp rear seat
+后排调节温度及相关热词",2103674,Fail,2103674,pass,,Fail,2138210,Fail,2141892,Fail,2141892,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Fail,2180930（reopen),Fail,"2180930
+2247115",Fail,"2180930
+2245398(maaster",Blocked,,,,,,,,,,,
+,,,,,Low Rate,Moderate Impact,9,,"control A/C working mode
+控制空调工作模式","change A/C working mode 
+45.调节空调模式
+能够正常切换三种运行模式 - 空气循环\自动空调\新鲜空气",2105339,Fail,2105339,Fail,2105339,Fail,2105339,Fail,2105339,blocked,2141892,Fail,2105339,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Blocked,,,,,,,,,,,
+,,,,,Low Rate,Moderate Impact,9,,"control comfort seat
+控制座椅舒适调节","control comfort seat setting 
+46.控制座椅通风、按摩
+功能开关、强度调节等
+47.seat/steering heating
+座椅加热/方向盘加热等",,blocked,,blocked,,blocked,,blocked,,blocked,,Fail,2180930,Fail,2180930,Pass,,Pass,need original vehicle for further test,Pass,,Pass,,Pass,,Blocked,,Fail,2253527,Fail,2180930,Blocked,,,,,,,,,,,
+"Interoperability
+互操作性","Cross ECU
+跨控制器",window and door,,,High Rate,High Impact,16,,"interaction with window control
+车窗开关","use speech to control windows
+48.控制全部车窗 （任意位置)
+49.开关单侧车窗(任意位置，但不指定位置）
+50.主驾指定位置（副驾、左后、右后）",,blocked,,blocked,,blocked,,blocked,,blocked,,Fail,2182342,Fail,2182342,Blocked,,Pass,,Pass,,Blocked,,Blocked,,Pass,,Pass,,Pass,,Blocked,,,,,,,,,,,
+,,,,,High Rate,High Impact,16,,"change driving mode by speech
+切换驾驶模式","use speech to change driving mode - Both BMW and Mini
+51.测试前排可以使用语音切换所有驾驶模式（后排不行）
+52.检测切换模式后，语音使用不受影响",,Fail,,pass,,pass,,Fail,2156246,Fail,2156246,Fail,2184273,Fail,2184273,Fail,2184273,Fail,2209107,Fail,2179657,Fail,2179657,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Camere, sensor
+摄像头，传感器",interior camera,,,Extremely Low Rate,Low Impact,4,,"interaction with interior camera
+内饰相机","use speech to control snapshot
+53. take photos/video(command:拍照，连续拍照,拍摄视频)",,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,no app,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Fail,2249108,Blocked,,,,,,,,,,,
+,,,,,Low Rate,Moderate Impact,9,,"control interior light
+氛围灯控制","use speech to change atmosphere light 
+54. function on/off 功能开关
+55. change color under different driving modes
+调节氛围灯颜色(注意不同驾驶模式下的feedback)",blocked,blocked,blocked,blocked,blocked,blocked,blocked,blocked,blocked,blocked,,Fail,2183419,Fail,2183419,Blocked,wait new HW,Blocked,,Blocked,,Blocked,,Blocked,,Pass,,Pass,,Pass,,Blocked,,,,,,,,,,,
+"Cross-Functional
+跨功能","Camere, sensor
+摄像头，传感器",interior camera,,,Extremely Low Rate,Extremely Low Impact,2,,"interaction with speech when recording
+行车记录仪","camera record control
+56.interior camera control - 控制语音自拍、连续拍照、录制视频
+(注意:行车记录仪及内饰相机视频记录时，可以唤醒但不收声)",,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,No Run,,Blocked,,,,,,,,,,,
+"Cross-Functional
+跨功能","Camere, sensor
+摄像头，传感器",Parking Camera,,,Low Rate,High Impact,12,,"interaction with parking view
+倒车视频","test speech interaction with RVC/360 view
+-RVC can interrupt ongoing speech dialogue
+-no speech activation when RVC is shown
+57.RVC会打断语音对话，RVC显示时语音无法唤醒",,blocked,,blocked,,blocked,,blocked,,blocked,,Fail,2184324,Fail,2184324,Fail,2184324,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Interoperability
+互操作性","Multi-platform
+跨平台",live vehicle,,,Extremely Low Rate,Low Impact,4,,"vehicle status check
+车辆状态基本查询","use speech to check basic vehicle status
+58. energy consumption语音查平均油耗、电耗(尤其时电车)
+59. check oil/battery temp 查询机油（或电池）温度
+60. check tire pressure 查询胎压是否正常",,Blocked,No Run,Blocked,No Run,Blocked,No Run,Blocked,No Run,Blocked,No Run,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Blocked,,Fail,2249104,Fail,2249104,Fail,2249104,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互",Audio interaction,,,High Rate,High Impact,16,"speech auto interaction with others
+语音与其他音源的交互测试","audio channel use by speech
+speech对声音通道的占用\释放","speech can occupies audio channel only during conversation
+61.测试语音对声音通道的占用和释放(snoozing状态也会释放音源)
+62.可以通过语音及热词正常调节系统音量的大小",2043244,pass,,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Fail,2213961,Fail,"2229894 new
+2224125 new
+2213961(not reproduced)",Fail,"2180907
+2224125
+",Fail,"2180907
+2224125
+",Fail,"2249088
+2180907",Fail,"2249088
+2180907",Fail,"2250095(master)
+",,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互",Audio interaction,,,Low Rate,Low Impact,6,,"audio attenuation by speech
+语音使用时对其他音源的音量抑制","Test volume attenuation by speech
+63.语音TTS对多媒体音量的抑制
+.参考：IPA声音最小，Media声音中等；将声音降低程度设置为低、中、高，并观察结果。另外，视频仅声音follow以上设置，不会中断播放",,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互",Audio interaction,,,High Rate,Low Impact,8,,"interaction - Siri
+声音交互-Siri","CarPlay Siri and IPA can interrupt each other when being activated
+64.目前确定Elli唤醒时,Siri不能被激活; Siri唤醒时,Elli可被激活,信息不明确,等POT最终确认",,No Run,,blocked,Block by the ticket: 2123822,pass,,pass,,pass,,pass,,blocked,2187892,Fail,2199413,Fail,2199413,Fail,2199413,Fail,2199413,Fail,2199413,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Dynamic Roadtest
+动态路测","Security
+安全性","Emergency Call
+紧急救援",,,High Rate,Low Impact,8,,"interaction - Xcall/Ecall
+声音交互-Xcall/Ecall","use speech to control xcall/ecall
+65.Xcall/Ecall会打断语音，拨打时无法唤醒语音，结束后语音恢复正常
+66.拨打紧急救援,拨打事故救援,拨打客户服务. NLU 我的车出事故了",,pass,,pass,,pass,,pass,,Fail,票被打回01说是ecall问题,Fail,"2167172
+2185006",Pass,,Pass,,Pass,,Pass,,Fail,2231376 new,Fail,2231376,Fail,2231376,Fail,2231376,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互",Audio interaction,,,Extremely Low Rate,Moderate Impact,6,,"interaction - Phone call 
+声音交互-蓝牙电话","-incoming call will interrupt current speech dialog
+-no WuW during call and recover after call ends
+67.来电或去电会打断语音，在通话进行时无法唤醒语音，通话结束后恢复正常",,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Peripherals
+外设",Game Controller,,,Low Rate,Low Impact,6,,"interaction - gaming
+声音交互 - 游戏控制器
+","activate speech when gaming
+68.用语音打开,支持NLU（我想玩游戏，但要注意speedlock)
+69.玩游戏时可否唤醒语音",,Fail,,pass,,pass,,pass,,blocked,咪咕没网2166048,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Fail,2272298,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",Audio interaction,,,Extremely Low Rate,Low Impact,4,,"interaction - FA video
+声音交互-FA视频播放","test interaction when FA playing
+70.FA播放时语音是否可唤醒？
+71.通过语音暂停、继续播放的表现？(指令：静音/恢复静音，暂停播放/继续播放)",,blocked,,blocked,,blocked,,blocked,,blocked,,blocked,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,Low Rate,Moderate Impact,9,"complex speech ability
+语音复杂功能测试","snoozing+SWYS
+延时聆听+所见即可说","use snoozing+SWYS to select video/menus，
+72.测试snoozing+可见即可说组合使用
+场景设计:
+#我想看xxx/打开xxx视频app>>语音给出结果并进入snoozing>>#直接说视频名称/或视频分类tab。期待能够通过SWYS切换想要的内容。同理，可以尝试系统菜单逐级选择，音乐搜索等",,Fail,2110082,Fail,2110082,pass,,pass,,blocked,三方没网2166048,Fail,2176560,Fail,2191271,Fail,2193078,Fail,2198200,Fail,"2136906
+2156317",Fail,"2225068 new
+2228685 new",Fail,"2198200
+2225068 new
+2228685 new",Fail,"2198200
+2225068 new
+2228685 new",Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,Low Rate,Moderate Impact,9,,"multi-intent
+多意图指令","multi-intent testing
+73.目前支持<车控+音乐+导航>最多3个指令的组合
+74.跨域指令，导航域最后执行
+具体参考https://atc.bmwgroup.net/confluence/display/DTSVCHINA/multi-intent+commands",,pass,,pass,,pass,,pass,,blocked,车控超时都,Fail,2187464,Fail,2191737,Fail,2191737,Fail,2191737,Fail,2216281,Fail,2216281,Fail,"2191737
+2216281
+",Fail,"2191737
+2216281
+",Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,High Rate,Low Impact,8,,"NLU + implicant intent
+自然语音+隐式指令识别","75.NLU command 典型指令：
+1、开关类 - 开开\给我打开\把xxx打开，给我关上\把xxx关掉
+2、指向类 - 这里、这边、这侧、这儿
+3、同义词 - 小\少\低\弱\降低等，大\高\增加\调高等，一条\一个等
+76.Implicent intent 典型指令：
+1、空调 - 我热了，有点冷，太热了，我累了，有点困。。。
+2、导航 - 车没油（电）了，我有点饿，我想吃火锅。",,pass,,Fail,,Fail,2138510,Fail,2138510,Fail,2138510,Fail,2138510,Fail,2138510,Fail,2138510,Fail,2138510,Fail,2138510,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,Low Rate,High Impact,12,,"dictation
+听写功能","dictation on speller-especially important for HK
+77.键盘上的听写功能：输入(仅主驾聆听)和识别检验(无明显延迟)",2103552,Fail,2103552,pass,,pass,,pass,,Fail,2169258,pass,,Fail,2185333,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,High Rate,Low Impact,8,,"using TTS Testing(navi, weather)
+语音TTS使用","check Branded voice using and prompt completion
+78.TTS播报与语音设置（语言、男声、女声）相符,并且播放完整无吞字少字
+79.burger-in功能可正常打断播报",,pass,,pass,,pass,,pass,,pass,,pass,,Fail,2192217,Fail,2198544,Fail,2188350,Pass,,Pass,,Pass,,Pass,,Pass,,Fail,2203677,Fail,2203677,,,,,,,,,,
+,,,,,High Rate,Low Impact,8,,"SWYS on different menus
+所见即可说","SWYS testing on normal wakeup 测试方式: 唤醒+SWYS (非snoozing)
+80.功能开启
+2507/EVO将默认打开，不再有SWYS的开关,仅受IPA语言的控制
+81.SWYS在各级菜单中的应用
+1.SWYS在系统应用(如导航),三方应用(如QQ,华为Store)
+2.SWYS在三方应用（如QQ音乐、喜马拉雅、酷我音乐、腾讯视频、华为商店等）
+3.SWYS在车控菜单(如驾驶设置)的可用性",2110082,pass,,pass,,pass,,Fail,2138510,Fail,2156995,Fail,"2176560
+2156317",Fail,2191271,Fail,2191271,Fail,"2198200
+2191232",Fail,,Fail,2156317,Fail,2198200,Fail,2198200,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,Low Rate,Moderate Impact,9,,"sample command + error prompt
+示例指令 + 错误提示","if sample commands can work
+82.检验语言示例指令以及error反馈是否符合用户预期
+if not supported intents have prompt
+83. 当指令不被支持或理解时,会给出合理清晰的提醒
+(如:打开近光灯，打开天窗等，能给出正确的‘功能暂不支持’之类的话术)",,pass,,pass,,pass,,pass,,pass,,pass,,Fail,2190581,Fail,2190581,Fail,2199435,Fail,2213962,Fail,2213962,Fail,2213962,Fail,2213962,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,Extremely Low Rate,Low Impact,4,,"CPSP功能
+三方能力识别","chitchat and 3rd skil(不要在snoozing状态下测)
+84.CPSP功能测试
+chitchat(how are you, what's your name, 你的星座是什么等),query stocks, flights...",,pass,,pass,,pass,,pass,,pass,,pass,,Fail,2191227,Fail,2196946,Fail,2196946,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",Telephony,,,High Rate,High Impact,16,"functional testing 
+易错点功能测试","make phone call via speech
+蓝牙电话","test interaction with telephony
+85.拨打号码/联系人和当号码出错（如号码为空）的错误提示
+86.查看通话记录
+87.其他蓝牙相关指令,如移动设备列表",,pass,,pass,,pass,,pass,,pass,,Fail,2177263,Pass,,Pass,,Pass,,Fail,2215564,Fail,2215564,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Interoperability
+互操作性","Cross Eco-system
+跨生态系统","Involve 3rd party
+涉及第三方应用",,,High Rate,Low Impact,8,,"function interaction with CarPlay phone and navigation
+CarPlay功能交互","CarPlay is connected, and guidance is started:
+-use speech to dial a contact
+-use speech to set destination
+88.speech能正确提示用户，需先停止carplay（但不应该一直弹popup）",,pass,,blocked,Block by: 2127038,pass,,pass,,pass,,pass,,blocked,2187892,Fail,2199413,Fail,2199413,Fail,2199413,Fail,2199413,Fail,2199413,Fail,2199413,Pass,,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",Navigation,,,High Rate,Moderate Impact,12,,"Map and route control
+导航地图及路线控制","map zooming control
+89.控制地图的缩放，以及相应的热词(放大地图/缩小地图)
+change route criterial
+90.切换不同的路线标准：如避开收费，不走高速等（请以实际为准）",,Fail,2113150,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Pass,,Fail,2219884,Fail,"2224607
+2223665",Fail,"2241425
+2224607
+2223665",Fail,"2241425
+2223665",Pass,,Fail,2271162,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",Navigation,,,High Rate,High Impact,16,,"Set destination 
+导航设置目的地","set destination 易错点：
+91.设置目的地或途径点等
+1.搜索具体POI并设置为目的地(或途径点)
+2.搜索某一类POI category,并设置为目的地(或途径点)
+3.添加/删除中途点或替换目的地（尤其是家、公司）
+92. 搜索方式: 沿途搜索、目的地附近、当前位置附近
+93.设置或修改家庭\公司地址","2088586
+",Fail,2112064,Fail,2112064,Fail,2112064,Fail,2112064,pass,,pass,,pass,,Fail,2198539,Fail,2206495,Pass,,Fail,2200424 dup to 2213967,Fail,"2213967
+2224607
+2223665",Fail,"2213967
+2223665",Fail,2223665,Fail,2223665,Fail,"2223665
+2270812",,,,,,,,,,
+"Interoperability
+互操作性","Cross Eco-system
+跨生态系统","Involve 3rd party
+涉及第三方应用",,,Extremely Low Rate,Low Impact,4,,"control app in HUAWEI store
+三方应用","open xxxx app name/download xxx app name
+94.能够识别并打开或下载app
+(注意：尽管输入并识别明确的app，但store依然会推一个list给语音，这是spec)",2102457,pass,,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Fail,2188350,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",Entertainment,,,High Rate,High Impact,16,,"play media sources
+功能测试-音乐播放","switch between different source
+95.音源跳转测试
+各音源两两互切,包括QQ音乐/喜马拉雅/网易云音乐/收音机/蓝牙音乐/USB音乐/CarPlay音乐等，测试不同指令下的表现: 播放xxx/打开xxx,以及NLU 我想听xxx
+96.播放控制
+不同音源的音控热词:切歌热词, 播放模式热词, 播放收藏热词, 音量控制
+97.各种方式的音乐搜索
+(歌名，歌手名，某一句歌词),QQ/网易云播放首页推荐音乐（播放猜你喜欢，播放每日30首等）",2110081,Fail,2114257,Fail,2114257,pass,,pass,,Fail,2167166,Fail,"2167166
+2182556",Fail,2184353,Fail,2184353,Blocked,2167166,Pass,,Pass,,Pass,,Fail,2180907,Fail,2180907,Pass,,Fail,2271215,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",Entertainment,,,Low Rate,Moderate Impact,9,,"play video
+功能测试-视频播放","control video playing
+易错点：
+98.视频app打开和跳转
+99.内容搜索(注意speedlock,指定视频app或不指定)
+100.播放控制视频的暂停、继续，测试热词切下一个是否工作
+",,pass,,pass,,Fail,2136906,Fail,2136906,blocked,2166048,Fail,2183124,Fail,2183124,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",Entertainment,,,High Rate,High Impact,16,,"play radio
+功能测试-收音机播放","control radio playing
+易错点：
+101.频道播放 (收听/打开/播放+频道)
+102:收藏: 添加收藏/播放收藏频道",2102817,pass,,pass,,pass,,pass,,pass,,Fail,2182883,Fail,"2190269
+2182883",Fail,"2190269
+",Fail,"2167166
+",Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",Weather,,,Low Rate,Moderate Impact,9,,"query weather by location
+功能测试-查询天气","query weather of destination
+易错点：
+103.查询天气
+1.查询目的地天气\连续变化不同目的地查询
+2.最多查询5天内的天气",,pass,,pass,,pass,,pass,,pass,,Fail,2182340,Fail,2182340,Fail,2196946,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",launcher,,,Low Rate,Low Impact,6,,"open desktop
+功能测试-打开主页","show desktop
+104.功能及热词测试
+1.泛化说法:显示\打开\回到\返回 - 主页\桌面\首页
+2.热词：打开主页",,pass,,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Fail,2190545,Pass,,Pass,,Pass,,Pass,,Pass,,Fail,2271199,,,,,,,,,,
+"Cross-Functional
+跨功能","Across Application
+应用之间交互(易错点测试)",FA,,,Extremely Low Rate,Low Impact,4,,"open FA app
+功能测试-打开FA","general speaking testing
+105.节日触发
+1.泛化指令“节日快乐”的反馈如何
+2.指定具体FA节日能否触发动画？",,pass,,pass,,pass,,pass,,pass,,pass,,pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,Pass,,,,,,,,,,,
+,,,,,Very High Rate,Extremely High Impact,25,,"open system settings/apps
+打开系统设置/应用菜单","open setting should open system  setting menu
+106.app和界面打开
+1.打开设置\系统设置\设置菜单\设置界面 不会错误的打开安卓底层设置
+2.打开全部应用会显示全部应用菜单,打开app名字能够正确打开相应菜单（需要特别留意车辆应用)",,pass,,pass,,Fail,2138482,pass,,pass,,Fail,2181769,Fail,2181769,Fail,2199415,Pass,,Pass,,Pass,,Pass,,Fail,"2242341
+2240510",Fail,2234478,Fail,2234478,Fail,"2234478
+2270773",,,,,,,,,,
+,,Checklist Coverage,,,,,,100.00%,Pass Rate    (通过率),,,40.32%,,50.00%,,51.61%,,53.33%,,40.32%,,45.16%,,48.39%,,50.00%,,53.23%,,67.74%,,61.29%,,62.90%,,61.29%,,69.35%,,71.43%,,55.56%,,,,,,,,,,,
+,,(check点占所有DTSV测试范围模板的比值，值越高证明功能越复杂，反之亦然),,,,,,,Test Coverage (Not Blank or N/A or Blocked)  （测试覆盖率，非空数据）,,,67.74%,,67.74%,,70.97%,,73.33%,,66.13%,,83.87%,,83.87%,,83.87%,,83.87%,,88.71%,,88.71%,,88.71%,,90.32%,,93.55%,,96.83%,,84.13%,,,,,,,,,,,
+,,,,,,,,,Defect Density (缺陷密度),,,44%,,43%,,35%,,33%,,69%,,60%,,56%,,42%,,50%,,29%,,68%,,54%,,58%,,39%,,36%,,49%,,,,,,,,,,,
+,,,,,,,,,Ticket List （问题列表）,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,

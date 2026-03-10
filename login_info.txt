@@ -1,0 +1,6 @@
+{
+    "username": "q446328",
+    "password": "qingzhouyiguowanchongshan",
+    "pat": "<jira_PAT>",
+    "jira_username": "<jira_username>"
+}

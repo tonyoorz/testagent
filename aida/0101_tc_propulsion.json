@@ -1,0 +1,4795 @@
+{
+  "total_count": 195,
+  "data": [
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "yz261wnrpnolwcv46ny891nvo",
+      "last_modified": "2024-07-12T14:41:55Z",
+      "workspace_id": 2001,
+      "id": "479049",
+      "path": "00000000056H00C6DN",
+      "name": "[\u003CSP25] Display powertrain status indication [01.01.02.15.13]",
+      "creation_time": "2022-07-18T22:10:22Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "3j1e5wenr64nri4jo2kj5ql9o",
+      "last_modified": "2025-01-25T00:11:37Z",
+      "workspace_id": 2001,
+      "id": "602001",
+      "path": "00000000056H00FAPX",
+      "name": "DELETED_Autocharge [01.01.08.20.04]",
+      "creation_time": "2024-11-27T23:52:34Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "0r73mlenygqz1s8jr057x45zx",
+      "last_modified": "2025-02-13T00:51:30Z",
+      "workspace_id": 2001,
+      "id": "332852",
+      "path": "00000000056H008FXQ",
+      "name": "Drive readiness establish&exit [01.01.01.01]",
+      "creation_time": "2021-02-08T23:07:34Z",
+      "score": 7.75,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "x237mx07vvplnhvlvvyj7mg9n",
+      "last_modified": "2025-02-13T00:51:30Z",
+      "workspace_id": 2001,
+      "id": "332931",
+      "path": "00000000056H008G03",
+      "name": "Start (-behavior) [01.01.01.02]",
+      "creation_time": "2021-02-08T23:08:02Z",
+      "score": 7.8,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "5yj9437oye0lnirv959klmqk8",
+      "last_modified": "2025-02-13T00:51:31Z",
+      "workspace_id": 2001,
+      "id": "332948",
+      "path": "00000000056H008G0K",
+      "name": "Stop (-Behavior) [01.01.01.03]",
+      "creation_time": "2021-02-08T23:08:09Z",
+      "score": 7.63,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "68orwn99jp8qob6kvkj3n4qep",
+      "last_modified": "2025-02-13T00:51:31Z",
+      "workspace_id": 2001,
+      "id": "332966",
+      "path": "00000000056H008G14",
+      "name": "Acceleration [01.01.01.04]",
+      "creation_time": "2021-02-08T23:08:16Z",
+      "score": 7.69,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "e0l24dq6gp501hxg015ppmq8r",
+      "last_modified": "2025-02-13T00:51:32Z",
+      "workspace_id": 2001,
+      "id": "334052",
+      "path": "00000000056H008GZ2",
+      "name": "Deceleration via accelerator pedal [01.01.01.05]",
+      "creation_time": "2021-02-08T23:09:14Z",
+      "score": 7.8,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "0r73ml35lpgq0iz3zoer3m5zx",
+      "last_modified": "2025-02-13T00:51:32Z",
+      "workspace_id": 2001,
+      "id": "334093",
+      "path": "00000000056H008H09",
+      "name": "Constant Driving [01.01.01.06]",
+      "creation_time": "2021-02-08T23:09:54Z",
+      "score": 7.74,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "0l7ep7z98nqg2b4xnnn2e649j",
+      "last_modified": "2025-02-13T00:51:33Z",
+      "workspace_id": 2001,
+      "id": "375045",
+      "path": "00000000056H009IEP",
+      "name": "Exhaust cleaning [01.01.01.07]",
+      "creation_time": "2021-07-09T22:17:12Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "5wrzn5m030ygobo8g6g031vml",
+      "last_modified": "2025-02-13T00:51:33Z",
+      "workspace_id": 2001,
+      "id": "330056",
+      "path": "00000000056H008DHI",
+      "name": "Configurate and adjust Drive [01.01.02.01]",
+      "creation_time": "2021-01-14T23:13:49Z",
+      "score": 7.86,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "kpve43ey82d88i390rmdmn30l",
+      "last_modified": "2025-02-13T00:51:34Z",
+      "workspace_id": 2001,
+      "id": "330077",
+      "path": "00000000056H008DI5",
+      "name": "Consolidate and display powertrain warnings and notifications [01.01.02.02]",
+      "creation_time": "2021-01-14T23:13:59Z",
+      "score": 7.73,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "5zxkr2z5pw4lqtwk71pnor86p",
+      "last_modified": "2025-02-13T00:51:34Z",
+      "workspace_id": 2001,
+      "id": "561468",
+      "path": "00000000056H00E9NQ",
+      "name": "Consolidate and display range predictions and fill levels [01.01.02.03]",
+      "creation_time": "2024-03-11T23:33:13Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "zm853lpq9omjmuwgze2eqxr2w",
+      "last_modified": "2025-02-13T00:51:34Z",
+      "workspace_id": 2001,
+      "id": "479010",
+      "path": "00000000056H00C6CI",
+      "name": "Consolidate and display powermeter and power reserve [01.01.02.04]",
+      "creation_time": "2022-07-18T22:10:22Z",
+      "score": 7.5,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "r7me1pp4qrw2vuk2l5vnm1j2q",
+      "last_modified": "2025-02-13T00:51:35Z",
+      "workspace_id": 2001,
+      "id": "479005",
+      "path": "00000000056H00C6CD",
+      "name": "Consolidate and display rev counter [01.01.02.05]",
+      "creation_time": "2022-07-18T22:10:22Z",
+      "score": 7.59,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "rwdv35dvpd29wsy78j62m1gzq",
+      "last_modified": "2025-02-13T00:51:35Z",
+      "workspace_id": 2001,
+      "id": "479022",
+      "path": "00000000056H00C6CU",
+      "name": "Consolidate and display Journey Data [01.01.02.06]",
+      "creation_time": "2022-07-18T22:10:22Z",
+      "score": 7.8,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "4pk5wjmd0zgonhoqzddnvw81g",
+      "last_modified": "2025-02-13T00:51:36Z",
+      "workspace_id": 2001,
+      "id": "484517",
+      "path": "00000000056H00CB4H",
+      "name": "Consolidate and display the state of health of the high-voltage battery [01.01.02.07]",
+      "creation_time": "2022-10-21T22:15:51Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "n8m50xmnd3rxnt1l4xlrnpr9g",
+      "last_modified": "2025-02-13T00:51:37Z",
+      "workspace_id": 2001,
+      "id": "567008",
+      "path": "00000000056H00EEGO",
+      "name": "Consolidate and display the range horizon [01.01.02.08]",
+      "creation_time": "2024-04-04T23:19:09Z",
+      "score": 6.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "rwdv352l72njwim92zd73gzqm",
+      "last_modified": "2025-02-13T00:51:37Z",
+      "workspace_id": 2001,
+      "id": "479027",
+      "path": "00000000056H00C6D1",
+      "name": "Consolidate and view sports view [01.01.02.09]",
+      "creation_time": "2022-07-18T22:10:22Z",
+      "score": 7.84,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "zmy96m3v5n7deb7en511n412n",
+      "last_modified": "2025-02-13T00:51:37Z",
+      "workspace_id": 2001,
+      "id": "501059",
+      "path": "00000000056H00CPF1",
+      "name": "Carry out extended high-voltage storage warning [01.01.02.10]",
+      "creation_time": "2023-01-18T23:10:57Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "0l5pnxwd3dqlei5y06y11mvre",
+      "last_modified": "2025-02-13T00:51:38Z",
+      "workspace_id": 2001,
+      "id": "515008",
+      "path": "00000000056H00D3HA",
+      "name": "Activate and orchestrate Launch Control [01.01.02.11]",
+      "creation_time": "2023-03-24T23:19:22Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "jq7k28y373gpli8vpg1egmrv0",
+      "last_modified": "2025-02-13T00:51:38Z",
+      "workspace_id": 2001,
+      "id": "427031",
+      "path": "00000000056H00ATDP",
+      "name": "Activate and orchestrate Boost [01.01.02.12]",
+      "creation_time": "2022-01-21T23:13:01Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "jn1mzw4gkwp5mck88p9d20vod",
+      "last_modified": "2025-02-13T00:51:39Z",
+      "workspace_id": 2001,
+      "id": "566147",
+      "path": "00000000056H00EDPD",
+      "name": "Operation of steering wheel buttons [01.01.02.12.08]",
+      "creation_time": "2024-04-04T23:19:11Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "yg130omq5z4v6bq98563jpen4",
+      "last_modified": "2025-02-13T00:51:39Z",
+      "workspace_id": 2001,
+      "id": "567328",
+      "path": "00000000056H00EEQ4",
+      "name": "Operation of steering wheel buttons [01.01.02.12.08]",
+      "creation_time": "2024-04-04T23:19:12Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "6jerp8n4zok64ud3eyzg3pgd9",
+      "last_modified": "2025-02-13T00:51:40Z",
+      "workspace_id": 2001,
+      "id": "567858",
+      "path": "00000000056H00EF7O",
+      "name": "Operation of steering wheel buttons [01.01.02.12.08]",
+      "creation_time": "2024-04-08T23:14:18Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "2krm1zg5qknpkf8xwz09ro739",
+      "last_modified": "2025-02-13T00:51:40Z",
+      "workspace_id": 2001,
+      "id": "568476",
+      "path": "00000000056H00EFPU",
+      "name": "Operation of steering wheel buttons [01.01.02.12.08]",
+      "creation_time": "2024-04-08T23:14:17Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "01r7wj6o8r5zma40jpm83n6jo",
+      "last_modified": "2025-02-13T00:51:40Z",
+      "workspace_id": 2001,
+      "id": "565121",
+      "path": "00000000056H00ECT7",
+      "name": "Ready/OFF Notification [01.01.02.13.01]",
+      "creation_time": "2024-03-27T23:23:44Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "3wj60plrj3pg6aojkr882ev2g",
+      "last_modified": "2025-02-13T00:51:40Z",
+      "workspace_id": 2001,
+      "id": "566763",
+      "path": "00000000056H00EE9H",
+      "name": "drive-pedal interpretation [01.01.02.13.01]",
+      "creation_time": "2024-04-09T23:09:53Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "w47yexgyw1dvotn589d46083m",
+      "last_modified": "2025-02-13T00:51:41Z",
+      "workspace_id": 2001,
+      "id": "566179",
+      "path": "00000000056H00EDQB",
+      "name": "drive-pedal interpretation [01.01.02.13.01]",
+      "creation_time": "2024-04-04T23:19:11Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "grm507nyvl874iel68oo3pn23",
+      "last_modified": "2025-02-13T00:51:42Z",
+      "workspace_id": 2001,
+      "id": "567340",
+      "path": "00000000056H00EEQG",
+      "name": "drive-pedal interpretation [01.01.02.13.01]",
+      "creation_time": "2024-04-04T23:19:12Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "2n5vwg18vyxn2fd6dg7v5wj6l",
+      "last_modified": "2025-02-13T00:51:42Z",
+      "workspace_id": 2001,
+      "id": "567405",
+      "path": "00000000056H00EESD",
+      "name": "drive-pedal interpretation [01.01.02.13.01]",
+      "creation_time": "2024-04-04T23:19:12Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "7nlve36z45g3xf3p24v4ewm68",
+      "last_modified": "2025-02-13T00:51:42Z",
+      "workspace_id": 2001,
+      "id": "568488",
+      "path": "00000000056H00EFQ8",
+      "name": "drive-pedal interpretation [01.01.02.13.01]",
+      "creation_time": "2024-04-08T23:14:17Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "g82yel3n6wjdzsyrg3lgzez47",
+      "last_modified": "2025-02-13T00:51:43Z",
+      "workspace_id": 2001,
+      "id": "568554",
+      "path": "00000000056H00EFS6",
+      "name": "drive-pedal interpretation [01.01.02.13.01]",
+      "creation_time": "2024-04-08T23:14:17Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "yg328rjdpxxqkannyxom6vz6e",
+      "last_modified": "2025-02-13T00:51:43Z",
+      "workspace_id": 2001,
+      "id": "569056",
+      "path": "00000000056H00EG8Y",
+      "name": "drive-pedal interpretation [01.01.02.13.01]",
+      "creation_time": "2024-04-04T23:19:10Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "076jyopgo0oe8s927km5onpq4",
+      "last_modified": "2025-02-13T00:51:44Z",
+      "workspace_id": 2001,
+      "id": "565122",
+      "path": "00000000056H00ECT8",
+      "name": "drive position notification [01.01.02.13.02]",
+      "creation_time": "2024-03-27T23:23:44Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "01r7wj98gzpm8tg8vkrgpn6jo",
+      "last_modified": "2025-02-13T00:51:44Z",
+      "workspace_id": 2001,
+      "id": "565125",
+      "path": "00000000056H00ECTB",
+      "name": "Shift point notification [01.01.02.13.03]",
+      "creation_time": "2024-03-27T23:23:44Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "lvxj0d1oqmo3xi24g4k1r0eo7",
+      "last_modified": "2025-02-13T00:51:44Z",
+      "workspace_id": 2001,
+      "id": "567038",
+      "path": "00000000056H00EEHK",
+      "name": "Implement Efficiency Trainer [01.01.02.13.04]",
+      "creation_time": "2024-04-04T23:19:09Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "n8m50xkv3jm58fr2oj3n3wr9g",
+      "last_modified": "2025-02-13T00:51:45Z",
+      "workspace_id": 2001,
+      "id": "567039",
+      "path": "00000000056H00EEHL",
+      "name": "Calculate powertrain energy flow [01.01.02.13.05]",
+      "creation_time": "2024-04-04T23:19:09Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "8elvw9j381289id59gv2d0314",
+      "last_modified": "2025-02-13T00:51:46Z",
+      "workspace_id": 2001,
+      "id": "567041",
+      "path": "00000000056H00EEHN",
+      "name": "Provide drive temperature value [01.01.02.13.06]",
+      "creation_time": "2024-04-04T23:19:09Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "e5yzq3rzmovm5bkxvr6gdq16d",
+      "last_modified": "2025-02-13T00:51:46Z",
+      "workspace_id": 2001,
+      "id": "572067",
+      "path": "00000000056H00EITH",
+      "name": "Provide power per electric machine [01.01.02.13.07]",
+      "creation_time": "2024-05-03T22:32:59Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "y6m1pg5v3xj8mio4xkd2ml94e",
+      "last_modified": "2025-02-13T00:51:46Z",
+      "workspace_id": 2001,
+      "id": "572068",
+      "path": "00000000056H00EITI",
+      "name": "Provide torque per electric machine [01.01.02.13.08]",
+      "creation_time": "2024-05-03T22:32:59Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "6z79q5e40rz9oa4dm0wrgqyvx",
+      "last_modified": "2025-02-13T00:51:47Z",
+      "workspace_id": 2001,
+      "id": "572069",
+      "path": "00000000056H00EITJ",
+      "name": "Provide speed per electric machine [01.01.02.13.09]",
+      "creation_time": "2024-05-03T22:32:59Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "xnowlwxwvmer1sojvzvmrqy10",
+      "last_modified": "2025-02-13T00:51:47Z",
+      "workspace_id": 2001,
+      "id": "572070",
+      "path": "00000000056H00EITK",
+      "name": "Provide temperature per electric machine [01.01.02.13.10]",
+      "creation_time": "2024-05-03T22:32:59Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "82gzpd5o66n5xagw0ynyeld1r",
+      "last_modified": "2025-02-13T00:51:48Z",
+      "workspace_id": 2001,
+      "id": "572071",
+      "path": "00000000056H00EITL",
+      "name": "Provide high-voltage battery temperature [01.01.02.13.11]",
+      "creation_time": "2024-05-03T22:32:59Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "k3o2p09y4ewdzsnx5deg7pz1e",
+      "last_modified": "2025-02-13T00:51:49Z",
+      "workspace_id": 2001,
+      "id": "572072",
+      "path": "00000000056H00EITM",
+      "name": "Provide high-voltage storage cable temperature [01.01.02.13.12]",
+      "creation_time": "2024-05-03T22:32:59Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "n5zwqe6kvxe6yb9n7x92vpv7y",
+      "last_modified": "2025-02-13T00:51:49Z",
+      "workspace_id": 2001,
+      "id": "572073",
+      "path": "00000000056H00EITN",
+      "name": "Provide voltage to high-voltage batteries [01.01.02.13.13]",
+      "creation_time": "2024-05-03T22:32:59Z",
+      "score": 0.96,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "o841p1zvroonvi27z99v4lvgj",
+      "last_modified": "2025-02-13T00:51:49Z",
+      "workspace_id": 2001,
+      "id": "572074",
+      "path": "00000000056H00EITO",
+      "name": "Provide high-voltage batteries electricity [01.01.02.13.14]",
+      "creation_time": "2024-05-03T22:32:59Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "npoqekm29v54rbxkq5nodzr2x",
+      "last_modified": "2025-02-13T00:51:50Z",
+      "workspace_id": 2001,
+      "id": "566495",
+      "path": "00000000056H00EE1L",
+      "name": "Provide High-Voltage detailed display [01.01.02.14]",
+      "creation_time": "2024-04-08T23:14:15Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "expmvyxedl0l3in41k6jz8jyz",
+      "last_modified": "2025-02-13T00:51:51Z",
+      "workspace_id": 2001,
+      "id": "569616",
+      "path": "00000000056H00EGPE",
+      "name": "Show electrical range [01.01.02.14.02]",
+      "creation_time": "2024-04-16T22:29:25Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "gx5w97nx55rq7b1p7nrl7870p",
+      "last_modified": "2025-02-13T00:51:50Z",
+      "workspace_id": 2001,
+      "id": "569617",
+      "path": "00000000056H00EGPF",
+      "name": "Calculate range [01.01.02.14.02.01]",
+      "creation_time": "2024-04-16T22:29:25Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "opml8k56xqp62u0ynjzye8j50",
+      "last_modified": "2025-02-13T00:51:51Z",
+      "workspace_id": 2001,
+      "id": "569618",
+      "path": "00000000056H00EGPG",
+      "name": "Calculate range prediction in Max Efficient [01.01.02.14.02.01.01]",
+      "creation_time": "2024-04-16T22:29:25Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "qjzx834034ozmayk6n700v27r",
+      "last_modified": "2025-02-13T00:51:51Z",
+      "workspace_id": 2001,
+      "id": "569619",
+      "path": "00000000056H00EGPH",
+      "name": "range correction and range circle [01.01.02.14.02.01.02]",
+      "creation_time": "2024-04-16T22:29:25Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "13op96nekemqqhpm1wmm4v2eq",
+      "last_modified": "2025-02-13T00:51:52Z",
+      "workspace_id": 2001,
+      "id": "569620",
+      "path": "00000000056H00EGPI",
+      "name": "PE_IC-HMI display total km stat (GWSZ) and remaining range (drive allowance) in driver axis display [01.01.02.14.02.02]",
+      "creation_time": "2024-04-16T22:29:25Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "68lv9l7k4p3gzs84yo0dorego",
+      "last_modified": "2025-02-13T00:51:52Z",
+      "workspace_id": 2001,
+      "id": "492073",
+      "path": "00000000056H00CHMP",
+      "name": "HMI Live Vehicle Sport modus display [01.01.02.15.10]",
+      "creation_time": "2022-11-18T23:16:09Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "1yd49v26kl6zeione6ngr3ge0",
+      "last_modified": "2025-02-13T00:51:53Z",
+      "workspace_id": 2001,
+      "id": "492072",
+      "path": "00000000056H00CHMO",
+      "name": "HMI Live Vehicle Sport modus display [01.01.02.15.10]",
+      "creation_time": "2022-11-18T23:16:09Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "2n5vwgx5r5d4rb92rgy2gpj6l",
+      "last_modified": "2025-02-13T00:51:53Z",
+      "workspace_id": 2001,
+      "id": "567004",
+      "path": "00000000056H00EEGK",
+      "name": "HMI Live Vehicle Sport modus display [01.01.02.15.10]",
+      "creation_time": "2024-04-04T23:19:09Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "364gpy6636n6xt7xzrvjn0kqn",
+      "last_modified": "2025-02-13T00:51:54Z",
+      "workspace_id": 2001,
+      "id": "567005",
+      "path": "00000000056H00EEGL",
+      "name": "HMI Widget G-Force Meter [01.01.02.15.11]",
+      "creation_time": "2024-04-04T23:19:09Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "w96vno41gm9p8uv50zo4k2q7e",
+      "last_modified": "2025-02-13T00:51:54Z",
+      "workspace_id": 2001,
+      "id": "425043",
+      "path": "00000000056H00ARN9",
+      "name": "Activate & deactivate sailing [01.01.03.01]",
+      "creation_time": "2022-01-21T23:12:58Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "d40m280nzjk0oaen1z65zwv5q",
+      "last_modified": "2025-02-13T00:51:55Z",
+      "workspace_id": 2001,
+      "id": "484512",
+      "path": "00000000056H00CB4C",
+      "name": "Implement strategic limitation drive [01.01.04.01]",
+      "creation_time": "2022-10-21T22:15:51Z",
+      "score": 7.64,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "xk36lmj70ko1zi1dywdjxlno9",
+      "last_modified": "2025-02-13T00:51:55Z",
+      "workspace_id": 2001,
+      "id": "438158",
+      "path": "00000000056H00B510",
+      "name": "Implement and display drive fault responses [01.01.04.02]",
+      "creation_time": "2022-03-29T09:01:28Z",
+      "score": 7.42,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "m2eor5njywwj4i8jg0xw0r49l",
+      "last_modified": "2025-02-13T00:51:56Z",
+      "workspace_id": 2001,
+      "id": "6019",
+      "path": "00000000056H000571",
+      "name": "operating strategy powertrain [01.01.04.03]",
+      "creation_time": "2018-11-10T16:58:19Z",
+      "score": 7.68,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "gr8x9z0yz1521aexo7q2jwod3",
+      "last_modified": "2025-02-13T00:51:56Z",
+      "workspace_id": 2001,
+      "id": "543031",
+      "path": "00000000056H00DRPH",
+      "name": "Service function Operating strategy functions Drive [01.01.04.04]",
+      "creation_time": "2023-10-24T23:11:04Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "jg53dxremm9kjbqwx22n6dm42",
+      "last_modified": "2025-02-13T00:51:56Z",
+      "workspace_id": 2001,
+      "id": "554517",
+      "path": "00000000056H00E3NB",
+      "name": "Coordinate strategic operating modes in the FCEV [01.01.04.05]",
+      "creation_time": "2024-01-12T23:26:29Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "lg3rdr4y6k9l7sr4l4qomzvjq",
+      "last_modified": "2025-02-13T00:51:57Z",
+      "workspace_id": 2001,
+      "id": "554518",
+      "path": "00000000056H00E3NC",
+      "name": "Implement battery-free operation in the FCEV [01.01.04.06]",
+      "creation_time": "2024-01-12T23:26:29Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "v6qz1979w695eb70lj20rnxle",
+      "last_modified": "2025-02-13T00:51:57Z",
+      "workspace_id": 2001,
+      "id": "330081",
+      "path": "00000000056H008DI9",
+      "name": "Enable OBD/LEV4ZEV [01.01.05.01]",
+      "creation_time": "2021-01-14T23:17:18Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "y7q2v447y1de8bjgyzg43vxmk",
+      "last_modified": "2025-02-13T00:51:58Z",
+      "workspace_id": 2001,
+      "id": "543044",
+      "path": "00000000056H00DRPU",
+      "name": "Service function Electrical system [01.01.06.01.01]",
+      "creation_time": "2023-10-24T23:11:04Z",
+      "score": 7.75,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "36r1ezprwwwn8bon2zwjm9dy7",
+      "last_modified": "2025-02-13T00:51:58Z",
+      "workspace_id": 2001,
+      "id": "579003",
+      "path": "00000000056H00EOTH",
+      "name": "Implement authentic communication on private CAN [01.01.06.02.01.01]",
+      "creation_time": "2024-06-03T22:34:48Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "0r73mlrne101psn17xge5m5zx",
+      "last_modified": "2025-02-13T00:51:59Z",
+      "workspace_id": 2001,
+      "id": "334150",
+      "path": "00000000056H008H1Y",
+      "name": "Idle/Idling behavior [01.01.07.01.01]",
+      "creation_time": "2021-02-08T23:12:44Z",
+      "score": 7.72,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "qrkjzpgdrdkp1b65wxqd0zwg7",
+      "last_modified": "2025-02-13T00:51:59Z",
+      "workspace_id": 2001,
+      "id": "337610",
+      "path": "00000000056H008K1O",
+      "name": "General function combustion engine [01.01.07.01.02]",
+      "creation_time": "2021-02-17T23:13:03Z",
+      "score": 5.29,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "3k7nm7o88ynkyt2gjpo784dj9",
+      "last_modified": "2025-02-13T00:52:00Z",
+      "workspace_id": 2001,
+      "id": "334411",
+      "path": "00000000056H008H9L",
+      "name": "MSA-Start (DxE-Part) [01.01.07.01.03.01]",
+      "creation_time": "2021-02-09T23:11:56Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "vd30m8l9odlnecyl9021xwq8z",
+      "last_modified": "2025-02-13T00:52:00Z",
+      "workspace_id": 2001,
+      "id": "332950",
+      "path": "00000000056H008G0M",
+      "name": "MSA-Stop (DxE part) [01.01.07.01.03.02]",
+      "creation_time": "2021-02-08T23:08:09Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "qrkjzpkqo8e96b340o842wg70",
+      "last_modified": "2025-02-13T00:52:00Z",
+      "workspace_id": 2001,
+      "id": "337573",
+      "path": "00000000056H008K0L",
+      "name": "MSA-CoM (DxE-part) [01.01.07.01.03.03]",
+      "creation_time": "2021-02-17T23:12:48Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "pdze46ye1oey9clpqg51rmxg0",
+      "last_modified": "2025-02-13T00:52:01Z",
+      "workspace_id": 2001,
+      "id": "334155",
+      "path": "00000000056H008H23",
+      "name": "Reku 12V dual battery [01.01.07.01.03.04]",
+      "creation_time": "2021-02-08T23:12:46Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "vpg1w162xkp0gtrzypjnrm26y",
+      "last_modified": "2025-02-13T00:52:02Z",
+      "workspace_id": 2001,
+      "id": "334156",
+      "path": "00000000056H008H24",
+      "name": "Engine-off-Reku [01.01.07.01.03.05]",
+      "creation_time": "2021-02-08T23:12:47Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "2ng6wk5qj85v5sjxzdpejwd07",
+      "last_modified": "2025-02-13T00:52:02Z",
+      "workspace_id": 2001,
+      "id": "334157",
+      "path": "00000000056H008H25",
+      "name": "Overrun fuel cutoff/restoration [01.01.07.01.03.06]",
+      "creation_time": "2021-02-08T23:12:47Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "9pmwz733m05xwijx5qe9dv8xq",
+      "last_modified": "2025-02-13T00:52:02Z",
+      "workspace_id": 2001,
+      "id": "337574",
+      "path": "00000000056H008K0M",
+      "name": "vmax limiter - VM [01.01.07.01.03.07]",
+      "creation_time": "2021-02-17T23:12:50Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "zjvgwo8vddjxyuokprd0lm672",
+      "last_modified": "2025-02-13T00:52:02Z",
+      "workspace_id": 2001,
+      "id": "332942",
+      "path": "00000000056H008G0E",
+      "name": "EM/VM start /stop (DxE part) [01.01.07.01.03.08]",
+      "creation_time": "2021-02-08T23:08:06Z",
+      "score": 3.99,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "3g1yrqz0gnzo0uww5x1mzro7w",
+      "last_modified": "2025-02-13T00:52:03Z",
+      "workspace_id": 2001,
+      "id": "438848",
+      "path": "00000000056H00B5LA",
+      "name": "Comfort/Response LL-Sailing (DxE part) [01.01.07.01.03.09]",
+      "creation_time": "2022-03-29T09:02:05Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "d3gjk55p8lx6rfyj5r84wk2zv",
+      "last_modified": "2025-02-13T00:52:03Z",
+      "workspace_id": 2001,
+      "id": "440739",
+      "path": "00000000056H00B78X",
+      "name": "Comfort/Response MA-Sailing (DxE part) [01.01.07.01.03.10]",
+      "creation_time": "2022-03-29T09:02:01Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "9p1o4p5qgzk6rfdn52xk2m620",
+      "last_modified": "2025-02-13T00:52:04Z",
+      "workspace_id": 2001,
+      "id": "334065",
+      "path": "00000000056H008GZF",
+      "name": "Sailing speed assistant (DxE part) [01.01.07.01.03.11]",
+      "creation_time": "2021-02-08T23:09:25Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "j56pw0kj6plgoseqzvrejm07n",
+      "last_modified": "2025-02-13T00:52:05Z",
+      "workspace_id": 2001,
+      "id": "332953",
+      "path": "00000000056H008G0P",
+      "name": "PMA (DxE part) [01.01.07.01.03.12]",
+      "creation_time": "2021-02-08T23:08:10Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "j10242yk0x0qoszvll50yw5y7",
+      "last_modified": "2025-02-13T00:52:05Z",
+      "workspace_id": 2001,
+      "id": "334070",
+      "path": "00000000056H008GZK",
+      "name": "Offroad mode (DxE part) [01.01.07.01.03.13]",
+      "creation_time": "2021-02-08T23:09:27Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "4v5gpgm9r4w67c5xnjlkkpmxl",
+      "last_modified": "2025-02-13T00:52:06Z",
+      "workspace_id": 2001,
+      "id": "333006",
+      "path": "00000000056H008G2A",
+      "name": "emergency stop / start (3xSST) (DxE part) [01.01.07.01.03.14]",
+      "creation_time": "2021-01-19T23:11:52Z",
+      "score": 6.58,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "l4m19jvl7880i71210319k3ew",
+      "last_modified": "2025-02-13T00:52:06Z",
+      "workspace_id": 2001,
+      "id": "492028",
+      "path": "00000000056H00CHLE",
+      "name": "engine speed [01.01.07.01.03.15]",
+      "creation_time": "2022-11-16T23:16:35Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "oe7wx6jyozgl4tdvqgkj7192j",
+      "last_modified": "2025-02-13T00:52:06Z",
+      "workspace_id": 2001,
+      "id": "479020",
+      "path": "00000000056H00C6CS",
+      "name": "Display and Calculation of engine temperature [01.01.07.01.03.16]",
+      "creation_time": "2022-07-18T22:10:22Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "k20l39v2nrgwlcdgyjev6xjwv",
+      "last_modified": "2025-02-13T00:52:07Z",
+      "workspace_id": 2001,
+      "id": "479023",
+      "path": "00000000056H00C6CX",
+      "name": "Fuel consumption Provide injection quantity [01.01.07.01.03.17]",
+      "creation_time": "2022-07-18T22:10:22Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "dw63rov9mjgz5s3ljv3d5ev2p",
+      "last_modified": "2025-02-13T00:52:07Z",
+      "workspace_id": 2001,
+      "id": "500001",
+      "path": "00000000056H00COHX",
+      "name": "AdBlue functions notification [01.01.07.01.03.18]",
+      "creation_time": "2022-12-19T23:09:24Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "nq3emgrykppvei0yerp714prd",
+      "last_modified": "2025-02-13T00:52:08Z",
+      "workspace_id": 2001,
+      "id": "334074",
+      "path": "00000000056H008GZO",
+      "name": "Prevent unintended deceleration   (DME/DDE-implementation) [01.01.07.01.03.19]",
+      "creation_time": "2021-02-08T23:09:29Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "pdlmv0033ow6kfyg59p58v014",
+      "last_modified": "2025-02-13T00:52:08Z",
+      "workspace_id": 2001,
+      "id": "337595",
+      "path": "00000000056H008K19",
+      "name": "Prevent unintended deceleration   (SGE48/INV-EGS-implementation) [01.01.07.01.03.20]",
+      "creation_time": "2021-02-17T23:12:57Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "6dyzrjppp6zyms62q8ppjrx24",
+      "last_modified": "2025-02-13T00:52:08Z",
+      "workspace_id": 2001,
+      "id": "477031",
+      "path": "00000000056H00C4MB",
+      "name": "Prevent unintended acceleration (DME/DDE-implementation) [01.01.07.01.03.21]",
+      "creation_time": "2022-07-13T22:15:40Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "5zy171d8l0lya889k5pz7pejm",
+      "last_modified": "2025-02-13T00:52:09Z",
+      "workspace_id": 2001,
+      "id": "477033",
+      "path": "00000000056H00C4MD",
+      "name": "Prevent unintended acceleration  (SGE48/INV-EGS-implementation) [01.01.07.01.03.22]",
+      "creation_time": "2022-07-13T22:15:40Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "zjvgwo1r0r615te92zzdk4672",
+      "last_modified": "2025-02-13T00:52:10Z",
+      "workspace_id": 2001,
+      "id": "334082",
+      "path": "00000000056H008GZY",
+      "name": "Prevent unintended deceleration  (DME/DDE-implementation) [01.01.07.01.03.23]",
+      "creation_time": "2021-02-08T23:09:32Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "j56pw0y76z1nquj809y3y407n",
+      "last_modified": "2025-02-13T00:52:10Z",
+      "workspace_id": 2001,
+      "id": "334084",
+      "path": "00000000056H008H00",
+      "name": "Prevent unintended deceleration  (SGE48/INV-EGS-implementation) [01.01.07.01.03.24]",
+      "creation_time": "2021-02-08T23:09:33Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "e4dg015rwg7jltzjel6l1o6pl",
+      "last_modified": "2025-02-13T00:52:11Z",
+      "workspace_id": 2001,
+      "id": "445304",
+      "path": "00000000056H00BB76",
+      "name": "Safety goal standstill (DME/DDE-implementation) [01.01.07.01.03.25]",
+      "creation_time": "2022-03-29T09:03:06Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "yjmdorj8385nqa5512mlk1g3x",
+      "last_modified": "2025-02-13T00:52:11Z",
+      "workspace_id": 2001,
+      "id": "445306",
+      "path": "00000000056H00BB78",
+      "name": "Safety goal standstill (SGE48/INV-EGS-implementation) [01.01.07.01.03.26]",
+      "creation_time": "2022-03-29T09:03:06Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "9pmwz7g4r99oyskj6xjoez8xq",
+      "last_modified": "2025-02-13T00:52:11Z",
+      "workspace_id": 2001,
+      "id": "337602",
+      "path": "00000000056H008K1G",
+      "name": "Safety goal PRND (DME/DDE-implementation) [01.01.07.01.03.27]",
+      "creation_time": "2021-02-17T23:13:00Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "mx69265wj59eqcn90gmemzrp8",
+      "last_modified": "2025-02-13T00:52:12Z",
+      "workspace_id": 2001,
+      "id": "337603",
+      "path": "00000000056H008K1H",
+      "name": "Safety goal PRND (SGE48/INV-EGS-implementation) [01.01.07.01.03.28]",
+      "creation_time": "2021-02-17T23:13:00Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "pdlmv01w6gpp7ao4qmgorz014",
+      "last_modified": "2025-02-13T00:52:13Z",
+      "workspace_id": 2001,
+      "id": "337605",
+      "path": "00000000056H008K1J",
+      "name": "SEV DxE part [01.01.07.01.03.29.01]",
+      "creation_time": "2021-02-17T23:13:01Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "e8d5vq35dlewxfwr7wkp6z67q",
+      "last_modified": "2025-02-13T00:52:13Z",
+      "workspace_id": 2001,
+      "id": "337606",
+      "path": "00000000056H008K1K",
+      "name": "SEV SGR48V part [01.01.07.01.03.29.02]",
+      "creation_time": "2021-02-17T23:13:01Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "91304pnr8nxnrapqm107zgeno",
+      "last_modified": "2025-02-13T00:52:13Z",
+      "workspace_id": 2001,
+      "id": "482831",
+      "path": "00000000056H00C9MX",
+      "name": "Emergency mode combustion engine [01.01.07.01.03.30]",
+      "creation_time": "2022-10-26T22:11:31Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "91304p8pen9m0s0dkrm9xgeno",
+      "last_modified": "2025-02-13T00:52:14Z",
+      "workspace_id": 2001,
+      "id": "482832",
+      "path": "00000000056H00C9MY",
+      "name": "Emergency mode/self protection  48V E-Machine incl. SGR (GEN2), eDKG and KSG [01.01.07.01.03.31]",
+      "creation_time": "2022-10-26T22:11:31Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "qlm0z5orgng7dfgm5k7ny2k7r",
+      "last_modified": "2025-02-13T00:52:14Z",
+      "workspace_id": 2001,
+      "id": "337609",
+      "path": "00000000056H008K1N",
+      "name": "Initial Engine Start [01.01.07.01.03.32]",
+      "creation_time": "2021-02-17T23:13:02Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "3dro49k6rzyeesppdy151wj6e",
+      "last_modified": "2025-02-13T00:52:15Z",
+      "workspace_id": 2001,
+      "id": "334020",
+      "path": "00000000056H008GY4",
+      "name": "thermal degradation [01.01.07.01.03.33]",
+      "creation_time": "2021-02-08T23:08:39Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "pyxj2ypqlgxn8c0lyw0jk2176",
+      "last_modified": "2025-02-13T00:52:15Z",
+      "workspace_id": 2001,
+      "id": "337616",
+      "path": "00000000056H008K1U",
+      "name": "Roll suitable (DxE-part) [01.01.07.01.03.34]",
+      "creation_time": "2021-02-17T23:13:05Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "3o18wky72xjmecq93rj9g2qn7",
+      "last_modified": "2025-02-13T00:52:15Z",
+      "workspace_id": 2001,
+      "id": "482834",
+      "path": "00000000056H00C9N0",
+      "name": "Production mode and transport mode (DxE-part) [01.01.07.01.03.35]",
+      "creation_time": "2022-10-26T22:11:31Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "kmzg6edry1x34to2y813d9081",
+      "last_modified": "2025-02-13T00:52:16Z",
+      "workspace_id": 2001,
+      "id": "385085",
+      "path": "00000000056H009R41",
+      "name": "Application exhaust system [01.01.07.01.03.36]",
+      "creation_time": "2021-07-29T22:18:30Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "64or3vx92ngo7t28vro90p9y0",
+      "last_modified": "2025-02-13T00:52:16Z",
+      "workspace_id": 2001,
+      "id": "474106",
+      "path": "00000000056H00C24A",
+      "name": "Torque interface gear box (engine-part) [01.01.07.01.03.37]",
+      "creation_time": "2022-07-07T22:26:27Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "8wz3okj4l5pjbzpzkdl2rn1j4",
+      "last_modified": "2025-02-13T00:52:17Z",
+      "workspace_id": 2001,
+      "id": "477001",
+      "path": "00000000056H00C4LF",
+      "name": "Switch off generator in case of a crash (VN-supply) [01.01.07.01.03.38]",
+      "creation_time": "2022-07-11T22:09:10Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "5zy171wwk4m92ily85k4xrpej",
+      "last_modified": "2025-02-13T00:52:18Z",
+      "workspace_id": 2001,
+      "id": "477002",
+      "path": "00000000056H00C4LG",
+      "name": "Stop fuel supply in case of a crash [01.01.07.01.03.39]",
+      "creation_time": "2022-07-11T22:09:10Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "gd5y62wn8zgrysr9p1r8n6jqe",
+      "last_modified": "2025-02-13T00:52:17Z",
+      "workspace_id": 2001,
+      "id": "501083",
+      "path": "00000000056H00CPFP",
+      "name": "Remote start [01.01.07.01.03.40]",
+      "creation_time": "2023-01-24T23:09:10Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "2g0p4nv2oepq1syml82w35oql",
+      "last_modified": "2025-02-13T00:52:18Z",
+      "workspace_id": 2001,
+      "id": "535054",
+      "path": "00000000056H00DKSU",
+      "name": "Control the 12V generator when it is close to idle [01.01.07.01.03.41]",
+      "creation_time": "2023-08-25T22:41:01Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "oj1erpjqjvl37tokwlk2wrn25",
+      "last_modified": "2025-02-13T00:52:18Z",
+      "workspace_id": 2001,
+      "id": "581001",
+      "path": "00000000056H00EQK9",
+      "name": "hydrocarbons evaporation [01.01.07.01.03.42]",
+      "creation_time": "2024-06-11T22:30:54Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "6key2j64qeydlukj4n1mdzdj5",
+      "last_modified": "2025-02-13T00:52:19Z",
+      "workspace_id": 2001,
+      "id": "337622",
+      "path": "00000000056H008K22",
+      "name": "drive position selection (E & M-shift) [01.01.07.02.01]",
+      "creation_time": "2021-02-17T23:13:08Z",
+      "score": 7.81,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "7ylpvg39kmeymcpe8w1no2rj3",
+      "last_modified": "2025-02-13T00:52:19Z",
+      "workspace_id": 2001,
+      "id": "337629",
+      "path": "00000000056H008K29",
+      "name": "Stand decoupling & start-upwith clutch [01.01.07.02.02]",
+      "creation_time": "2021-02-17T23:13:10Z",
+      "score": 7.52,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "m831pqdmxqeekbvwx71jlz64e",
+      "last_modified": "2025-02-13T00:52:19Z",
+      "workspace_id": 2001,
+      "id": "437247",
+      "path": "00000000056H00B487",
+      "name": "shift expiry & shift strategie [01.01.07.02.03]",
+      "creation_time": "2022-03-29T09:01:29Z",
+      "score": 7.46,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "6key2jlnryyjet783d54xzdj5",
+      "last_modified": "2025-02-13T00:52:20Z",
+      "workspace_id": 2001,
+      "id": "337681",
+      "path": "00000000056H008K3R",
+      "name": "General funktion gear box [01.01.07.02.04]",
+      "creation_time": "2021-02-17T23:13:33Z",
+      "score": 7.63,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "xl9e4lxx1k3rzi789yzd943nj",
+      "last_modified": "2025-02-13T00:52:21Z",
+      "workspace_id": 2001,
+      "id": "482835",
+      "path": "00000000056H00C9N1",
+      "name": "MSA (EGS-Part) [01.01.07.02.05.01]",
+      "creation_time": "2022-10-26T22:11:31Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "3xr8zn1m5d47diew91g6lvlme",
+      "last_modified": "2025-02-13T00:52:21Z",
+      "workspace_id": 2001,
+      "id": "337619",
+      "path": "00000000056H008K1Z",
+      "name": "MSA-Stop (EGS part) [01.01.07.02.05.02]",
+      "creation_time": "2021-02-17T23:13:07Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "emzr41mnelo5hog39ojo4k37v",
+      "last_modified": "2025-02-13T00:52:21Z",
+      "workspace_id": 2001,
+      "id": "352010",
+      "path": "00000000056H008YH8",
+      "name": "MSA-CoM (EGS-part) [01.01.07.02.05.03]",
+      "creation_time": "2021-03-29T22:16:31Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "vpg1w1d3j69d9s5q0x30qw26y",
+      "last_modified": "2025-02-13T00:52:22Z",
+      "workspace_id": 2001,
+      "id": "332972",
+      "path": "00000000056H008G1A",
+      "name": "stand shift AT gearbox [01.01.07.02.05.04]",
+      "creation_time": "2021-02-08T23:08:20Z",
+      "score": 7.06,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "68orwn2910vnri0lnl5r9wqep",
+      "last_modified": "2025-02-13T00:52:22Z",
+      "workspace_id": 2001,
+      "id": "334219",
+      "path": "00000000056H008H3Z",
+      "name": "Reku gearbox [01.01.07.02.05.05]",
+      "creation_time": "2021-02-08T23:13:19Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "j1dyr694k8501bg7dx70r3kv9",
+      "last_modified": "2025-02-13T00:52:23Z",
+      "workspace_id": 2001,
+      "id": "437248",
+      "path": "00000000056H00B488",
+      "name": "shift sequence [01.01.07.02.05.06]",
+      "creation_time": "2022-03-29T09:01:29Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "70gj21e7g7nwps736dgoxvyxk",
+      "last_modified": "2025-02-13T00:52:23Z",
+      "workspace_id": 2001,
+      "id": "337642",
+      "path": "00000000056H008K2M",
+      "name": "Converter clutch control / K0-regulation [01.01.07.02.05.07]",
+      "creation_time": "2021-02-17T23:13:16Z",
+      "score": 7.45,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "3rgq2wpdn7g77an1gpel7zd6e",
+      "last_modified": "2025-02-13T00:52:23Z",
+      "workspace_id": 2001,
+      "id": "337643",
+      "path": "00000000056H008K2N",
+      "name": "Gear selection shift strategy AGS [01.01.07.02.05.08]",
+      "creation_time": "2021-02-17T23:13:16Z",
+      "score": 6.64,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "qrkjzpp9ee75xbwlr11ggzwg7",
+      "last_modified": "2025-02-13T00:52:24Z",
+      "workspace_id": 2001,
+      "id": "337809",
+      "path": "00000000056H008K7J",
+      "name": "Coordinate the shift strategy in the DCT with the axle hybrid [01.01.07.02.05.09]",
+      "creation_time": "2021-02-17T23:14:47Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "ro3x4ed8v19n3b9kd7892wqjk",
+      "last_modified": "2025-02-13T00:52:25Z",
+      "workspace_id": 2001,
+      "id": "332943",
+      "path": "00000000056H008G0F",
+      "name": "EM/VM start /stop (EGS part) [01.01.07.02.05.10]",
+      "creation_time": "2021-02-08T23:08:07Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "0p5on6ov1y6wrirl3q8d0nk9r",
+      "last_modified": "2025-02-13T00:52:25Z",
+      "workspace_id": 2001,
+      "id": "428041",
+      "path": "00000000056H00AU9F",
+      "name": "Comfort/Response LL-Sailing (EGS part) [01.01.07.02.05.11]",
+      "creation_time": "2022-01-21T23:12:59Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "7dr8kqwml52q6cqjn1jyzklgp",
+      "last_modified": "2025-02-13T00:52:25Z",
+      "workspace_id": 2001,
+      "id": "440740",
+      "path": "00000000056H00B78Y",
+      "name": "Comfort/Response MA-Sailing (EGS part) [01.01.07.02.05.12]",
+      "creation_time": "2022-03-29T09:02:01Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "e8d5vq68nkl04uqngnodkz67q",
+      "last_modified": "2025-02-13T00:52:25Z",
+      "workspace_id": 2001,
+      "id": "337659",
+      "path": "00000000056H008K35",
+      "name": "Sailing speed assistant (EGS part) [01.01.07.02.05.13]",
+      "creation_time": "2021-02-17T23:13:22Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "64k5zmnp97r30t93jm5pn2e7q",
+      "last_modified": "2025-02-13T00:52:26Z",
+      "workspace_id": 2001,
+      "id": "337660",
+      "path": "00000000056H008K36",
+      "name": "PMA (EGS part) [01.01.07.02.05.14]",
+      "creation_time": "2021-02-17T23:13:22Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "9pmwz76j3dm8ghompo647v8xq",
+      "last_modified": "2025-02-13T00:52:27Z",
+      "workspace_id": 2001,
+      "id": "337661",
+      "path": "00000000056H008K37",
+      "name": "race start (gearbox part) [01.01.07.02.05.15]",
+      "creation_time": "2021-02-17T23:13:23Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "vrgxmyj29gk8zf19818kymjqy",
+      "last_modified": "2025-02-13T00:52:27Z",
+      "workspace_id": 2001,
+      "id": "334018",
+      "path": "00000000056H008GY2",
+      "name": "sprint mode [01.01.07.02.05.16]",
+      "creation_time": "2021-02-08T23:08:38Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "1zq345el19rref8z57jr84v0o",
+      "last_modified": "2025-02-13T00:52:28Z",
+      "workspace_id": 2001,
+      "id": "482836",
+      "path": "00000000056H00C9N2",
+      "name": "emergency stop / start (3xSST) (EGS part) [01.01.07.02.05.17]",
+      "creation_time": "2022-10-26T22:11:31Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "mx69265j5yyodux0n0n3lzrp8",
+      "last_modified": "2025-02-13T00:52:28Z",
+      "workspace_id": 2001,
+      "id": "337664",
+      "path": "00000000056H008K3A",
+      "name": "dynamic rev meter [01.01.07.02.05.18]",
+      "creation_time": "2021-02-17T23:13:24Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "95k0wvgd2yegoteln9orewolj",
+      "last_modified": "2025-02-13T00:52:29Z",
+      "workspace_id": 2001,
+      "id": "334075",
+      "path": "00000000056H008GZP",
+      "name": "Prevent unintended deceleration   (EGS-implementation) [01.01.07.02.05.19]",
+      "creation_time": "2021-02-08T23:09:29Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "60mkr9j3g0pw6a115yqx1o5yd",
+      "last_modified": "2025-02-13T00:52:29Z",
+      "workspace_id": 2001,
+      "id": "477032",
+      "path": "00000000056H00C4MC",
+      "name": "Prevent unintended acceleration  (EGS-implementation) [01.01.07.02.05.20]",
+      "creation_time": "2022-07-13T22:15:40Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "nq3emg8epj2y9u55d0233wprd",
+      "last_modified": "2025-02-13T00:52:29Z",
+      "workspace_id": 2001,
+      "id": "334083",
+      "path": "00000000056H008GZZ",
+      "name": "Prevent unintended deceleration (EGS-implementation) [01.01.07.02.05.21]",
+      "creation_time": "2021-02-08T23:09:32Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "d3gjk5z8znxrza8zzxr2zk2zv",
+      "last_modified": "2025-02-13T00:52:30Z",
+      "workspace_id": 2001,
+      "id": "445305",
+      "path": "00000000056H00BB77",
+      "name": "Safety goal standstill (EGS-implementation) [01.01.07.02.05.22]",
+      "creation_time": "2022-03-29T09:03:06Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "81qxmr8ed7n50bro91vqv4vr9",
+      "last_modified": "2025-02-13T00:52:30Z",
+      "workspace_id": 2001,
+      "id": "332863",
+      "path": "00000000056H008FY3",
+      "name": "Safety goal PRND (EGS-implementation) [01.01.07.02.05.23]",
+      "creation_time": "2021-02-08T23:07:38Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "yem7vdjwx49nuq837xmdvl4p8",
+      "last_modified": "2025-02-13T00:52:31Z",
+      "workspace_id": 2001,
+      "id": "337671",
+      "path": "00000000056H008K3H",
+      "name": "SEV LVP/EGS (EGS-parts) [01.01.07.02.05.24.01]",
+      "creation_time": "2021-02-17T23:13:26Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "j95dr1zn5m73ncj1y0dnv2831",
+      "last_modified": "2025-02-13T00:52:30Z",
+      "workspace_id": 2001,
+      "id": "438157",
+      "path": "00000000056H00B50Z",
+      "name": "SEV KSG/eDKG inv. 48V part [01.01.07.02.05.24.02]",
+      "creation_time": "2022-03-29T09:01:28Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "k8zpw8j5jk903ak3qd5k8gl6n",
+      "last_modified": "2025-02-13T00:52:31Z",
+      "workspace_id": 2001,
+      "id": "482837",
+      "path": "00000000056H00C9N3",
+      "name": "Emergency mode Coordinator transmission [01.01.07.02.05.25]",
+      "creation_time": "2022-10-26T22:11:31Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "2dey4nrd0nj55f57op2r6gqom",
+      "last_modified": "2025-02-13T00:52:32Z",
+      "workspace_id": 2001,
+      "id": "482838",
+      "path": "00000000056H00C9N4",
+      "name": "Roll suitable (EGS-part) [01.01.07.02.05.26]",
+      "creation_time": "2022-10-26T22:11:31Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "2dey4nl5nd736fo3225y6gqom",
+      "last_modified": "2025-02-13T00:52:32Z",
+      "workspace_id": 2001,
+      "id": "482839",
+      "path": "00000000056H00C9N5",
+      "name": "Production mode and transport mode (EGS-part) [01.01.07.02.05.27]",
+      "creation_time": "2022-10-26T22:11:31Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "dr96qeo07ovk8s497d9jxpx5y",
+      "last_modified": "2025-02-13T00:52:32Z",
+      "workspace_id": 2001,
+      "id": "474107",
+      "path": "00000000056H00C24B",
+      "name": "Torque interface gear box (gear box-part) [01.01.07.02.05.28]",
+      "creation_time": "2022-07-07T22:26:27Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "0r73mlqz060rztrg3kg7k45zx",
+      "last_modified": "2025-02-13T00:52:32Z",
+      "workspace_id": 2001,
+      "id": "334049",
+      "path": "00000000056H008GYZ",
+      "name": "Implementation of clutch LMV [01.01.07.02.05.29]",
+      "creation_time": "2021-02-08T23:08:50Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "e0w8r3gwg86lqb6jgp8vkop61",
+      "last_modified": "2025-02-13T00:52:34Z",
+      "workspace_id": 2001,
+      "id": "477004",
+      "path": "00000000056H00C4LI",
+      "name": "Implementation of clutch GSD [01.01.07.02.05.30]",
+      "creation_time": "2022-07-11T22:09:10Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "kz6wd1gp593mwhloq3nvwdlmx",
+      "last_modified": "2025-02-13T00:52:33Z",
+      "workspace_id": 2001,
+      "id": "559069",
+      "path": "00000000056H00E7L7",
+      "name": "Provide M eDrive function [01.01.07.02.06]",
+      "creation_time": "2024-02-29T23:36:24Z",
+      "score": 6.93,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "7mj9qzx6or5o5f4jz979l0gzk",
+      "last_modified": "2025-02-13T00:52:34Z",
+      "workspace_id": 2001,
+      "id": "333032",
+      "path": "00000000056H008G32",
+      "name": "Heat management [01.01.07.03.01]",
+      "creation_time": "2021-01-20T23:15:37Z",
+      "score": 8.56,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "9y0jwkzm5rpzoakezjzm7wm2p",
+      "last_modified": "2025-02-13T00:52:35Z",
+      "workspace_id": 2001,
+      "id": "478004",
+      "path": "00000000056H00C5GY",
+      "name": "Colling fluid qunatity warning notification [01.01.07.03.02.01]",
+      "creation_time": "2022-07-18T22:10:23Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "kpyg46285j6q7sm9qvpnex726",
+      "last_modified": "2025-02-13T00:52:35Z",
+      "workspace_id": 2001,
+      "id": "351053",
+      "path": "00000000056H008XN3",
+      "name": "water passage [01.01.07.03.02.02]",
+      "creation_time": "2021-04-07T22:20:35Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "rojvprdx2292va3n5k1e1qke8",
+      "last_modified": "2025-02-13T00:52:35Z",
+      "workspace_id": 2001,
+      "id": "333202",
+      "path": "00000000056H008G82",
+      "name": "General function fuel supply [01.01.07.04.01]",
+      "creation_time": "2021-02-10T23:16:55Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "qrkjzp7eoyx9nae5x33q8zwg7",
+      "last_modified": "2025-02-13T00:52:36Z",
+      "workspace_id": 2001,
+      "id": "337695",
+      "path": "00000000056H008K47",
+      "name": "Fuel quantity and H2 notification [01.01.07.04.02.01]",
+      "creation_time": "2021-02-17T23:13:58Z",
+      "score": 0.1,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "pdze46e73k522hxyvkj52wxg0",
+      "last_modified": "2025-02-13T00:52:36Z",
+      "workspace_id": 2001,
+      "id": "334288",
+      "path": "00000000056H008H60",
+      "name": "General function adBlue supply [01.01.07.05.01]",
+      "creation_time": "2021-02-08T23:14:19Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "3dejy9o7n530nbpzjj1e6y24z",
+      "last_modified": "2025-02-13T00:52:37Z",
+      "workspace_id": 2001,
+      "id": "489258",
+      "path": "00000000056H00CF7Y",
+      "name": "AdBlue functions notification [01.01.07.05.02.01]",
+      "creation_time": "2022-11-25T23:11:17Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "x237mxq9dk0x2cerx53p4g9nz",
+      "last_modified": "2025-02-13T00:52:37Z",
+      "workspace_id": 2001,
+      "id": "334358",
+      "path": "00000000056H008H82",
+      "name": "Braking assistance (E-drive) [01.01.07.06.01.01]",
+      "creation_time": "2021-02-08T23:14:45Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "1dw0zxq9xgynocpeye8xpvg7r",
+      "last_modified": "2025-02-13T00:52:38Z",
+      "workspace_id": 2001,
+      "id": "337768",
+      "path": "00000000056H008K6C",
+      "name": "vmax limiter - EM [01.01.07.06.01.02]",
+      "creation_time": "2021-02-17T23:14:32Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "z580m5grl1jdpfx2d3833423o",
+      "last_modified": "2025-02-13T00:52:38Z",
+      "workspace_id": 2001,
+      "id": "334021",
+      "path": "00000000056H008GY5",
+      "name": "electrical degradation [01.01.07.06.01.03]",
+      "creation_time": "2021-02-08T23:08:39Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "3852411qky59uxeme19e46d0r",
+      "last_modified": "2025-02-13T00:52:39Z",
+      "workspace_id": 2001,
+      "id": "482840",
+      "path": "00000000056H00C9N6",
+      "name": "Emergency mode electric engine [01.01.07.06.01.04]",
+      "creation_time": "2022-10-26T22:11:31Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "3m7dpdy2jkjy6ig1j5537pjw9",
+      "last_modified": "2025-02-13T00:52:39Z",
+      "workspace_id": 2001,
+      "id": "437269",
+      "path": "00000000056H00B48T",
+      "name": "Coordinate the shift strategy in the DCT with the axle hybrid [01.01.07.06.01.05]",
+      "creation_time": "2022-03-29T09:01:29Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "zy6j70gd0vqqmf01vkgvj2de8",
+      "last_modified": "2025-02-13T00:52:40Z",
+      "workspace_id": 2001,
+      "id": "484511",
+      "path": "00000000056H00CB4B",
+      "name": "stand shift electric power train [01.01.07.06.01.06]",
+      "creation_time": "2022-10-21T22:15:51Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "7ylpvg5gjojn4cg935mwozrj3",
+      "last_modified": "2025-02-13T00:52:40Z",
+      "workspace_id": 2001,
+      "id": "337810",
+      "path": "00000000056H008K7K",
+      "name": "thermal degradation [01.01.07.06.01.07]",
+      "creation_time": "2021-02-17T23:14:47Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "xrly7d3lr6jx8igy3dve9nkvz",
+      "last_modified": "2025-02-13T00:52:40Z",
+      "workspace_id": 2001,
+      "id": "431380",
+      "path": "00000000056H00AZ5M",
+      "name": "target torque provision EAM [01.01.07.06.01.08]",
+      "creation_time": "2022-02-22T02:01:24Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "pyxj2yl3r37rpsy8ger6ez176",
+      "last_modified": "2025-02-13T00:52:41Z",
+      "workspace_id": 2001,
+      "id": "337706",
+      "path": "00000000056H008K4I",
+      "name": "HV-Safety [01.01.07.07.01]",
+      "creation_time": "2021-02-17T23:14:10Z",
+      "score": 8.2,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "906o4yxp3nle2udy6jozwlnyr",
+      "last_modified": "2025-02-13T00:52:41Z",
+      "workspace_id": 2001,
+      "id": "482479",
+      "path": "00000000056H00C9CJ",
+      "name": "Coordinate high-voltage conditions [01.01.07.07.02.01]",
+      "creation_time": "2022-10-03T22:42:55Z",
+      "score": 7.36,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "329dwvpyd7kou8rd5m19w1qv5",
+      "last_modified": "2025-02-13T00:52:41Z",
+      "workspace_id": 2001,
+      "id": "482012",
+      "path": "00000000056H00C8YS",
+      "name": "HV energy supply in case of failure [01.01.07.07.02.02]",
+      "creation_time": "2022-10-03T22:42:51Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "12r83m8yd8oxri69drpyong05",
+      "last_modified": "2025-02-13T00:52:42Z",
+      "workspace_id": 2001,
+      "id": "481396",
+      "path": "00000000056H00C8EO",
+      "name": "Emergency mode electric engine [01.01.07.07.02.03]",
+      "creation_time": "2022-10-04T22:11:58Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "pk09eg222j8pdhm82k50136l8",
+      "last_modified": "2025-02-13T00:52:43Z",
+      "workspace_id": 2001,
+      "id": "481397",
+      "path": "00000000056H00C8EP",
+      "name": "electrical degradation [01.01.07.07.02.04]",
+      "creation_time": "2022-10-04T22:11:58Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "m3o5rdevgpqoef6koe9kg2x6y",
+      "last_modified": "2025-02-13T00:52:43Z",
+      "workspace_id": 2001,
+      "id": "438125",
+      "path": "00000000056H00B501",
+      "name": "feedback torsional moment potential EAn [01.01.07.07.02.05]",
+      "creation_time": "2022-03-29T09:01:28Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "rd3xld2qo0qx0iovr4yor94ev",
+      "last_modified": "2025-02-13T00:52:43Z",
+      "workspace_id": 2001,
+      "id": "496072",
+      "path": "00000000056H00CL4C",
+      "name": "Perform autonomous fuel cell system operation [01.01.07.08.01.01]",
+      "creation_time": "2022-12-16T23:14:03Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "1k8mnz8ex4wers5zy73okn3yp",
+      "last_modified": "2025-02-13T00:52:44Z",
+      "workspace_id": 2001,
+      "id": "496071",
+      "path": "00000000056H00CL4B",
+      "name": "Start up and shut down the Fuel Cell System [01.01.07.08.01.02]",
+      "creation_time": "2022-12-16T23:14:03Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "zkw93kdze2ndpuw0kkej4xd4o",
+      "last_modified": "2025-02-13T00:52:45Z",
+      "workspace_id": 2001,
+      "id": "586001",
+      "path": "00000000056H00EUXB",
+      "name": "Set target power for fuel cell system [01.01.07.08.01.03]",
+      "creation_time": "2024-07-12T22:50:26Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "7n8zxjwd1md7zu29z0dyg3mpj",
+      "last_modified": "2025-02-13T00:52:44Z",
+      "workspace_id": 2001,
+      "id": "586002",
+      "path": "00000000056H00EUXC",
+      "name": "Monitor and limit Fuel Cell System emissions [01.01.07.08.01.04]",
+      "creation_time": "2024-07-12T22:50:26Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "68orwn0kye1nu3gpxe0x4qepn",
+      "last_modified": "2025-02-13T00:52:45Z",
+      "workspace_id": 2001,
+      "id": "332167",
+      "path": "00000000056H008FBL",
+      "name": "AC-Charging Typ 1 [01.01.08.01]",
+      "creation_time": "2021-02-08T23:03:17Z",
+      "score": 7.82,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "vd30m8gqlorl6sgx1pdee4q8z",
+      "last_modified": "2025-02-13T00:52:45Z",
+      "workspace_id": 2001,
+      "id": "332264",
+      "path": "00000000056H008FEG",
+      "name": "AC-Charging Typ 2 [01.01.08.02]",
+      "creation_time": "2021-02-08T23:03:55Z",
+      "score": 7.73,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "e0l24dn9yoxdlc3vdl5z8mq8r",
+      "last_modified": "2025-02-13T00:52:46Z",
+      "workspace_id": 2001,
+      "id": "332361",
+      "path": "00000000056H008FHB",
+      "name": "AC-Charging Typ GB/T [01.01.08.03]",
+      "creation_time": "2021-02-08T23:04:33Z",
+      "score": 7.68,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "jrwkywv9kvz8rskj29pn5qpv6",
+      "last_modified": "2025-02-13T00:52:46Z",
+      "workspace_id": 2001,
+      "id": "560009",
+      "path": "00000000056H00E8ET",
+      "name": "Implement AC-charging type NACS [01.01.08.04]",
+      "creation_time": "2024-02-09T23:25:31Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "ypvore4157lzvcg1ekk80d029",
+      "last_modified": "2025-02-13T00:52:47Z",
+      "workspace_id": 2001,
+      "id": "502207",
+      "path": "00000000056H00CQER",
+      "name": "AC-Discharging [01.01.08.05]",
+      "creation_time": "2023-01-27T23:14:00Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "kvye4qq9pyx62ikqpk9k547ro",
+      "last_modified": "2025-02-13T00:52:47Z",
+      "workspace_id": 2001,
+      "id": "332458",
+      "path": "00000000056H008FK6",
+      "name": "DC-Charging Typ 1 [01.01.08.06]",
+      "creation_time": "2021-02-08T23:05:10Z",
+      "score": 7.85,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "5yj94319nzg1xa6pqppvvmqk8",
+      "last_modified": "2025-02-13T00:52:48Z",
+      "workspace_id": 2001,
+      "id": "332555",
+      "path": "00000000056H008FN1",
+      "name": "DC-Charging Typ 2 [01.01.08.07]",
+      "creation_time": "2021-02-08T23:05:45Z",
+      "score": 8.17,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "zjvgwonnylekps8235l38m672",
+      "last_modified": "2025-02-13T00:52:48Z",
+      "workspace_id": 2001,
+      "id": "332652",
+      "path": "00000000056H008FPU",
+      "name": "DC-Charging Typ China (GB/T, GB/T-HPC) [01.01.08.08]",
+      "creation_time": "2021-02-08T23:06:20Z",
+      "score": 7.86,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "v763qmn5076pdf5rjdxwjy2e0",
+      "last_modified": "2025-02-13T00:52:49Z",
+      "workspace_id": 2001,
+      "id": "560013",
+      "path": "00000000056H00E8EZ",
+      "name": "Implement DC-charging type NACS [01.01.08.09]",
+      "creation_time": "2024-02-09T23:25:31Z",
+      "score": 7.52,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "530064",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "qqAidaSynC__BMW_Prod",
+        "name": "qqAidaSynC__BMW_Prod_xeq0jq8qxqr6euk70zxvnjgn9"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "vd30m85ko80ndcz2d7pv1mq8z",
+      "last_modified": "2025-02-13T00:52:49Z",
+      "workspace_id": 2001,
+      "id": "332748",
+      "path": "00000000056H008FSO",
+      "name": "DC-Charging Typ CHAdeMO [01.01.08.10]",
+      "creation_time": "2021-02-08T23:06:55Z",
+      "score": 7.84,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "r0el10lx5z90ju35e4kp619vm",
+      "last_modified": "2025-02-13T00:52:50Z",
+      "workspace_id": 2001,
+      "id": "503015",
+      "path": "00000000056H00CR4J",
+      "name": "DC-Discharging Type CHAdeMO [01.01.08.11]",
+      "creation_time": "2023-02-10T23:08:18Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "k7elz6779ne39u86y1049vn4m",
+      "last_modified": "2025-02-13T00:52:50Z",
+      "workspace_id": 2001,
+      "id": "412016",
+      "path": "00000000056H00AGE4",
+      "name": "Provide charging flap functions [01.01.08.12]",
+      "creation_time": "2021-11-09T01:06:06Z",
+      "score": 7.54,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "qw4z5k92232glcvg7mjvnomvd",
+      "last_modified": "2025-02-13T00:52:50Z",
+      "workspace_id": 2001,
+      "id": "353001",
+      "path": "00000000056H008ZCD",
+      "name": "Provide Acoustic Limitation DC Charging (iDCC) [01.01.08.13]",
+      "creation_time": "2021-04-01T22:18:15Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "3jn4wqxjqzx13uz0vlogz7q0y",
+      "last_modified": "2025-02-13T00:52:51Z",
+      "workspace_id": 2001,
+      "id": "484162",
+      "path": "00000000056H00CAS2",
+      "name": "Calculating thermal requirements for high-voltage storage systems [01.01.08.13.02.01]",
+      "creation_time": "2022-10-03T22:42:53Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "gp9d7lpxxxzesdd045y621e4k",
+      "last_modified": "2025-02-13T00:52:52Z",
+      "workspace_id": 2001,
+      "id": "484166",
+      "path": "00000000056H00CAS6",
+      "name": "feedback torsional moment potential EAn [01.01.08.13.02.04]",
+      "creation_time": "2022-10-03T22:42:53Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "y6vz7vgk8k9g5u1e8ln9d7rxq",
+      "last_modified": "2025-02-13T00:52:52Z",
+      "workspace_id": 2001,
+      "id": "484191",
+      "path": "00000000056H00CASX",
+      "name": "feedback torsonal moment potenial [01.01.08.13.02.04.01]",
+      "creation_time": "2022-10-03T22:42:53Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "km5o2kgkqd0qkiprdogj1706n",
+      "last_modified": "2025-02-13T00:52:52Z",
+      "workspace_id": 2001,
+      "id": "484167",
+      "path": "00000000056H00CAS7",
+      "name": "feedback torsonal moment potenial [01.01.08.13.02.04.01]",
+      "creation_time": "2022-10-03T22:42:53Z",
+      "score": null,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": false,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "kjglr0zd1zew5u5edjl967v65",
+      "last_modified": "2025-02-13T00:52:53Z",
+      "workspace_id": 2001,
+      "id": "477083",
+      "path": "00000000056H00C4NT",
+      "name": "Manage vehicle condition during charging [01.01.08.14]",
+      "creation_time": "2022-07-15T22:10:24Z",
+      "score": 7.82,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "n58yrqexq2lyyuywn1dl5rxmw",
+      "last_modified": "2025-02-13T00:52:53Z",
+      "workspace_id": 2001,
+      "id": "477006",
+      "path": "00000000056H00C4LK",
+      "name": "Manage temperature during charging [01.01.08.15]",
+      "creation_time": "2022-07-11T22:09:10Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "2weqnv2lg42ptzyo639yj7z90",
+      "last_modified": "2025-02-13T00:52:54Z",
+      "workspace_id": 2001,
+      "id": "467189",
+      "path": "00000000056H00BU4T",
+      "name": "Charging display and operate [01.01.08.16]",
+      "creation_time": "2022-05-19T22:11:29Z",
+      "score": 7.75,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "m3ewngmj2m162svrq65zxnjpo",
+      "last_modified": "2025-02-13T00:52:54Z",
+      "workspace_id": 2001,
+      "id": "428001",
+      "path": "00000000056H00AU89",
+      "name": "Provide Incentive Based Charging  [01.01.08.17]",
+      "creation_time": "2022-01-11T01:28:49Z",
+      "score": 7.88,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    },
+    {
+      "type": "product_area",
+      "program": null,
+      "logical_name": "gd5y62p75y98rcnqjgmqg4jqe",
+      "last_modified": "2025-02-13T00:52:55Z",
+      "workspace_id": 2001,
+      "id": "501013",
+      "path": "00000000056H00CPDN",
+      "name": "Provide bidirectional charging [01.01.08.18]",
+      "creation_time": "2023-01-11T23:07:45Z",
+      "score": 7.06,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      },
+      "author": {
+        "type": "workspace_user",
+        "id": "281052",
+        "workspace_id": 2001,
+        "activity_level": 0,
+        "full_name": "QQTEE08",
+        "name": "qqtee08"
+      }
+    },
+    {
+      "type": "product_area",
+      "author": null,
+      "program": null,
+      "logical_name": "3w54zy9goqo8ls7yr57wqjm7y",
+      "last_modified": "2025-02-13T00:52:55Z",
+      "workspace_id": 2001,
+      "id": "320869",
+      "path": "00000000056H0085JB",
+      "name": "Provide Plug & Charge [01.01.08.19]",
+      "creation_time": "2020-11-04T18:25:00Z",
+      "score": 8.82,
+      "shared": false,
+      "is_in_filter": true,
+      "has_children": true,
+      "parent": {
+        "type": "product_area",
+        "id": "6001",
+        "name": "Technology Cluster Propulsion [01.01]"
+      }
+    }
+  ],
+  "exceeds_total_count": false,
+  "total_error_count": 0
+}

@@ -1,0 +1,256 @@
+/* Responsive Design for BMW Quality Dashboard */
+
+/* Desktop and larger screens - ensure Bootstrap grid works */
+@media (min-width: 768px) {
+    .row {
+        display: flex;
+        flex-wrap: wrap;
+        margin-right: -15px;
+        margin-left: -15px;
+    }
+    
+    .col-md-6 {
+        flex: 0 0 50%;
+        max-width: 50%;
+        padding-right: 15px;
+        padding-left: 15px;
+        position: relative;
+        width: 100%;
+    }
+}
+
+/* Mobile devices (phones, 600px and down) */
+@media only screen and (max-width: 600px) {
+    /* Hide sidebar by default on mobile */
+    .sidebar-nav {
+        left: -280px !important;
+        width: 100% !important;
+        max-width: 280px !important;
+    }
+    
+    /* Adjust main content */
+    .main-content-wrapper {
+        margin-left: 0 !important;
+        padding: 10px !important;
+    }
+    
+    /* Make dropdowns full width on mobile */
+    .Select-control {
+        width: 100% !important;
+    }
+    
+    /* Stack filter controls vertically */
+    .filter-container {
+        flex-direction: column !important;
+    }
+    
+    .filter-container > div {
+        width: 100% !important;
+        margin-bottom: 10px !important;
+    }
+    
+    /* Adjust chart containers */
+    .chart-container {
+        width: 100% !important;
+        margin: 10px 0 !important;
+    }
+    
+    /* Ensure Bootstrap grid works on mobile */
+    .col-md-6 {
+        width: 100% !important;
+        float: none !important;
+    }
+    
+    /* Make tables scrollable */
+    .dash-table-container {
+        overflow-x: auto !important;
+    }
+    
+    /* Adjust modal for mobile */
+    .modal-content {
+        width: 95% !important;
+        max-width: 95% !important;
+        margin: 5% auto !important;
+    }
+}
+
+/* Tablet devices (768px and up) */
+@media only screen and (min-width: 601px) and (max-width: 768px) {
+    /* Adjust sidebar for tablet */
+    .sidebar-nav {
+        width: 240px !important;
+    }
+    
+    /* Adjust main content margin */
+    .main-content-wrapper {
+        margin-left: 250px !important;
+        padding: 15px !important;
+    }
+    
+    /* Two-column layout for filters */
+    .filter-container {
+        display: flex !important;
+        flex-wrap: wrap !important;
+    }
+    
+    .filter-container > div {
+        width: 48% !important;
+        margin: 1% !important;
+    }
+    
+    /* Adjust chart sizes */
+    .chart-container {
+        width: 100% !important;
+        margin: 15px 0 !important;
+    }
+}
+
+/* Desktop devices (769px and up) */
+@media only screen and (min-width: 769px) {
+    /* Default desktop styles */
+    .sidebar-nav {
+        width: 280px !important;
+    }
+    
+    .main-content-wrapper {
+        margin-left: 300px !important;
+        padding: 20px !important;
+    }
+    
+    /* Multi-column layout for filters */
+    .filter-container {
+        display: flex !important;
+        flex-wrap: wrap !important;
+    }
+    
+    .filter-container > div {
+        width: 23% !important;
+        margin: 1% !important;
+    }
+    
+    /* Optimal chart layout */
+    .chart-container {
+        width: 100% !important;
+        margin: 20px 0 !important;
+    }
+}
+
+/* Large screens (1200px and up) */
+@media only screen and (min-width: 1200px) {
+    /* Wider main content */
+    .main-content-wrapper {
+        margin-left: 300px !important;
+        padding: 30px !important;
+        max-width: 1400px !important;
+    }
+    
+    /* Better spacing for large screens */
+    .chart-container {
+        margin: 30px 0 !important;
+    }
+    
+    /* Larger text for better readability */
+    .dash-table-container {
+        font-size: 14px !important;
+    }
+}
+
+/* Print styles */
+@media print {
+    .sidebar-nav,
+    .nav-toggle-btn,
+    .nav-edge-bar,
+    .nav-overlay {
+        display: none !important;
+    }
+    
+    .main-content-wrapper {
+        margin-left: 0 !important;
+        padding: 0 !important;
+    }
+    
+    .chart-container {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+    }
+}
+
+/* Common responsive improvements */
+.responsive-container {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.responsive-table {
+    min-width: 100%;
+    width: auto;
+}
+
+.responsive-chart {
+    width: 100%;
+    height: auto;
+    min-height: 400px;
+}
+
+/* 修复图表拉伸问题 */
+.js-plotly-plot {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+.plotly {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* 图表容器样式 */
+.chart-wrapper {
+    width: 100%;
+    max-width: 100%;
+    margin: 20px 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* 确保图表在容器中正确显示 */
+.main-content-wrapper .js-plotly-plot {
+    width: 100% !important;
+    max-width: calc(100vw - 340px) !important; /* 减去侧边栏宽度和边距 */
+}
+
+/* 当侧边栏关闭时的图表宽度 */
+.main-content-wrapper.sidebar-closed .js-plotly-plot {
+    max-width: calc(100vw - 40px) !important; /* 只减去内容边距 */
+}
+
+/* Utility classes for responsive design */
+.mobile-only {
+    display: none;
+}
+
+.desktop-only {
+    display: block;
+}
+
+@media only screen and (max-width: 768px) {
+    .mobile-only {
+        display: block;
+    }
+    
+    .desktop-only {
+        display: none;
+    }
+}
+
+/* Improved touch targets for mobile */
+@media only screen and (max-width: 768px) {
+    button, .btn {
+        min-height: 44px !important;
+        padding: 12px 16px !important;
+    }
+    
+    .Select-control {
+        min-height: 44px !important;
+    }
+}
