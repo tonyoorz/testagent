@@ -39,6 +39,12 @@ webdriver-manager>=4.0.0
 openai>=1.0.0  # For DeepSeek API compatibility
 mcp>=0.1.0     # Model Context Protocol for enhanced AI capabilities
 
+# Code Interpreter Agent API
+fastapi>=0.109.0
+uvicorn>=0.27.0
+pydantic>=2.0.0
+sse-starlette>=1.8.0  # Server-Sent Events support
+
 # MCP Servers (most useful for data analysis project)
 mcp-server-filesystem @ git+https://github.com/modelcontextprotocol/server-filesystem.git  # File system access for code analysis
 mcp-server-sqlite @ git+https://github.com/modelcontextprotocol/server-sqlite.git        # SQLite database queries
