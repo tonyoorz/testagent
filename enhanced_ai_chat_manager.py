@@ -65,6 +65,8 @@ try:
         create_agent,
         create_agent_for_defect,
         create_agent_for_test,
+        create_agent_with_smart_loading,
+        SmartAgent,
         ToolExecutor
     )
     AGENT_AVAILABLE = True
@@ -73,6 +75,22 @@ except ImportError as e:
     AGENT_AVAILABLE = False
     print(f"⚠️ 智能Agent系统不可用: {e}")
     IntelligentAgent = None
+    SmartAgent = None
+
+# 导入智能数据加载器
+try:
+    from smart_data_loader import (
+        SmartDataLoader,
+        DataLoaderAdapter,
+        LoaderConfig,
+        create_smart_loader,
+        create_data_loader_adapter
+    )
+    SMART_LOADER_AVAILABLE = True
+    print("✅ 智能数据加载器已加载")
+except ImportError as e:
+    SMART_LOADER_AVAILABLE = False
+    print(f"⚠️ 智能数据加载器不可用: {e}")
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -86,7 +104,14 @@ logger = logging.getLogger(__name__)
 class EnhancedAIChatManager:
     """增强版 AI Chat Manager - 集成智能 Agent 能力"""
 
-    def __init__(self, dashboard_type: str = 'general', use_agent: bool = True, assistant_name: Optional[str] = None):
+    def __init__(
+        self, 
+        dashboard_type: str = 'general', 
+        use_agent: bool = True, 
+        assistant_name: Optional[str] = None,
+        use_smart_loading: bool = True,
+        db_path: str = ""
+    ):
         """
         初始化增强版 AI Chat Manager
 
@@ -94,9 +119,14 @@ class EnhancedAIChatManager:
             dashboard_type: 看板类型 ('defect', 'test', 'general')
             use_agent: 是否使用智能 Agent 系统
             assistant_name: 助手展示名（例如：SiSi）
+            use_smart_loading: 是否使用智能数据加载
+            db_path: 数据库路径（用于智能加载）
         """
         self.dashboard_type = dashboard_type
         self.use_agent = use_agent and AGENT_AVAILABLE
+        self.use_smart_loading = use_smart_loading and SMART_LOADER_AVAILABLE
+        self.db_path = db_path
+        
         if assistant_name:
             self.assistant_name = assistant_name
         else:
@@ -110,11 +140,32 @@ class EnhancedAIChatManager:
             logger.error(f"DeepSeek聊天机器人初始化失败: {e}")
             self.chatbot = None
 
-        # 初始化智能 Agent
+        # 初始化智能数据加载器
+        if self.use_smart_loading:
+            try:
+                self.smart_loader = create_smart_loader(db_path=db_path)
+                logger.info("✅ 智能数据加载器初始化成功")
+            except Exception as e:
+                logger.warning(f"⚠️ 智能数据加载器初始化失败: {e}")
+                self.smart_loader = None
+                self.use_smart_loading = False
+        else:
+            self.smart_loader = None
+
+        # 初始化智能 Agent（优先使用 SmartAgent）
         if self.use_agent:
             try:
-                self.intelligent_agent = create_agent(dashboard_type)
-                logger.info(f"智能Agent初始化成功 (类型: {dashboard_type})")
+                if self.use_smart_loading and SmartAgent:
+                    # 使用带智能加载的 Agent
+                    self.intelligent_agent = create_agent_with_smart_loading(
+                        dashboard_type, 
+                        db_path
+                    )
+                    logger.info(f"智能Agent V2 初始化成功 (类型: {dashboard_type}, 智能加载: True)")
+                else:
+                    # 使用传统 Agent
+                    self.intelligent_agent = create_agent(dashboard_type)
+                    logger.info(f"智能Agent 初始化成功 (类型: {dashboard_type})")
             except Exception as e:
                 logger.error(f"智能Agent初始化失败: {e}")
                 self.use_agent = False
