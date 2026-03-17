@@ -1,0 +1,5 @@
+{
+  "schema_version": "1.0",
+  "catalog_version": "0.1.0",
+  "description": "Semantic catalog for datasets, metrics, and charts. This catalog is read-only at runtime and must not change existing dashboard data outputs."
+}

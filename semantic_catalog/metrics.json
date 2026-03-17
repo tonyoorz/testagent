@@ -1,0 +1,406 @@
+{
+  "schema_version": "1.0",
+  "metrics": [
+    {
+      "id": "topissue_risk_score",
+      "name": "TopIssue Risk Score",
+      "description": "用于评估TopIssue缺陷风险强度的综合评分，包含matrix严重度、classification、ECU/Domain转移、父子复杂度、处理周期与推迟修复等维度，并做非线性组合。",
+      "formula_reference": "data_processor.calculate_topissue_risk_score",
+      "inputs": [
+        "matrix",
+        "classification",
+        "ecu_pingpong_count",
+        "domain_pingpong_count",
+        "parent_child",
+        "child_count",
+        "processing_days",
+        "shift_pu_status"
+      ],
+      "business_meaning": [
+        "分数越高表示风险越高，通常需要优先关注与资源倾斜",
+        "用于排序、筛选高风险票，并辅助识别长期票/反复转派/复杂父子结构等问题"
+      ],
+      "misuse_risks": [
+        "评分是规则/口径模型，不等价于缺陷真实影响；需要结合严重度与业务背景解释",
+        "不同时间段/项目间对比前需确认评分口径是否一致、字段覆盖率是否一致"
+      ],
+      "recommended_checks": [
+        "输出时给出评分分布（P50/P90/TopN）与关键驱动维度",
+        "若评分依赖字段缺失率高（如classification为空），应提示结论可信度受限"
+      ],
+      "output": {
+        "name": "risk_score",
+        "type": "number",
+        "range_hint": "0-100 (approx)"
+      }
+    },
+    {
+      "id": "processing_cycle_days",
+      "name": "Processing Cycle Days",
+      "description": "缺陷处理周期天数：从创建到当前阶段（或关键状态迁移）的耗时，来自历史记录计算。",
+      "formula_reference": "data_processor.calculate_processing_cycle_days",
+      "inputs": ["defect_id", "status_phase", "creation_time"],
+      "business_meaning": [
+        "用于识别Long Runner/处理效率瓶颈",
+        "用于比较不同项目/团队/域的处理效率差异（需保证阶段口径一致）"
+      ],
+      "misuse_risks": [
+        "如果历史数据不完整或阶段定义变化，会导致周期偏差",
+        "不同状态阶段的周期含义不同，比较前要锁定同一阶段或同一生命周期段"
+      ],
+      "recommended_checks": [
+        "输出时说明使用的阶段口径与历史数据来源（文件/DB）",
+        "当仅有少量票有历史数据时提示样本量不足"
+      ],
+      "output": {
+        "name": "processing_cycle_days",
+        "type": "number",
+        "unit": "days"
+      }
+    },
+    {
+      "id": "inflow_outflow_trends",
+      "name": "Inflow/Outflow Trends",
+      "description": "按时间（周）统计缺陷流入（新增）与流出（结案/完成）的趋势，并提供净流入、累积存量等衍生指标。",
+      "formula_reference": "data_processor.calculate_inflow_outflow_trends",
+      "inputs": ["history_dir", "date_range_weeks"],
+      "business_meaning": [
+        "评估缺陷处理能力是否跟上发现速度",
+        "识别周期性峰值与资源调整窗口"
+      ],
+      "misuse_risks": [
+        "需要明确“流出”的定义（结案/验证通过/关闭等），否则容易误解",
+        "短时间窗口波动大，不能过度解读单周变化"
+      ],
+      "recommended_checks": [
+        "若仅覆盖少量周或版本，自动提示统计意义有限并建议拉长窗口",
+        "输出时附带窗口范围与定义说明"
+      ],
+      "output": {
+        "name": "inflow_outflow",
+        "type": "timeseries"
+      }
+    },
+    {
+      "id": "child_complexity",
+      "name": "Child Ticket Complexity",
+      "description": "基于Master票据下关联的Child票据数量进行复杂度分级。",
+      "formula_reference": "defect_explore.categorize_defect_level_hr",
+      "inputs": ["child_count_of_master"],
+      "business_meaning": [
+        "评估需求的拆解粒度与实现复杂度",
+        "High Complexity (>=5) 可能暗示模块耦合度高或需求拆分过细"
+      ],
+      "misuse_risks": [
+        "子票数量多不一定代表技术复杂，可能是管理规范要求",
+        "不同团队对子票的使用习惯不同，横向对比需谨慎"
+      ],
+      "recommended_checks": [
+        "结合项目背景解读（某些项目强制要求细粒度拆票）"
+      ],
+      "output": {
+        "name": "defect_level",
+        "type": "category",
+        "values": ["Low", "Medium", "High"]
+      }
+    },
+    {
+      "id": "parent_complexity",
+      "name": "Parent Ticket Complexity",
+      "description": "基于Child票据关联的Master票据（Parent）数量进行复杂度分级。",
+      "formula_reference": "defect_explore.count_linked_defects_hr",
+      "inputs": ["relation_to_udf"],
+      "business_meaning": [
+        "评估缺陷的跨模块/跨层级影响范围",
+        "High Complexity (>=5) 暗示该缺陷涉及多个Master Feature或System Function"
+      ],
+      "misuse_risks": [
+        "关联关系可能维护不全",
+        "误将重复关联计入复杂度"
+      ],
+      "recommended_checks": [
+        "检查关联关系的有效性"
+      ],
+      "output": {
+        "name": "master_linked_defect_level",
+        "type": "category",
+        "values": ["Low", "Medium", "High"]
+      }
+    },
+    {
+      "id": "tester_defect_count",
+      "name": "Tester Defect Count",
+      "description": "按 tester 统计缺陷数量（可按严重度分层），用于衡量测试活动产出结构。",
+      "formula_reference": "defect_explore / intelligent_agent.defect_explore_dashboard",
+      "inputs": ["tester", "severity_group"],
+      "calculation": {
+        "group_by": ["tester"],
+        "value": "count(*)",
+        "notes": [
+          "可进一步按 severity_group 分层：groupby(['tester','severity_group']).size()",
+          "Top N 通常取 tester 的 value_counts().head(15)"
+        ]
+      },
+      "null_handling": {
+        "tester": "清洗阶段缺失会被置为\"\"；建议在展示时过滤空字符串分组",
+        "severity_group": "若缺失则退化为仅按 tester 计数"
+      },
+      "business_meaning": [
+        "识别核心测试贡献者与资源分布是否均衡",
+        "辅助判断测试强度变化（需结合趋势与覆盖域）"
+      ],
+      "misuse_risks": [
+        "缺陷数量不等价于效率或质量，可能受模块难度/分配策略/阶段影响",
+        "不可直接作为绩效单指标，需结合严重度与有效缺陷率"
+      ],
+      "recommended_checks": [
+        "同时输出严重度分层（Critical Issues vs General Issues）",
+        "过滤 tester 为空的分组并提示空值占比"
+      ],
+      "output": {
+        "name": "defect_count",
+        "type": "number"
+      }
+    },
+    {
+      "id": "tester_severe_rate",
+      "name": "Tester Severe Rate",
+      "description": "按 tester 计算严重缺陷率（Severe Defect Rate），用于衡量发现高风险问题的能力结构。",
+      "formula_reference": "analysis_utils.severity_rate_by",
+      "inputs": ["tester", "severity_group"],
+      "calculation": {
+        "group_by": ["tester"],
+        "numerator": "count(severity_group contains 'critical')",
+        "denominator": "count(*)",
+        "output": "numerator/denominator*100",
+        "notes": [
+          "severity_group 优先使用已映射的字段；若无则用 severity 字符串包含 'critical' 的规则退化"
+        ]
+      },
+      "null_handling": {
+        "tester": "severity_rate_by 会过滤空字符串分组；分母为0时返回0.0"
+      },
+      "business_meaning": [
+        "识别更擅长捕获高风险问题的测试力量",
+        "用于团队结构分析与培训/review 方向"
+      ],
+      "misuse_risks": [
+        "严重度判定口径不一致会导致不可比",
+        "高 severe_rate 可能来自小样本（分母很小），需要同时展示分母"
+      ],
+      "recommended_checks": [
+        "输出 severe_rate 同时给出 total_count（分母）",
+        "样本量不足时自动提示（如 <30 条）"
+      ],
+      "output": {
+        "name": "severe_rate",
+        "type": "percentage",
+        "unit": "%"
+      }
+    },
+    {
+      "id": "tester_efficiency",
+      "name": "Tester Efficiency (Deprecated)",
+      "description": "历史兼容项：建议改用 tester_defect_count（数量）与 tester_severe_rate（质量结构）。",
+      "formula_reference": "alias_of: tester_defect_count",
+      "alias_of": "tester_defect_count",
+      "deprecated": true,
+      "inputs": ["tester", "severity_group"],
+      "output": {
+        "name": "defect_count",
+        "type": "number"
+      }
+    },
+    {
+      "id": "blocking_reason_count",
+      "name": "Blocking Reason Distribution",
+      "description": "统计阻塞原因分布（Blocking Reason），用于识别阻碍测试/修复推进的主要外部因素。",
+      "formula_reference": "defect_explore (blocking_reason 优先；否则 blocking_reason_udf 提取 name)",
+      "inputs": ["blocking_reason", "blocking_reason_udf"],
+      "calculation": {
+        "group_by": ["blocking_reason"],
+        "value": "count(*)",
+        "notes": [
+          "若只有 blocking_reason_udf：提取 name；为空时可能会映射为“未知原因”（某些页面）",
+          "清洗后的 blocking_reason 缺失通常为 \"\""
+        ]
+      },
+      "null_handling": {
+        "blocking_reason": "建议统一将空字符串视为未阻塞，并在展示时过滤或单列为“未填写”",
+        "mixed_source": "不同页面可能对空值处理不同（\"\" vs \"未知原因\"），横向对比需注明"
+      },
+      "business_meaning": [
+        "识别 Top 阻塞因素（环境/数据/第三方/依赖团队）",
+        "用于推动跨团队问题闭环"
+      ],
+      "misuse_risks": [
+        "字段填写口径不严格，存在大量 Other/空值导致分布失真",
+        "未区分短期阻塞与长期阻塞，需结合处理周期"
+      ],
+      "recommended_checks": [
+        "输出 Top 3 原因 + 空值占比",
+        "对“未知原因/空值”占比过高给出数据质量提示"
+      ],
+      "output": {
+        "name": "blocking_reason_count",
+        "type": "number"
+      }
+    },
+    {
+      "id": "blocked_defects_count",
+      "name": "Blocked Defects Count",
+      "description": "阻塞缺陷数：blocking_reason 非空的缺陷数量（按项目/时间窗口可过滤）。",
+      "formula_reference": "defect_explore project_stats",
+      "inputs": ["blocking_reason"],
+      "calculation": {
+        "numerator": "count(blocking_reason != '' and blocking_reason is not null)",
+        "notes": [
+          "清洗阶段 blocking_reason 缺失通常为 \"\"，因此条件等价于 blocking_reason != ''"
+        ]
+      },
+      "output": {
+        "name": "blocked_defects",
+        "type": "number"
+      }
+    },
+    {
+      "id": "severe_defects_count",
+      "name": "Severe Defects Count",
+      "description": "严重缺陷数：severity_group == 'Critical Issues' 的缺陷数量。",
+      "formula_reference": "defect_explore is_severe_defect + severity_group",
+      "inputs": ["matrix", "classification", "severity_group"],
+      "calculation": {
+        "severe_definition": {
+          "matrix": ["Matrix-1A", "Matrix-1B", "Matrix-1C", "Matrix-1D", "Matrix-1E", "Matrix-2A", "Matrix-2B", "Matrix-2C", "Matrix-3A"],
+          "classification_any_of": [
+            "Showstopper_Candidate",
+            "Showstopper_Confirmed",
+            "Preventing Maturity Grade ConDrive",
+            "Obstructing Maturity Grade ConDrive"
+          ],
+          "rule": "matrix in severe_matrices OR classification intersects severe_classifications"
+        },
+        "numerator": "count(severity_group == 'Critical Issues')"
+      },
+      "misuse_risks": [
+        "严重判定依赖 matrix/classification 字段完整性；缺失会低估严重缺陷数"
+      ],
+      "recommended_checks": [
+        "输出 severe_matrices/classification 字段缺失率，并提示可能低估"
+      ],
+      "output": {
+        "name": "severe_defects",
+        "type": "number"
+      }
+    },
+    {
+      "id": "severe_rate",
+      "name": "Severe Defect Rate",
+      "description": "严重缺陷率：严重缺陷数 / 总缺陷数 × 100（严重缺陷按 severity_group='Critical Issues' 口径）。",
+      "formula_reference": "defect_explore project_stats / testing_kpi_cards",
+      "inputs": ["severity_group", "matrix", "classification"],
+      "calculation": {
+        "numerator": "severe_defects_count",
+        "denominator": "count(*)",
+        "output": "numerator/denominator*100",
+        "zero_denominator": "0"
+      },
+      "misuse_risks": [
+        "该口径并非“Critical+Major”字面含义，而是按 matrix/classification 规则划分的 Critical Issues",
+        "严重度规则若不同页面/版本不一致会导致不可比"
+      ],
+      "recommended_checks": [
+        "与 total_defects 同时输出（避免小样本误导）",
+        "提示 severe 判定口径（Matrix/Classification）"
+      ],
+      "output": {
+        "name": "severe_rate",
+        "type": "percentage",
+        "unit": "%"
+      }
+    },
+    {
+      "id": "resolution_rate",
+      "name": "Resolution Rate",
+      "description": "解决率：已解决缺陷数 / 总缺陷数 × 100。",
+      "formula_reference": "defect_explore project_stats",
+      "inputs": ["status_phase"],
+      "calculation": {
+        "resolved_statuses": ["06-Resolved", "07-Closed", "08-Verified"],
+        "numerator": "count(status_phase in resolved_statuses)",
+        "denominator": "count(*)",
+        "output": "numerator/denominator*100",
+        "zero_denominator": "0"
+      },
+      "misuse_risks": [
+        "不同团队状态流转定义可能不同，需确认 resolved_statuses 是否一致",
+        "未区分“已解决但未验证”与“已关闭”，在质量门禁场景需拆分"
+      ],
+      "recommended_checks": [
+        "输出 resolved_statuses 定义",
+        "同时输出 resolved_defects_count（分子）与 total_defects（分母）"
+      ],
+      "output": {
+        "name": "resolution_rate",
+        "type": "percentage",
+        "unit": "%"
+      }
+    },
+    {
+      "id": "aida_coverage_count",
+      "name": "AIDA Coverage Count",
+      "description": "AIDA 覆盖数：aida_english 的去重计数，用于衡量缺陷暴露领域的覆盖广度。",
+      "formula_reference": "defect_explore project_stats",
+      "inputs": ["aida_english"],
+      "calculation": {
+        "value": "nunique(aida_english)",
+        "notes": [
+          "空值/Unknown 会影响覆盖数解读；建议同时输出空值占比"
+        ]
+      },
+      "output": {
+        "name": "aida_coverage",
+        "type": "number"
+      }
+    },
+    {
+      "id": "avg_resolution_time_days",
+      "name": "Average Resolution Time (Days)",
+      "description": "平均解决耗时（天）：对已解决缺陷计算 modified_on - creation_time 的平均天数。",
+      "formula_reference": "defect_explore project_stats",
+      "inputs": ["creation_time", "modified_on", "status_phase"],
+      "calculation": {
+        "filter": "status_phase in resolved_statuses",
+        "value": "mean((modified_on - creation_time).days)",
+        "fallback": "若字段缺失/解析失败则返回 0"
+      },
+      "misuse_risks": [
+        "modified_on 不一定等于真正解决时间（可能是最后一次修改时间），会偏大或偏小",
+        "仅统计 resolved_statuses 内样本；样本过少时均值不稳"
+      ],
+      "recommended_checks": [
+        "输出样本量 resolved_defects_count",
+        "输出分位数（P50/P90）优于仅均值"
+      ],
+      "output": {
+        "name": "avg_resolution_time",
+        "type": "number",
+        "unit": "days"
+      }
+    },
+    {
+      "id": "severity_rate",
+      "name": "Severity Rate (Deprecated)",
+      "description": "历史兼容项：代码实现口径更接近 severe_rate（Critical Issues 规则），建议改用 severe_rate。",
+      "formula_reference": "alias_of: severe_rate",
+      "alias_of": "severe_rate",
+      "deprecated": true,
+      "inputs": ["severity_group", "matrix", "classification"],
+      "output": {
+        "name": "severe_rate",
+        "type": "percentage",
+        "unit": "%"
+      }
+    }
+  ]
+}

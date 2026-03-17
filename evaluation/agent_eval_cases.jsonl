@@ -1,0 +1,5 @@
+{"id":"defect_trend_short_window","dashboard_type":"defect_explore","question":"最近两周缺陷趋势如何？能否下结论说问题在恶化？","data_profile":"defects_short_window"}
+{"id":"defect_inflow_outflow","dashboard_type":"defect_explore","question":"请解释 inflow/outflow 看板该怎么解读，最近是否在积压？","data_profile":"defects_inflow_outflow"}
+{"id":"test_case_failure_rate","dashboard_type":"defect_explore","question":"测试哪些case容易出错 top 5？","data_profile":"tests_basic"}
+{"id":"comparison_need_clarify","dashboard_type":"defect_explore","question":"请对比不同项目的质量差异","data_profile":"defects_multi_project"}
+{"id":"implicit_followup_with_last_week","dashboard_type":"defect_explore","question":"最近这批问题是谁先发现的，主要卡在哪？","data_profile":"defects_short_window"}

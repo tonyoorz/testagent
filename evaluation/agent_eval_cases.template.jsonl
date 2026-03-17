@@ -1,0 +1,3 @@
+{"id":"example_defect_semantics_alignment","dashboard_type":"defect_explore","question":"请输出当前数据集的语义覆盖率与缺失项对齐报告（口径对账）","data_profile":"defects_short_window"}
+{"id":"example_defect_chart_semantics","dashboard_type":"defect_explore","question":"defect explore 里 FV/AIDA 图表怎么解读？异常信号有哪些？","data_profile":"defects_inflow_outflow"}
+{"id":"example_test_semantics_alignment","dashboard_type":"defect_explore","question":"请解释测试数据的关键字段口径，并提示可能的误用风险","data_profile":"tests_basic"}

@@ -1,0 +1,47 @@
+# Local Git metadata and editor state
+.git/
+.idea/
+.vscode/
+.trae/
+
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build, test, and runtime artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Local databases and SQLite sidecars
+*.db
+*.db-shm
+*.db-wal
+
+# OS-specific junk
+.DS_Store
+._*
+
+# Credentials and local auth material
+cookie.txt
+login_info.txt
+
+# Large local data and generated content
+cache/
+qgate_cache/
+defect/
+aida/
+mr/
+history/
+database/
+backups/
+notebooks/

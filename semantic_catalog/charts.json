@@ -1,0 +1,313 @@
+{
+  "schema_version": "1.0",
+  "charts": [
+    {
+      "id": "fv-distribution-chart",
+      "dashboard": "defect_explore",
+      "name": "Top Issue by FV",
+      "aliases": ["fv分布", "FV分布", "功能变体分布", "Top FV", "fv top"],
+      "description": "按FV聚合TopIssue数量/风险的分布图，用于定位高贡献FV。",
+      "expected_focus": [
+        "头部FV集中度（TopN占比）",
+        "是否存在单一FV异常突增"
+      ],
+      "abnormal_signals": [
+        "单个FV贡献过高且集中在高严重度/高风险票",
+        "FV分布突然从长尾变为高度集中"
+      ],
+      "related_dimensions": ["fv", "severity", "project", "aida_english"],
+      "related_metrics": ["topissue_risk_score"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "defect-status-chart",
+      "dashboard": "defect_explore",
+      "name": "Top Issue by AIDA",
+      "aliases": ["AIDA分布", "产品域分布", "领域分布", "Top AIDA", "aida top"],
+      "description": "按AIDA聚合TopIssue分布，用于识别问题域集中与覆盖缺口。",
+      "expected_focus": [
+        "Top AIDA是否与项目关注域一致",
+        "Unknown/空AIDA占比是否过高"
+      ],
+      "abnormal_signals": [
+        "Unknown/空AIDA显著增加，提示数据质量或映射问题",
+        "单一AIDA在短期内显著上升，提示系统性回归"
+      ],
+      "related_dimensions": ["aida_english", "project", "fv", "pu"],
+      "related_metrics": ["topissue_risk_score"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "solution-cluster-chart",
+      "dashboard": "defect_explore",
+      "name": "Top Issue by Solution Cluster",
+      "description": "按Solution Cluster/Domain聚合缺陷分布，用于识别跨域问题与责任聚集。",
+      "expected_focus": [
+        "Top cluster是否与当前迭代重点一致",
+        "高风险票是否集中在少数cluster"
+      ],
+      "abnormal_signals": [
+        "高风险票在某cluster集中且处理周期偏长",
+        "cluster频繁变化（需要结合转派路径）"
+      ],
+      "related_dimensions": ["domain", "status_phase", "project"],
+      "related_metrics": ["topissue_risk_score", "processing_cycle_days"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "project-defect-volume-chart",
+      "dashboard": "defect_explore",
+      "name": "项目缺陷总量对比",
+      "description": "项目维度缺陷总量对比，用于识别缺陷负载差异。",
+      "expected_focus": [
+        "项目间缺陷负载差异是否与测试投入匹配",
+        "是否存在异常高负载项目"
+      ],
+      "abnormal_signals": [
+        "某项目缺陷总量显著偏高且增长趋势持续",
+        "项目间差异主要由单一AIDA/FV驱动"
+      ],
+      "related_dimensions": ["project", "aida_english", "fv"],
+      "related_metrics": [],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "project-severity-rate-chart",
+      "dashboard": "defect_explore",
+      "name": "项目严重缺陷率对比",
+      "description": "对比项目严重缺陷率（severe_rate，按Matrix/Classification规则划分Critical Issues），关注质量风险暴露。",
+      "expected_focus": [
+        "严重缺陷占比是否异常偏高",
+        "严重判定口径是否一致（Matrix/Classification）"
+      ],
+      "abnormal_signals": [
+        "某项目 severe_rate 突然上升",
+        "Matrix/Classification缺失导致严重缺陷率被低估"
+      ],
+      "related_dimensions": ["project", "severity"],
+      "related_metrics": ["severe_rate"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "project-status-distribution-chart",
+      "dashboard": "defect_explore",
+      "name": "项目缺陷状态分布对比",
+      "description": "对比项目在不同状态阶段的存量分布，用于识别流程瓶颈。",
+      "expected_focus": [
+        "某阶段堆积是否明显（如In Analysis/In Progress）",
+        "与处理周期是否一致"
+      ],
+      "abnormal_signals": [
+        "某项目在单一阶段长期堆积",
+        "阶段分布异常但周期数据不足，需提示可信度"
+      ],
+      "related_dimensions": ["project", "status_phase"],
+      "related_metrics": ["processing_cycle_days"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "project-aida-coverage-chart",
+      "dashboard": "defect_explore",
+      "name": "项目AIDA领域覆盖度对比",
+      "description": "项目维度AIDA覆盖情况，用于发现测试覆盖/缺陷暴露的领域差异（需区分数据缺失与真实为0）。",
+      "expected_focus": [
+        "覆盖度是否过窄（集中在少数AIDA）",
+        "Unknown占比与映射质量"
+      ],
+      "abnormal_signals": [
+        "覆盖度突然下降，可能是字段缺失或映射异常",
+        "覆盖度偏窄但缺陷总量高，提示系统性问题"
+      ],
+      "related_dimensions": ["project", "aida_english"],
+      "related_metrics": [],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "project-trend-comparison-chart",
+      "dashboard": "defect_explore",
+      "name": "项目缺陷发现趋势对比",
+      "description": "按时间对比不同项目缺陷趋势（通常基于creation_time），用于识别近期回归与峰值。",
+      "expected_focus": [
+        "近期趋势是否抬升",
+        "峰值是否与版本/活动相关"
+      ],
+      "abnormal_signals": [
+        "短窗口内趋势结论过强（需提示版本数/周数不足）",
+        "趋势由单一AIDA/FV驱动，需要下钻"
+      ],
+      "related_dimensions": ["project", "test_week"],
+      "related_metrics": [],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "inflow-outflow-chart",
+      "dashboard": "defect_explore",
+      "name": "Inflow/Outflow",
+      "description": "缺陷流入/流出趋势，用于判断处理能力是否跟上发现速度。",
+      "expected_focus": [
+        "净流入是否持续为正（存量增长）",
+        "是否存在周期性峰谷"
+      ],
+      "abnormal_signals": [
+        "净流入持续为正且处理周期上升",
+        "时间窗口过短导致波动大，需自动提醒"
+      ],
+      "related_dimensions": ["test_week", "project"],
+      "related_metrics": ["inflow_outflow_trends"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "defect-matrix-chart",
+      "dashboard": "defect_explore",
+      "name": "Defect Matrix",
+      "description": "缺陷Matrix分布（如1A-4E），用于识别高风险区域集中与迁移。",
+      "expected_focus": [
+        "1A-1E高风险区域占比",
+        "分布是否向高风险区迁移"
+      ],
+      "abnormal_signals": [
+        "高风险区占比明显上升",
+        "Matrix字段缺失导致分布失真"
+      ],
+      "related_dimensions": ["matrix", "severity", "project", "aida_english"],
+      "related_metrics": ["topissue_risk_score"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "project-blocking-comparison-chart",
+      "dashboard": "defect_explore",
+      "name": "项目阻塞原因分析对比",
+      "description": "对比各项目的阻塞缺陷原因分布，识别阻碍测试进度的主要因素。",
+      "expected_focus": [
+        "主要阻塞原因是什么（环境、数据、第三方依赖等）",
+        "某项目是否有特定的阻塞模式"
+      ],
+      "abnormal_signals": [
+        "特定阻塞原因（如Environment）占比过高",
+        "大量Blocking缺陷长期未解决"
+      ],
+      "related_dimensions": ["project", "blocking_reason"],
+      "related_metrics": ["blocking_reason_count"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "project-matrix-distribution-chart",
+      "dashboard": "defect_explore",
+      "name": "项目Matrix分布对比",
+      "description": "对比各项目的缺陷Matrix严重度分布，评估各项目的质量风险水平。",
+      "expected_focus": [
+        "高风险Matrix（如1A-1C）在各项目的占比",
+        "是否存在低严重度但高频发的项目"
+      ],
+      "abnormal_signals": [
+        "某项目高风险Matrix占比显著高于平均水平",
+        "Matrix数据缺失严重"
+      ],
+      "related_dimensions": ["project", "matrix"],
+      "related_metrics": ["topissue_risk_score"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "tester-efficiency-chart",
+      "dashboard": "defect_explore",
+      "name": "测试人员缺陷发现效率",
+      "description": "展示各测试人员发现的缺陷数量，用于评估测试产出。",
+      "expected_focus": [
+        "Top Tester的贡献度",
+        "产出是否均衡"
+      ],
+      "abnormal_signals": [
+        "极少数Tester发现了绝大多数缺陷（可能存在单点依赖）",
+        "大量Tester产出极低（可能存在资源闲置或统计口径问题）"
+      ],
+      "related_dimensions": ["tester", "severity"],
+      "related_metrics": ["tester_defect_count"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "defect-discovery-trend-chart",
+      "dashboard": "defect_explore",
+      "name": "缺陷发现趋势",
+      "description": "整体缺陷发现数量随时间的变化趋势，反映测试活动强度和产品质量稳定性。",
+      "expected_focus": [
+        "发现趋势是否稳定",
+        "是否存在爆发式增长（可能对应新版本发布或大规模测试）"
+      ],
+      "abnormal_signals": [
+        "缺陷发现突然归零（可能数据中断或测试停止）",
+        "持续高位震荡不收敛"
+      ],
+      "related_dimensions": ["creation_time", "severity"],
+      "related_metrics": [],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "tester-severity-chart",
+      "dashboard": "defect_explore",
+      "name": "测试人员严重缺陷发现分布",
+      "description": "展示各测试人员的严重缺陷结构（severe_rate口径），用于评估高风险问题的发现能力分布。",
+      "expected_focus": [
+        "谁发现了核心的高风险问题",
+        "严重缺陷发现是否集中"
+      ],
+      "abnormal_signals": [
+        "某Tester发现大量缺陷但无一严重（可能是误报或低价值测试）",
+        "严重缺陷发现高度集中在个别人身上"
+      ],
+      "related_dimensions": ["tester", "severity"],
+      "related_metrics": ["tester_severe_rate", "severe_rate"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "hr-child-complexity-chart",
+      "dashboard": "defect_explore",
+      "name": "Child Complexity Analysis",
+      "description": "基于子缺陷数量的复杂度分析图表，展示不同复杂度等级（Low/Medium/High）的分布趋势。",
+      "expected_focus": [
+        "High Complexity（>=5个子票）的占比趋势",
+        "是否存在复杂度激增的时间点"
+      ],
+      "abnormal_signals": [
+        "High Complexity占比持续上升，提示架构耦合或需求拆解问题",
+        "大量Master票没有任何子票（可能是使用规范问题）"
+      ],
+      "related_dimensions": ["test_week", "defect_level"],
+      "related_metrics": ["child_complexity"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "hr-parent-complexity-chart",
+      "dashboard": "defect_explore",
+      "name": "Parent Complexity Analysis",
+      "description": "基于父票据关联数量的复杂度分析图表，展示不同关联复杂度等级的分布。",
+      "expected_focus": [
+        "高关联复杂度缺陷的分布",
+        "是否存在过度关联导致的管理混乱"
+      ],
+      "abnormal_signals": [
+        "大量缺陷具有高关联度，提示模块间依赖严重",
+        "关联关系缺失"
+      ],
+      "related_dimensions": ["test_week", "master_linked_defect_level"],
+      "related_metrics": ["parent_complexity"],
+      "data_source": "datasets.octane_defects"
+    },
+    {
+      "id": "phase-duration-bar-chart-lr",
+      "dashboard": "defect_explore",
+      "name": "LongRunner Phase Duration",
+      "description": "展示长周期（LongRunner）缺陷在各阶段的平均耗时，用于定位流程瓶颈。",
+      "expected_focus": [
+        "哪个阶段耗时最长（如Analysis vs Development）",
+        "是否有异常长耗时的特定阶段"
+      ],
+      "abnormal_signals": [
+        "非核心阶段（如Info Request）耗时过长",
+        "关键阶段耗时远超SLA"
+      ],
+      "related_dimensions": ["phase", "defect_id"],
+      "related_metrics": ["processing_cycle_days"],
+      "data_source": "datasets.octane_defects"
+    }
+  ]
+}
