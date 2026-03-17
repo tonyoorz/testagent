@@ -719,8 +719,8 @@ else:
 # 导入AI聊天管理器 - 条件导入
 if not IS_RELOADER:
     try:
-        # 优先导入增强版AI聊天管理器（支持智能Agent）
-        from enhanced_ai_chat_manager import create_enhanced_chat_manager
+        # 优先导入 agent/core 增强版AI聊天管理器（支持 SQLite + semantic + tool-calling）
+        from agent.core.enhanced_ai_chat_manager import create_enhanced_chat_manager
         AI_CHAT_AVAILABLE = True
         AI_CHAT_ENHANCED = True
         ai_chat_manager = create_enhanced_chat_manager(
@@ -728,7 +728,7 @@ if not IS_RELOADER:
             use_agent=True,
             assistant_name='SiSi'
         )
-        print("✅ 增强版AI聊天管理器已加载（智能Agent已启用）")
+        print("✅ agent/core 增强版AI聊天管理器已加载（智能Agent已启用）")
 
         # 尝试从基础版导入CSS样式函数
         try:
@@ -739,17 +739,35 @@ if not IS_RELOADER:
                 return ""
     except ImportError:
         try:
-            # 降级到基础版AI聊天管理器
-            from ai_chat_manager import ai_chat_manager, get_chat_css_styles
+            # 降级到根目录增强版AI聊天管理器
+            from enhanced_ai_chat_manager import create_enhanced_chat_manager
             AI_CHAT_AVAILABLE = True
-            AI_CHAT_ENHANCED = False
-            print("⚠️  使用基础版AI聊天管理器（智能Agent不可用）")
+            AI_CHAT_ENHANCED = True
+            ai_chat_manager = create_enhanced_chat_manager(
+                dashboard_type='defect_explore',
+                use_agent=True,
+                assistant_name='SiSi'
+            )
+            print("⚠️  已降级到根目录增强版AI聊天管理器")
+
+            try:
+                from ai_chat_manager import get_chat_css_styles
+            except ImportError:
+                def get_chat_css_styles():
+                    return ""
         except ImportError:
-            print("❌ 警告：无法导入AI聊天管理器")
-            AI_CHAT_AVAILABLE = False
-            AI_CHAT_ENHANCED = False
-            ai_chat_manager = None
-            get_chat_css_styles = None
+            try:
+                # 再降级到基础版AI聊天管理器
+                from ai_chat_manager import ai_chat_manager, get_chat_css_styles
+                AI_CHAT_AVAILABLE = True
+                AI_CHAT_ENHANCED = False
+                print("⚠️  使用基础版AI聊天管理器（智能Agent不可用）")
+            except ImportError:
+                print("❌ 警告：无法导入AI聊天管理器")
+                AI_CHAT_AVAILABLE = False
+                AI_CHAT_ENHANCED = False
+                ai_chat_manager = None
+                get_chat_css_styles = None
 else:
     AI_CHAT_AVAILABLE = False
     AI_CHAT_ENHANCED = False
@@ -1922,6 +1940,7 @@ server = app.server  # 暴露给 Gunicorn 使用
 def create_sidebar_nav():
     """创建可展开/隐藏的侧边导航栏"""
     nav_items = [
+        {'id': 'tab-chat', 'label': 'SiSi Chat', 'icon': 'fas fa-comments'},
         {'id': 'tab-defect-status', 'label': 'Topissue analysis', 'icon': 'fas fa-chart-bar'},
         {'id': 'tab-project-analysis', 'label': 'Project Analysis', 'icon': 'fas fa-project-diagram'},
         {'id': 'tab-testing-team', 'label': 'Testing Team Analysis', 'icon': 'fas fa-users'},
@@ -2614,7 +2633,11 @@ app.layout = html.Div([
         'alignItems': 'center',
         'backdropFilter': 'blur(3px)'
     })
-] + (ai_chat_manager.create_enhanced_chat_stores(chat_id_prefix='defect-explore-chat') if AI_CHAT_AVAILABLE else []), style=MAIN_CONTAINER_STYLE, id="main-container")
+] + (
+    ai_chat_manager.create_enhanced_chat_stores(chat_id_prefix='defect-explore-chat') +
+    ai_chat_manager.create_enhanced_chat_stores(chat_id_prefix='defect-explore-chat-page')
+    if AI_CHAT_AVAILABLE else []
+), style=MAIN_CONTAINER_STYLE, id="main-container")
 
 # 添加导航栏控制回调
 @app.callback(
@@ -2635,12 +2658,13 @@ app.layout = html.Div([
      Input('nav-tab-testing-team', 'n_clicks'),
      Input('nav-tab-testing-efficiency', 'n_clicks'),
      Input('nav-tab-test-coverage', 'n_clicks'),
-     Input('nav-tab-test-status', 'n_clicks')],
+     Input('nav-tab-test-status', 'n_clicks'),
+     Input('nav-tab-chat', 'n_clicks')],
     [State('nav-open-state', 'data')],
     prevent_initial_call=False  # 只在用户点击时触发
 )
 def toggle_sidebar(toggle_clicks, close_clicks, overlay_clicks, edge_toggle_clicks, edge_toggle_clicks_2,
-                  nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav5_clicks, nav6_clicks, is_open):
+                  nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav5_clicks, nav6_clicks, nav7_clicks, is_open):
     from dash import callback_context
     
     # 确定触发的按钮
@@ -2746,17 +2770,19 @@ def toggle_sidebar(toggle_clicks, close_clicks, overlay_clicks, edge_toggle_clic
      Output('nav-tab-testing-team', 'style'),
      Output('nav-tab-testing-efficiency', 'style'),
      Output('nav-tab-test-coverage', 'style'),
-     Output('nav-tab-test-status', 'style')],
+     Output('nav-tab-test-status', 'style'),
+     Output('nav-tab-chat', 'style')],
     [Input('nav-tab-defect-status', 'n_clicks'),
      Input('nav-tab-project-analysis', 'n_clicks'),
      Input('nav-tab-testing-team', 'n_clicks'),
      Input('nav-tab-testing-efficiency', 'n_clicks'),
      Input('nav-tab-test-coverage', 'n_clicks'),
-     Input('nav-tab-test-status', 'n_clicks')],
+     Input('nav-tab-test-status', 'n_clicks'),
+     Input('nav-tab-chat', 'n_clicks')],
     [State('current-nav-item', 'data')],
     prevent_initial_call=False  # 允许初始调用以设置默认样式
 )
-def update_nav_selection(nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav5_clicks, nav6_clicks, current_nav):
+def update_nav_selection(nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav5_clicks, nav6_clicks, nav7_clicks, current_nav):
     from dash import callback_context
     valid_tabs = {
         'tab-defect-status',
@@ -2764,7 +2790,8 @@ def update_nav_selection(nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav
         'tab-testing-team',
         'tab-testing-efficiency',
         'tab-test-coverage',
-        'tab-test-status'
+        'tab-test-status',
+        'tab-chat'
     }
     
     # 基础导航项样式
@@ -2803,7 +2830,8 @@ def update_nav_selection(nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav
             'nav-tab-testing-team': 'tab-testing-team',
             'nav-tab-testing-efficiency': 'tab-testing-efficiency',
             'nav-tab-test-coverage': 'tab-test-coverage',
-            'nav-tab-test-status': 'tab-test-status'
+            'nav-tab-test-status': 'tab-test-status',
+            'nav-tab-chat': 'tab-chat'
         }
         
         selected_nav = nav_mapping.get(trigger_id, current_nav)
@@ -2815,8 +2843,9 @@ def update_nav_selection(nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav
     nav4_style = active_nav_style if selected_nav == 'tab-testing-efficiency' else base_nav_style
     nav5_style = active_nav_style if selected_nav == 'tab-test-coverage' else base_nav_style
     nav6_style = active_nav_style if selected_nav == 'tab-test-status' else base_nav_style
+    nav7_style = active_nav_style if selected_nav == 'tab-chat' else base_nav_style
     
-    return selected_nav, nav1_style, nav2_style, nav3_style, nav4_style, nav5_style, nav6_style
+    return selected_nav, nav1_style, nav2_style, nav3_style, nav4_style, nav5_style, nav6_style, nav7_style
 
 # 添加回调函数来处理选项卡切换
 @app.callback(
@@ -2828,7 +2857,7 @@ def render_content(tab):
     active_label_style = LABEL_STYLE_LIGHT if current_theme == 'light' else LABEL_STYLE_DARK
     
     # 如果tab为None或者无效值，默认显示缺陷状态分析页面
-    if tab is None or tab not in ['tab-defect-status', 'tab-project-analysis', 'tab-testing-team', 'tab-testing-efficiency', 'tab-test-coverage', 'tab-test-status', 'tab-word-cloud']:
+    if tab is None or tab not in ['tab-defect-status', 'tab-project-analysis', 'tab-testing-team', 'tab-testing-efficiency', 'tab-test-coverage', 'tab-test-status', 'tab-chat', 'tab-word-cloud']:
         tab = 'tab-defect-status'
     
     if tab == 'tab-defect-status':
@@ -3379,6 +3408,26 @@ def render_content(tab):
                 dcc.Graph(id='hr-child-complexity-chart', style={'display': 'none'}),
                 dcc.Graph(id='hr-parent-complexity-chart', style={'display': 'none'})
             ], style={'display': 'none'})
+        ])
+    elif tab == 'tab-chat':
+        return html.Div([
+            html.Div(
+                ai_chat_manager.create_enhanced_chat_interface(
+                    chat_id_prefix='defect-explore-chat-page'
+                ) if AI_CHAT_AVAILABLE else html.Div(
+                    "AI聊天功能暂不可用，请检查配置。",
+                    style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}
+                ),
+                style={
+                    'height': 'calc(100vh - 155px)',
+                    'minHeight': '680px',
+                    'backgroundColor': 'white',
+                    'border': '1px solid #e5e7eb',
+                    'borderRadius': '12px',
+                    'boxShadow': '0 2px 10px rgba(0,0,0,0.08)',
+                    'overflow': 'hidden'
+                }
+            )
         ])
     elif tab == 'tab-defect-high-runner':
         # High Complexity Defect Analysis Tab
@@ -10374,6 +10423,12 @@ if AI_CHAT_AVAILABLE:
             data_store_id='filtered-data-store',
             data_processor_func=process_filtered_data
         )
+        ai_chat_manager.register_enhanced_callbacks(
+            app=app,
+            chat_id_prefix='defect-explore-chat-page',
+            data_store_id='filtered-data-store',
+            data_processor_func=process_filtered_data
+        )
     else:
         # 使用基础版注册（兼容模式）
         ai_chat_manager.register_enhanced_chat_callbacks(
@@ -10383,6 +10438,14 @@ if AI_CHAT_AVAILABLE:
             dashboard_type='defect',
             data_processor_func=process_filtered_data,
             chat_only_mode=False  # 传递本地数据
+        )
+        ai_chat_manager.register_enhanced_chat_callbacks(
+            app=app,
+            chat_id_prefix='defect-explore-chat-page',
+            data_store_id='filtered-data-store',
+            dashboard_type='defect',
+            data_processor_func=process_filtered_data,
+            chat_only_mode=False
         )
 
 # 添加自定义HTML和CSS样式

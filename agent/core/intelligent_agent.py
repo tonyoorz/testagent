@@ -1425,6 +1425,21 @@ class AnalyzeTestRunTool(DataAnalysisTool):
             if not group_tokens:
                 group_tokens = ["week"]
 
+            # 常见中文/英文别名归一化
+            alias_map = {
+                "feature team": "fv",
+                "feature_team": "fv",
+                "feature-team": "fv",
+                "call services": "fv",
+                "功能": "aida",
+                "模块": "aida",
+                "service": "aida",
+                "services": "aida",
+                "测试人员": "tester",
+                "测试员": "tester",
+            }
+            group_tokens = [alias_map.get(str(t).strip().lower(), t) for t in group_tokens]
+
             group_cols = []
             label_col = None
             time_modes = {"week": "W", "month": "M"}
@@ -1453,6 +1468,9 @@ class AnalyzeTestRunTool(DataAnalysisTool):
                         fallback = {
                             "project": ["tproject", "project"],
                             "aida": ["aida_english", "top_aida", "aida"],
+                            "fv": ["fv", "feature_team", "feature", "top_aida", "aida_english"],
+                            "tester": ["tester", "owner", "found_by", "reporter", "author_name"],
+                            "domain": ["domain", "solution_cluster", "pu"],
                             "severity": ["severity_group", "severity"],
                             "status": ["status_phase", "status", "run_status"],
                             "matrix": ["matrix_display", "matrix"],
@@ -2041,6 +2059,109 @@ class SQLiteSchemaTool(DataAnalysisTool):
             return {"success": False, "tool": self.name, "error": str(e)}
 
 
+class SQLiteDBProfileTool(DataAnalysisTool):
+    def __init__(self, db_path: Optional[str]):
+        super().__init__(
+            name="get_db_profile",
+            description="获取SQLite表的轻量画像（行数、字段、空值率、高频值样本）",
+            parameters={
+                "table": {"type": "string", "description": "可选：指定表名", "default": ""},
+                "top_n": {"type": "integer", "description": "每列高频值返回数量", "default": 5},
+                "sample_columns": {"type": "integer", "description": "最多画像列数", "default": 20},
+            },
+        )
+        self._db_path = db_path
+
+    @staticmethod
+    def _q_ident(name: str) -> str:
+        return '"' + str(name).replace('"', '""') + '"'
+
+    def execute(self, data: Any, **kwargs) -> Dict[str, Any]:
+        db_path = self._db_path
+        if not db_path:
+            return {"success": False, "tool": self.name, "error": "未配置SQLite数据库路径"}
+
+        table = str(kwargs.get("table") or "").strip()
+        top_n = int(kwargs.get("top_n") or 5)
+        top_n = max(1, min(20, top_n))
+        sample_columns = int(kwargs.get("sample_columns") or 20)
+        sample_columns = max(1, min(100, sample_columns))
+
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+
+            cur.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+            all_tables = [r["name"] for r in cur.fetchall()]
+            if not all_tables:
+                conn.close()
+                return {"success": True, "tool": self.name, "result": {"db_path": db_path, "tables": {}}}
+
+            selected_tables = [table] if table else all_tables[:8]
+            selected_tables = [t for t in selected_tables if t in all_tables]
+            if table and not selected_tables:
+                conn.close()
+                return {"success": False, "tool": self.name, "error": f"表不存在: {table}"}
+
+            prof: Dict[str, Any] = {"db_path": db_path, "tables": {}}
+            for t in selected_tables:
+                t_ident = self._q_ident(t)
+                row_count = 0
+                try:
+                    cur.execute(f"SELECT COUNT(1) AS c FROM {t_ident}")
+                    rr = cur.fetchone()
+                    row_count = int(rr["c"]) if rr else 0
+                except Exception:
+                    row_count = 0
+
+                cur.execute(f"PRAGMA table_info({t_ident})")
+                cols = [dict(r) for r in cur.fetchall()]
+                col_profiles = []
+                for c in cols[:sample_columns]:
+                    cname = str(c.get("name") or "")
+                    if not cname:
+                        continue
+                    c_ident = self._q_ident(cname)
+                    null_ratio = 0.0
+                    top_values = []
+                    try:
+                        if row_count > 0:
+                            cur.execute(
+                                f"SELECT AVG(CASE WHEN {c_ident} IS NULL THEN 1.0 ELSE 0.0 END) AS r FROM {t_ident}"
+                            )
+                            rr = cur.fetchone()
+                            null_ratio = round(float(rr["r"] or 0.0), 4) if rr else 0.0
+                        cur.execute(
+                            f"SELECT CAST({c_ident} AS TEXT) AS v, COUNT(1) AS n FROM {t_ident} "
+                            f"WHERE {c_ident} IS NOT NULL GROUP BY CAST({c_ident} AS TEXT) ORDER BY n DESC LIMIT {top_n}"
+                        )
+                        top_values = [{"value": r["v"], "count": int(r["n"])} for r in cur.fetchall()]
+                    except Exception:
+                        pass
+
+                    col_profiles.append(
+                        {
+                            "name": cname,
+                            "type": str(c.get("type") or ""),
+                            "null_ratio": null_ratio,
+                            "top_values": top_values,
+                        }
+                    )
+
+                prof["tables"][t] = {
+                    "row_count": row_count,
+                    "columns": col_profiles,
+                }
+
+            conn.close()
+            return {"success": True, "tool": self.name, "result": prof}
+        except Exception as e:
+            return {"success": False, "tool": self.name, "error": str(e)}
+
+
 def _is_safe_readonly_sql(sql: str) -> bool:
     s = (sql or "").strip().lstrip("(").strip()
     if not s:
@@ -2145,7 +2266,9 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         )
         self._db_path = db_path
         self._llm = llm
+        self._sql_cache: Dict[str, str] = {}
         self._schema_tool = SQLiteSchemaTool(db_path)
+        self._profile_tool = SQLiteDBProfileTool(db_path)
         self._query_tool = SQLiteQueryTool(db_path)
 
     def execute(self, data: Any, **kwargs) -> Dict[str, Any]:
@@ -2159,17 +2282,32 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         limit = int(kwargs.get("limit") or 200)
         table = str(kwargs.get("table") or "").strip()
 
+        cache_key = f"{question}||{table or '*'}"
+        cached_sql = self._sql_cache.get(cache_key)
+        if cached_sql:
+            cached_run = self._query_tool.execute(None, sql=cached_sql, limit=limit)
+            if cached_run.get("success") is True:
+                cached_run["result"] = cached_run.get("result") or {}
+                cached_run["result"]["generated_sql"] = cached_sql
+                cached_run["result"]["attempts"] = 0
+                cached_run["result"]["cache_hit"] = True
+                cached_run["tool"] = self.name
+                return cached_run
+
         schema_out = self._schema_tool.execute(None, table=table)
         if schema_out.get("success") is not True:
             return {"success": False, "tool": self.name, "error": schema_out.get("error") or "读取schema失败"}
         schema = (schema_out.get("result") or {})
+
+        profile_out = self._profile_tool.execute(None, table=table, top_n=5, sample_columns=20)
+        profile = (profile_out.get("result") or {}) if profile_out.get("success") is True else {}
 
         sys_prompt = (
             "你是SQLite专家。根据用户问题与数据库schema生成只读SQL。\n"
             "严格要求：只允许 SELECT 或 WITH；必须使用 schema 中存在的表与列；只输出JSON。\n"
             '输出格式：{\"sql\":\"...\"}'
         )
-        user_payload = {"question": question, "schema": schema, "limit_hint": limit}
+        user_payload = {"question": question, "schema": schema, "db_profile": profile, "limit_hint": limit}
         messages = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)}]
         first = self._llm.chat_completion(messages, temperature=0.1, max_tokens=800)
         obj = _extract_json_object(first) or {}
@@ -2179,9 +2317,11 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
 
         run_out = self._query_tool.execute(None, sql=sql, limit=limit)
         if run_out.get("success") is True:
+            self._sql_cache[cache_key] = sql
             run_out["result"] = run_out.get("result") or {}
             run_out["result"]["generated_sql"] = sql
             run_out["result"]["attempts"] = 1
+            run_out["result"]["cache_hit"] = False
             run_out["tool"] = self.name
             return run_out
 
@@ -2205,9 +2345,11 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             }
         run2 = self._query_tool.execute(None, sql=sql2, limit=limit)
         if run2.get("success") is True:
+            self._sql_cache[cache_key] = sql2
             run2["result"] = run2.get("result") or {}
             run2["result"]["generated_sql"] = sql2
             run2["result"]["attempts"] = 2
+            run2["result"]["cache_hit"] = False
             run2["tool"] = self.name
             return run2
 
@@ -2693,6 +2835,7 @@ class ToolExecutor:
         for tool in default_tools:
             self.register_tool(tool)
         if self._db_path:
+            self.register_tool(SQLiteDBProfileTool(self._db_path))
             self.register_tool(SQLiteSchemaTool(self._db_path))
             self.register_tool(SQLiteQueryTool(self._db_path))
             self.register_tool(SQLiteNLQueryWithFixTool(self._db_path, llm=self._llm))
@@ -3126,14 +3269,14 @@ class IntelligentContextManager:
             'project': ['项目', '工程', 'project'],
             'severity': ['严重', '紧急', 'severity', 'critical'],
             'matrix': ['matrix', '矩阵'],
-            'aida': ['aida', '功能', '模块', 'feature'],
+            'aida': ['aida', '功能', '模块', 'feature', 'service', 'services', 'call services'],
             'fv': ['fv', '版本', 'release', '交付版本', 'feature team', 'feature_team', 'feature-team', '功能团队', '责任团队'],
             'domain': ['solution cluster', 'domain', 'cluster', '解决簇', '解决群', 'solution_cluster'],
-            'test': ['测试', 'test', 'run', 'case', 'coverage', '执行', '通过率', '失败率'],
+            'test': ['测试', 'test', 'run', 'case', 'coverage', '执行', '通过率', '失败率', '测', '测挂', '测失败', '回归', '测试情况', '测试状态'],
             'case': ['case', 'testcase', 'test case', '用例', 'case容易', 'case出错', '容易出错'],
-            'execution': ['执行情况', '执行状态', '通过情况', 'pass', 'passed', 'fail', 'failed', 'error', 'blocked', '状态', 'run_status'],
+            'execution': ['执行情况', '执行状态', '通过情况', 'pass', 'passed', 'fail', 'failed', 'error', 'blocked', '状态', 'run_status', '失败', '挂', '挂了', '成功率'],
             'cross': ['关联', '相关性', '联动', '交叉', 'correlate', 'relationship'],
-            'tester': ['tester', '发现人', '谁发现', '谁报', '谁提', '提交人', '报告人', 'reporter', 'found by'],
+            'tester': ['tester', '测试人员', '测试员', '发现人', '谁发现', '谁报', '谁提', '提交人', '报告人', 'reporter', 'found by', 'owner'],
             'wordcloud': ['词云', 'wordcloud', '关键词', '高频词', '热词'],
             'throughput': ['inflow', 'outflow', '收敛', '吞吐', '净积压', 'net accumulation'],
             'longrunner': ['long runner', 'longrunner', '长周期', '处理周期', '阶段耗时', 'phase duration']
@@ -3150,6 +3293,24 @@ class IntelligentContextManager:
                 patterns = [p for p in patterns if p != "feature"]
             if any(pattern in question_lower for pattern in patterns):
                 detected_intents.append(intent)
+
+        # 补充规则：显式“测试人员 + 情况”问法通常是测试运行视角
+        if re.search(r"([a-z]{2,}\s+[a-z]{2,}|[\u4e00-\u9fff]{2,8})\s*(是|作为)?\s*测试(人员|员)", question_lower):
+            if 'tester' not in detected_intents:
+                detected_intents.append('tester')
+            if 'test' not in detected_intents:
+                detected_intents.append('test')
+            if 'execution' not in detected_intents:
+                detected_intents.append('execution')
+
+        # 补充规则：“功能/模块 + 失败”优先走测试分析
+        if any(k in question_lower for k in ['功能', '模块', 'service', 'services']) and any(k in question_lower for k in ['失败', 'fail', 'failed', '挂']):
+            if 'test' not in detected_intents:
+                detected_intents.append('test')
+            if 'execution' not in detected_intents:
+                detected_intents.append('execution')
+            if 'aida' not in detected_intents:
+                detected_intents.append('aida')
 
         return detected_intents if detected_intents else ['general']
 
@@ -3237,6 +3398,40 @@ class IntelligentContextManager:
     def extract_entities(self, question: str, data: pd.DataFrame, dataset: str = "defects") -> Dict[str, Any]:
         """提取问题中的实体（项目名、时间范围等）"""
         entities: Dict[str, Any] = {}
+        q_raw = (question or "").strip()
+        q_lower = q_raw.lower()
+
+        def _norm_text(v: Any) -> str:
+            s = str(v or "").strip().lower()
+            s = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", s)
+            s = re.sub(r"\s+", " ", s).strip()
+            return s
+
+        def _fuzzy_match_values(values: List[str], phrase: str, max_hits: int = 5) -> List[str]:
+            p = _norm_text(phrase)
+            if not p:
+                return []
+            p_tokens = [t for t in p.split(" ") if len(t) >= 2]
+            scored: List[Tuple[int, str]] = []
+            for v in values:
+                vn = _norm_text(v)
+                if not vn:
+                    continue
+                score = 0
+                if vn == p:
+                    score += 10
+                if p in vn:
+                    score += 8
+                if vn in p and len(vn) >= 3:
+                    score += 4
+                for t in p_tokens:
+                    if t in vn:
+                        score += 2
+                if score > 0:
+                    scored.append((score, v))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return [v for _, v in scored[:max(1, int(max_hits))]]
+
         try:
             dims = self._detect_dimensions(question, dataset=dataset, dataframe_columns=list(data.columns), top_k=2)
             if dims:
@@ -3288,8 +3483,15 @@ class IntelligentContextManager:
             values = [v for v in series.unique().tolist() if v and v.lower() not in {"nan", "none"}]
             if len(values) > max_unique:
                 values = values[:max_unique]
-            q = (question or "").lower()
-            mentioned = [v for v in values if v.lower() in q]
+            q = q_lower
+            qn = _norm_text(q)
+            mentioned = []
+            for v in values:
+                vn = _norm_text(v)
+                if not vn:
+                    continue
+                if (vn in qn) or (qn in vn and len(qn) >= 3):
+                    mentioned.append(v)
             if mentioned:
                 entities[key] = mentioned
 
@@ -3306,6 +3508,49 @@ class IntelligentContextManager:
         _extract_from_column("author_name", "testers")
         _extract_from_column("severity_group", "severities")
         _extract_from_column("severity", "severities")
+
+        # 显式语法解析："fv是xxx" / "feature team是xxx" / "功能是xxx"
+        def _get_col_values(col: str, max_unique: int = 1200) -> List[str]:
+            if col not in data.columns:
+                return []
+            s = data[col].dropna().astype(str).map(lambda x: x.strip())
+            vals = [v for v in s.unique().tolist() if v and v.lower() not in {"nan", "none"}]
+            if len(vals) > max_unique:
+                vals = vals[:max_unique]
+            return vals
+
+        m_fv = re.search(r"(?:^|\s|[，,。；;])(?:fv|feature\s*team)\s*(?:是|为|=)?\s*([a-z0-9_\- /\u4e00-\u9fff]+)", q_lower)
+        if m_fv:
+            raw_val = re.split(r"的|测试|情况|如何|怎么样|\?|？", m_fv.group(1), maxsplit=1)[0].strip()
+            if raw_val:
+                fv_vals = _get_col_values("fv")
+                matched = _fuzzy_match_values(fv_vals, raw_val)
+                if matched:
+                    entities["fvs"] = list(dict.fromkeys((entities.get("fvs") or []) + matched))
+
+        m_aida = re.search(r"(?:功能|模块|services?|call\s*services)\s*(?:是|为|=)?\s*([a-z0-9_\- /\u4e00-\u9fff]+)", q_lower)
+        if m_aida:
+            raw_val = re.split(r"的|测试|情况|如何|怎么样|\?|？", m_aida.group(1), maxsplit=1)[0].strip()
+            if raw_val:
+                aida_vals = _get_col_values("aida_english") + _get_col_values("aida") + _get_col_values("top_aida")
+                matched = _fuzzy_match_values(list(dict.fromkeys(aida_vals)), raw_val)
+                if matched:
+                    entities["aidas"] = list(dict.fromkeys((entities.get("aidas") or []) + matched))
+
+        # 提取人名作为 tester 兜底，避免唯一值截断导致命中失败
+        q = q_raw
+        ql = q.lower()
+        candidate_people = []
+        if any(k in ql for k in ["测试人员", "测试员", "tester", "情况", "如何", "怎么样", "who"]):
+            m_en = re.search(r"\b([a-z]{2,}\s+[a-z]{2,})\b", ql)
+            if m_en:
+                candidate_people.append(m_en.group(1).strip())
+            m_cn = re.search(r"([\u4e00-\u9fff]{2,8})\s*(是|作为)?\s*测试(人员|员)", q)
+            if m_cn:
+                candidate_people.append(m_cn.group(1).strip())
+        if candidate_people:
+            existing = entities.get("testers") or []
+            entities["testers"] = list(dict.fromkeys(existing + candidate_people))
 
         ql = (question or "").lower()
         matrix_hits = set()
@@ -3338,13 +3583,13 @@ class IntelligentContextManager:
     def prepare_context(self, question: str, data: Union[pd.DataFrame, Dict[str, pd.DataFrame]]) -> Tuple[Dict[str, Any], Union[pd.DataFrame, Dict[str, pd.DataFrame]]]:
         intents = self.analyze_intent(question)
         try:
-            context_max = int(os.getenv("AGENT_CONTEXT_MAX_ROWS_DEFAULT", "200000"))
+            context_max = int(os.getenv("AGENT_CONTEXT_MAX_ROWS_DEFAULT", "50000"))
         except Exception:
-            context_max = 200000
+            context_max = 50000
         try:
-            tool_max = int(os.getenv("AGENT_TOOL_MAX_ROWS_DEFAULT", "2000000"))
+            tool_max = int(os.getenv("AGENT_TOOL_MAX_ROWS_DEFAULT", "500000"))
         except Exception:
-            tool_max = 2000000
+            tool_max = 500000
         full_data_default = os.getenv("AGENT_FULL_DATA_BY_DEFAULT", "0") == "1"
         full_context_default = full_data_default or (os.getenv("AGENT_FULL_CONTEXT_BY_DEFAULT", "0") == "1")
         full_tools_default = full_data_default or (os.getenv("AGENT_FULL_TOOLS_BY_DEFAULT", "0") == "1")
@@ -3459,6 +3704,10 @@ class IntelligentContextManager:
 
     def _choose_primary_dataset(self, question: str, intents: List[str], datasets: Dict[str, pd.DataFrame]) -> str:
         q = question.lower()
+        if ('tests' in datasets) and any(i in intents for i in ['test', 'execution', 'case']):
+            if any(k in q for k in ['缺陷', 'defect', 'bug']) and ('test' not in intents):
+                return 'defects' if 'defects' in datasets else 'tests'
+            return 'tests'
         if ('tester' in intents) and ('defects' in datasets):
             return 'defects'
         if ('tests' in datasets) and any(k in q for k in ['测试', 'test', 'run', 'case', 'coverage']):
@@ -3671,6 +3920,30 @@ class IntelligentContextManager:
         if isinstance(filtered, pd.DataFrame) and filtered.empty:
             return filtered
 
+        def _norm_text(v: Any) -> str:
+            s = str(v or "").strip().lower()
+            s = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", s)
+            s = re.sub(r"\s+", " ", s).strip()
+            return s
+
+        def _fuzzy_filter_by_values(df: pd.DataFrame, col: str, targets: List[Any]) -> pd.DataFrame:
+            if col not in df.columns:
+                return df
+            tnorm = [_norm_text(x) for x in (targets or []) if _norm_text(x)]
+            if not tnorm:
+                return df
+            s_norm = df[col].astype(str).map(_norm_text)
+            mask = pd.Series(False, index=df.index)
+            for t in tnorm:
+                if not t:
+                    continue
+                mask = mask | (s_norm == t)
+                mask = mask | s_norm.str.contains(re.escape(t), na=False)
+                if len(t) >= 3:
+                    mask = mask | s_norm.map(lambda sv: bool(sv) and sv in t)
+            out = df[mask]
+            return out if not out.empty else df
+
         # 按项目筛选
         if 'projects' in entities:
             project_col = 'tproject' if 'tproject' in filtered.columns else 'project' if 'project' in filtered.columns else None
@@ -3698,18 +3971,18 @@ class IntelligentContextManager:
                     filtered = filtered[series.isin(target)]
 
         if 'aidas' in entities:
-            aida_col = "aida_english" if "aida_english" in filtered.columns else "aida" if "aida" in filtered.columns else None
+            aida_col = "aida_english" if "aida_english" in filtered.columns else "aida" if "aida" in filtered.columns else "top_aida" if "top_aida" in filtered.columns else None
             if aida_col:
-                filtered = filtered[filtered[aida_col].astype(str).isin([str(x) for x in entities["aidas"]])]
+                filtered = _fuzzy_filter_by_values(filtered, aida_col, entities["aidas"])
 
         if 'pus' in entities and 'pu' in filtered.columns:
             filtered = filtered[filtered["pu"].astype(str).isin([str(x) for x in entities["pus"]])]
 
         if 'fvs' in entities and 'fv' in filtered.columns:
-            filtered = filtered[filtered["fv"].astype(str).isin([str(x) for x in entities["fvs"]])]
+            filtered = _fuzzy_filter_by_values(filtered, "fv", entities["fvs"])
 
         if 'domains' in entities and 'domain' in filtered.columns:
-            filtered = filtered[filtered["domain"].astype(str).isin([str(x) for x in entities["domains"]])]
+            filtered = _fuzzy_filter_by_values(filtered, "domain", entities["domains"])
 
         if 'statuses' in entities:
             status_col = "status_phase" if "status_phase" in filtered.columns else "status" if "status" in filtered.columns else None
@@ -4306,7 +4579,7 @@ class TaskPlanner:
             return steps
 
         def _extract_top_n(default: int) -> int:
-            m = re.search(r"(top|前)\s*(\\d{1,3})", q)
+            m = re.search(r"(top|前)\s*(\d{1,3})", q)
             if m:
                 try:
                     v = int(m.group(2))
@@ -4379,6 +4652,13 @@ class TaskPlanner:
         if (('sql' in intents) or any(k in q for k in ['sql', 'sqlite', '数据库', 'db'])) and (
             hasattr(self.tool_executor, 'tools') and ('query_sqlite_with_fix' in (self.tool_executor.tools or {}))
         ):
+            if hasattr(self.tool_executor, 'tools') and ('get_db_profile' in (self.tool_executor.tools or {})):
+                steps.append({
+                    'step': len(steps) + 1,
+                    'tool': 'get_db_profile',
+                    'description': '获取数据库画像（字段/高频值/空值率）以提升SQL生成准确率',
+                    'params': {'top_n': 5, 'sample_columns': 20}
+                })
             steps.append({
                 'step': len(steps) + 1,
                 'tool': 'query_sqlite_with_fix',
@@ -4426,6 +4706,15 @@ class TaskPlanner:
                 'tool': 'analyze_test_run',
                 'description': '按项目对比测试执行状态与失败率',
                 'params': {'group_by': 'project', 'dataset': 'tests'}
+            })
+            return steps
+
+        if ('tests' in (context.get('datasets') or {})) and ('tester' in intents) and ('test' in intents or 'execution' in intents) and any(k in q for k in ["测试人员", "测试员", "tester", "情况", "如何", "怎么样", "who"]):
+            steps.append({
+                'step': len(steps) + 1,
+                'tool': 'analyze_test_run',
+                'description': '按测试人员统计测试执行状态与失败率',
+                'params': {'group_by': 'tester', 'dataset': 'tests'}
             })
             return steps
 
@@ -4700,10 +4989,14 @@ class TaskPlanner:
                 group_by = "week" if "month" not in ql else "month"
             else:
                 dim = str((entities or {}).get("dimension") or "").strip()
-                if dim:
-                    group_by = dim
+                if "tester" in intents or any(k in ql for k in ["测试人员", "测试员", "tester", "谁"]):
+                    group_by = "tester"
                 elif "fv" in intents or "feature team" in ql or "feature_team" in ql:
                     group_by = "fv"
+                elif "aida" in intents or any(k in ql for k in ["功能", "模块", "service", "services"]):
+                    group_by = "aida"
+                elif dim and dim.lower() not in {"id", "_id", "test_id", "run_id", "mr_id"}:
+                    group_by = dim
                 elif "project" in intents or "各项目" in ql or "项目" in ql or "project" in ql:
                     group_by = "project"
             steps.append({
@@ -4873,6 +5166,20 @@ class TaskPlanner:
                 result = self.tool_executor.execute_with_retry(tool_name, data, **params)
             else:
                 result = self.tool_executor.execute_tool(tool_name, data, **params)
+
+            # analyze_test_run 失败时优先尝试更稳妥分组，避免直接退化为摘要
+            if tool_name == 'analyze_test_run' and isinstance(result, dict) and result.get('success') is False:
+                current_group = str((params or {}).get('group_by') or '').strip().lower()
+                for alt_group in ['project', 'aida', 'tester', 'week']:
+                    if alt_group == current_group:
+                        continue
+                    alt_params = dict(params)
+                    alt_params['group_by'] = alt_group
+                    alt_result = self.tool_executor.execute_tool(tool_name, data, **alt_params)
+                    if isinstance(alt_result, dict) and alt_result.get('success') is True:
+                        params = alt_params
+                        result = alt_result
+                        break
             duration_ms = int((time.perf_counter() - t0) * 1000)
             meta = datasets_meta.get(dataset_used) if dataset_used else None
             gate: Dict[str, Any] = {"enabled": bool(validation_enabled), "action": "none", "reason": ""}
@@ -5051,9 +5358,28 @@ class IntelligentAgent:
                 pass
 
         validation_enabled = os.getenv("AGENT_VALIDATION_ENABLED", "0") == "1"
-        agentic_enabled = (os.getenv("AGENT_AGENTIC_ENABLED", "0") == "1") and (self.tool_executor._llm is not None)
-        mode = str(os.getenv("AGENT_MODE", "rule") or "rule").strip().lower()
-        if (not agentic_enabled) or (mode not in {"rule", "agentic", "hybrid"}):
+        # 默认启用 agentic（若LLM可用），可通过 AGENT_AGENTIC_ENABLED=0 显式关闭。
+        agentic_enabled = (os.getenv("AGENT_AGENTIC_ENABLED", "1") != "0") and (self.tool_executor._llm is not None)
+        mode = str(os.getenv("AGENT_MODE", "agentic") or "agentic").strip().lower()
+        if mode not in {"rule", "agentic", "hybrid"}:
+            mode = "agentic"
+
+        # ACCESSCODE 内网模板链路已在非流式调用中验证更稳定，但 function-calling 兼容性不稳定。
+        # 在该链路下优先使用 hybrid，避免 agentic 每轮都因响应结构差异失败后再降级。
+        llm_obj = self.tool_executor._llm
+        internal_template_route = False
+        try:
+            checker = getattr(llm_obj, "_should_use_internal_template_for_nonstream", None)
+            if callable(checker):
+                internal_template_route = bool(checker())
+        except Exception:
+            internal_template_route = False
+
+        if mode == "agentic" and internal_template_route:
+            logger.info("检测到ACCESSCODE内网模板链路，自动切换为hybrid模式以提升稳定性")
+            mode = "hybrid"
+
+        if (not agentic_enabled) and mode == "agentic":
             mode = "rule"
         analysis_trace: Dict[str, Any] = {
             "mode": mode,
@@ -5061,6 +5387,8 @@ class IntelligentAgent:
             "plan": [],
             "execution": [],
         }
+        if internal_template_route:
+            analysis_trace["llm_route"] = "internal_template"
 
         if os.getenv("AGENT_SEMANTIC_CATALOG_ENABLED") == "1":
             try:
@@ -5085,57 +5413,178 @@ class IntelligentAgent:
         if mode == "agentic":
             tool_call_max = int(os.getenv("AGENT_TOOL_CALL_MAX", "8") or 8)
             tool_call_max = max(0, min(tool_call_max, 100))
+            max_iters = int(os.getenv("AGENT_AGENTIC_MAX_ITERS", "6") or 6)
+            max_iters = max(1, min(max_iters, 20))
             exec_rows = []
             try:
                 llm = self.tool_executor._llm
                 tools_schema = self.tool_executor.get_tool_schema() or {}
-                tool_names = list(tools_schema.keys())
-                tool_specs = [{"type": "function", "function": {"name": n}} for n in tool_names]
-                messages = [{"role": "system", "content": "你是数据分析助手。可用工具函数见 tools。"}, {"role": "user", "content": question}]
-                first = llm.client.chat.completions.create(model=getattr(llm, "model", None), messages=messages, tools=tool_specs)
-                msg = first.choices[0].message
-                tool_calls = list(getattr(msg, "tool_calls", None) or [])
-                used = 0
-                for tc in tool_calls:
-                    tname = str(getattr(getattr(tc, "function", None), "name", "") or "").strip()
-                    arg_text = str(getattr(getattr(tc, "function", None), "arguments", "") or "").strip()
-                    if not tname:
-                        continue
-                    if used >= tool_call_max:
-                        exec_rows.append({"tool": tname, "success": False, "error": "工具调用预算已用尽"})
-                        continue
-                    used += 1
-                    try:
-                        args = json.loads(arg_text) if arg_text else {}
-                    except Exception:
-                        args = {}
-                    t0 = time.perf_counter()
-                    out = self.tool_executor.execute_tool(tname, prepared_data, **(args if isinstance(args, dict) else {}))
-                    ms = int((time.perf_counter() - t0) * 1000)
-                    exec_rows.append(
+                if not llm or not getattr(llm, "client", None):
+                    raise RuntimeError("agentic 模式缺少可用 LLM client")
+
+                def _to_json_schema(params: Any) -> Dict[str, Any]:
+                    props: Dict[str, Any] = {}
+                    if not isinstance(params, dict):
+                        return {"type": "object", "properties": {}, "additionalProperties": True}
+                    type_map = {
+                        "string": "string",
+                        "integer": "integer",
+                        "number": "number",
+                        "boolean": "boolean",
+                        "array": "array",
+                        "object": "object",
+                    }
+                    for pname, pdef in params.items():
+                        if not isinstance(pdef, dict):
+                            props[str(pname)] = {"type": "string"}
+                            continue
+                        ptype = type_map.get(str(pdef.get("type") or "string").lower(), "string")
+                        item: Dict[str, Any] = {"type": ptype}
+                        if pdef.get("description"):
+                            item["description"] = str(pdef.get("description"))
+                        if isinstance(pdef.get("enum"), list) and pdef.get("enum"):
+                            item["enum"] = list(pdef.get("enum"))
+                        if ptype == "array" and isinstance(pdef.get("items"), dict):
+                            item["items"] = dict(pdef.get("items"))
+                        props[str(pname)] = item
+                    return {"type": "object", "properties": props, "additionalProperties": True}
+
+                tool_specs = []
+                for tname, ts in tools_schema.items():
+                    ts = ts if isinstance(ts, dict) else {}
+                    tool_specs.append(
                         {
-                            "tool": tname,
-                            "dataset": (args or {}).get("dataset") if isinstance(args, dict) else None,
-                            "params": args if isinstance(args, dict) else {},
-                            "duration_ms": ms,
-                            "success": bool(isinstance(out, dict) and out.get("success") is True),
-                            "error": (out.get("error") if isinstance(out, dict) else None),
+                            "type": "function",
+                            "function": {
+                                "name": str(tname),
+                                "description": str(ts.get("description") or ""),
+                                "parameters": _to_json_schema(ts.get("parameters") or {}),
+                            },
                         }
                     )
+
+                sys_prompt = "你是数据分析助手。你必须基于工具返回的真实结果逐步决策；当信息足够时直接给最终结论。"
+                if context.get("data_summary"):
+                    sys_prompt += "\n\n数据摘要:\n" + str(context.get("data_summary"))
+
+                messages = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": question}]
+                used = 0
+                final_text = ""
+                stop_reason = ""
+
+                for it in range(1, max_iters + 1):
+                    resp = llm.client.chat.completions.create(
+                        model=getattr(llm, "model", None),
+                        messages=messages,
+                        tools=tool_specs,
+                        temperature=0.1,
+                    )
+                    choices = getattr(resp, "choices", None)
+                    if not choices:
+                        raise RuntimeError("LLM响应缺少choices（可能是网关异常、鉴权失败或上下文被服务端拒绝）")
+
+                    first_choice = choices[0] if isinstance(choices, list) else None
+                    if first_choice is None:
+                        raise RuntimeError("LLM响应choices[0]为空")
+
+                    msg = getattr(first_choice, "message", None)
+                    if msg is None:
+                        raise RuntimeError("LLM响应缺少message")
+
+                    content = str(getattr(msg, "content", "") or "").strip()
+                    if content:
+                        final_text = content
+
+                    tool_calls = list(getattr(msg, "tool_calls", None) or [])
+                    if not tool_calls:
+                        stop_reason = "model_final_answer"
+                        break
+
+                    tool_feedback_lines = [f"第{it}轮工具执行结果："]
+                    for tc in tool_calls:
+                        tname = str(getattr(getattr(tc, "function", None), "name", "") or "").strip()
+                        arg_text = str(getattr(getattr(tc, "function", None), "arguments", "") or "").strip()
+                        if not tname:
+                            continue
+                        if used >= tool_call_max:
+                            exec_rows.append({"iter": it, "tool": tname, "success": False, "error": "工具调用预算已用尽"})
+                            tool_feedback_lines.append(f"- {tname}: 失败，原因=工具调用预算已用尽")
+                            stop_reason = "tool_budget_exhausted"
+                            continue
+
+                        used += 1
+                        try:
+                            args = json.loads(arg_text) if arg_text else {}
+                        except Exception:
+                            args = {}
+
+                        t0 = time.perf_counter()
+                        out = self.tool_executor.execute_tool(tname, prepared_data, **(args if isinstance(args, dict) else {}))
+                        ms = int((time.perf_counter() - t0) * 1000)
+                        ok = bool(isinstance(out, dict) and out.get("success") is True)
+                        err = (out.get("error") if isinstance(out, dict) else None)
+                        exec_rows.append(
+                            {
+                                "iter": it,
+                                "tool": tname,
+                                "dataset": (args or {}).get("dataset") if isinstance(args, dict) else None,
+                                "params": args if isinstance(args, dict) else {},
+                                "duration_ms": ms,
+                                "success": ok,
+                                "error": err,
+                            }
+                        )
+
+                        preview = ""
+                        if isinstance(out, dict):
+                            if ok:
+                                r = out.get("result")
+                                if isinstance(r, dict):
+                                    preview = ", ".join([str(k) for k in list(r.keys())[:6]])
+                                elif isinstance(r, list):
+                                    preview = f"rows={len(r)}"
+                                else:
+                                    preview = str(r)[:180]
+                            else:
+                                preview = str(err or "工具失败")[:180]
+                        else:
+                            preview = str(out)[:180]
+
+                        status_text = "成功" if ok else "失败"
+                        tool_feedback_lines.append(f"- {tname}: {status_text}; 摘要={preview}")
+
+                    # 把环境真实反馈注入下一轮决策
+                    messages.append({"role": "user", "content": "\n".join(tool_feedback_lines) + "\n请基于以上真实结果继续：若信息足够请直接给结论，否则继续调用工具。"})
+
+                    if stop_reason == "tool_budget_exhausted":
+                        break
+
+                if not stop_reason:
+                    stop_reason = "max_iterations_reached"
+
+                if not final_text:
+                    success_cnt = sum(1 for r in exec_rows if r.get("success"))
+                    final_text = f"已完成工具执行（成功 {success_cnt}/{len(exec_rows)}），但未产出最终自然语言结论。"
+
                 analysis_trace["execution"] = exec_rows
+                analysis_trace["agentic_stop_reason"] = stop_reason
                 context["analysis_trace"] = analysis_trace
-                second = llm.client.chat.completions.create(model=getattr(llm, "model", None), messages=messages, tools=tool_specs)
-                msg2 = second.choices[0].message
-                text = str(getattr(msg2, "content", "") or "").strip() or "OK"
-                self.memory.add_message('assistant', text, {'tools_used': [r.get('tool') for r in exec_rows], 'execution_time': (datetime.now() - start_time).total_seconds()})
-                return {"text": text, "insights": [], "visualizations": [], "tools_used": [r.get("tool") for r in exec_rows], "context": context}
+                self.memory.add_message('assistant', final_text, {'tools_used': [r.get('tool') for r in exec_rows], 'execution_time': (datetime.now() - start_time).total_seconds()})
+                return {"text": final_text, "insights": [], "visualizations": [], "tools_used": [r.get("tool") for r in exec_rows], "context": context}
             except Exception as e:
                 analysis_trace["execution"] = exec_rows
                 context["analysis_trace"] = analysis_trace
                 err = str(e)
-                text = f"智能分析过程中出现错误：{err}"
-                self.memory.add_message('assistant', text, {'tools_used': [r.get('tool') for r in exec_rows], 'execution_time': (datetime.now() - start_time).total_seconds()})
-                return {"text": text, "insights": [], "visualizations": [], "tools_used": [r.get("tool") for r in exec_rows], "context": context}
+                logger.warning(f"Agentic模式失败，降级到rule模式继续处理: {err}")
+                analysis_trace["agentic_fallback"] = {
+                    "to_mode": "rule",
+                    "reason": err,
+                    "partial_execution_count": len(exec_rows),
+                }
+                analysis_trace["mode"] = "rule"
+                context["analysis_trace"] = analysis_trace
+                context["agentic_error"] = err
+                mode = "rule"
 
         # 3. 获取相关历史
         relevant_history = self.memory.get_relevant_history(question)
@@ -5431,7 +5880,15 @@ class IntelligentAgent:
                         f"- 失败数: {summary.get('overall_failure', 0)}\n"
                         f"- 总体失败率: {summary.get('overall_failure_rate', 0)}%\n"
                     )
-                    top_rows = sorted(tool_result.get('rows', []), key=lambda r: r.get('failure_rate', 0), reverse=True)[:5]
+                    all_rows = tool_result.get('rows', []) or []
+                    overall_total = int(summary.get('overall_total') or 0)
+                    ql = (question or '').lower()
+                    min_total = 20 if overall_total >= 1000 else 5
+                    if any(k in ql for k in ['经常', '稳定', '反复', '高频']):
+                        min_total = max(min_total, 30 if overall_total >= 1000 else 8)
+                    rows_with_min = [r for r in all_rows if int(r.get('total') or 0) >= min_total]
+                    top_source = rows_with_min if rows_with_min else all_rows
+                    top_rows = sorted(top_source, key=lambda r: (r.get('failure_rate', 0), r.get('total', 0)), reverse=True)[:5]
                     if top_rows:
                         answer_parts.append("失败率Top 5：\n")
                         for r in top_rows:

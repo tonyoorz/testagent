@@ -20,6 +20,8 @@ import json
 import time
 import logging
 import threading
+import sqlite3
+import re
 from typing import Dict, List, Any, Optional, Callable, Generator
 from datetime import datetime
 import pandas as pd
@@ -295,9 +297,7 @@ class EnhancedAIChatManager:
                 'project': "请对比分析各项目的缺陷与测试情况",
                 'trend': "请基于缺陷趋势和测试效率给出改进建议",
                 'matrix': "请分析缺陷矩阵分布和严重性问题",
-                'team': "请分析测试团队效率和缺陷发现能力",
-                'one_click': "请一键综合分析当前缺陷与测试数据（全量）",
-                'agent_analysis': "请使用智能工具进行深度分析"
+                'team': "请分析测试团队效率和缺陷发现能力"
             },
             'test': {
                 'summary': "请总结当前的测试覆盖率情况",
@@ -455,19 +455,9 @@ class EnhancedAIChatManager:
 
     def _get_enhanced_system_prompt(self, data_context: str = "") -> str:
         """获取增强的系统提示词 - 使用新的统一模板"""
-        # 优先使用新的 prompt_templates
-        try:
-            from prompt_templates import get_system_prompt
-            prompt = get_system_prompt(self.dashboard_type, data_context)
-        except ImportError:
-            # 降级：如果 prompt_templates 不存在，使用原有逻辑
-            logger.warning("prompt_templates 未找到，使用降级方案")
-            if self.use_agent and self.intelligent_agent:
-                prompt = self.intelligent_agent.get_enhanced_system_prompt(data_context)
-            else:
-                # 使用默认增强提示词
-                base_prompts = {
-                'defect': """你是 BMW 汽车测试数据分析专家。
+        # 默认增强提示词（确保任何路径都有可用 prompt）
+        base_prompts = {
+            'defect': """你是 BMW 汽车测试数据分析专家。
 
 **核心能力：**
 1. 缺陷数据分析 - 识别趋势、模式和异常
@@ -511,8 +501,27 @@ class EnhancedAIChatManager:
 - 数据支撑
 - 可执行建议
 """
-            }
-            prompt = base_prompts.get(self.dashboard_type, base_prompts['general'])
+        }
+
+        prompt = base_prompts.get(self.dashboard_type, base_prompts['general'])
+
+        # 优先使用新的 prompt_templates
+        try:
+            from prompt_templates import get_system_prompt
+
+            template_prompt = get_system_prompt(self.dashboard_type, data_context)
+            if isinstance(template_prompt, str) and template_prompt.strip():
+                prompt = template_prompt
+        except Exception as e:
+            # 降级：如果 prompt_templates 不存在或模板执行异常，继续使用回退方案
+            logger.warning(f"prompt_templates 不可用，使用降级方案: {e}")
+            if self.use_agent and self.intelligent_agent:
+                try:
+                    agent_prompt = self.intelligent_agent.get_enhanced_system_prompt(data_context)
+                    if isinstance(agent_prompt, str) and agent_prompt.strip():
+                        prompt = agent_prompt
+                except Exception as agent_err:
+                    logger.warning(f"智能Agent系统提示词不可用，继续使用默认提示词: {agent_err}")
 
         if data_context and "**当前数据上下文：**" not in prompt:
             prompt += f"\n\n**当前数据上下文：**\n{data_context}\n"
@@ -604,13 +613,13 @@ class EnhancedAIChatManager:
                     n_clicks=0,
                     className='chat-quick-btn',
                     style={
-                        'margin': '5px',
-                        'padding': '8px 12px',
-                        'fontSize': '12px',
+                        'margin': '3px',
+                        'padding': '5px 10px',
+                        'fontSize': '11px',
                         'backgroundColor': color_scheme['bg'],
                         'color': color_scheme['color'],
                         'border': f"1px solid {color_scheme['border']}",
-                        'borderRadius': '15px',
+                        'borderRadius': '13px',
                         'cursor': 'pointer',
                         'transition': 'all 0.3s ease',
                         'boxShadow': '0 2px 4px rgba(0,0,0,0.1)' if is_agent_button else 'none'
@@ -622,44 +631,6 @@ class EnhancedAIChatManager:
 
         # 构建界面
         interface = html.Div([
-            # Agent 模式控制
-            html.Div([
-                html.Div([
-                    html.Label([
-                        html.I(className="fas fa-robot", style={'marginRight': '5px'}),
-                        '对话模式'
-                    ], style={'fontSize': '14px', 'marginRight': '10px'}),
-                    dcc.RadioItems(
-                        id=f'{chat_id_prefix}-chat-mode',
-                        options=[
-                            {'label': ' 纯聊天（不读本地数据）', 'value': 'pure'},
-                            {'label': ' 摘要（读本地摘要）', 'value': 'summary'},
-                            {'label': ' Agent（工具链）', 'value': 'agent'},
-                        ],
-                        value=default_mode,
-                        labelStyle={'display': 'inline-block', 'marginLeft': '10px'}
-                    )
-                ], style={'display': 'inline-block', 'marginRight': '18px'}),
-                html.Div([
-                    html.Label([
-                        html.I(className="fas fa-search", style={'marginRight': '5px'}),
-                        '重复提票检测'
-                    ], style={'fontSize': '14px', 'marginRight': '10px'}),
-                    dcc.Checklist(
-                        id=f'{chat_id_prefix}-known-issues',
-                        options=[{'label': ' 识别已知问题', 'value': 'known'}],
-                        value=[],
-                        style={'display': 'inline-block'}
-                    )
-                ], style={'display': 'inline-block'})
-            ], style={
-                'textAlign': 'right',
-                'padding': '10px',
-                'backgroundColor': '#f8f9fa',
-                'borderRadius': '8px',
-                'marginBottom': '10px'
-            }),
-
             # 对话历史区域
             html.Div(
                 id=f'{chat_id_prefix}-history',
@@ -671,23 +642,66 @@ class EnhancedAIChatManager:
                             f"{'当前为 Agent（工具链）模式。' if default_mode == 'agent' else '当前为摘要模式。'}"
                         )
                     ], style={
-                        'padding': '12px',
+                        'padding': '8px 10px',
                         'backgroundColor': '#f8f9fa',
                         'borderRadius': '8px',
-                        'margin': '8px 0',
-                        'border': '1px solid #e9ecef'
+                        'margin': '4px 0',
+                        'border': '1px solid #e9ecef',
+                        'fontSize': '13px'
                     })
                 ],
                 style={
                     'flex': '1 1 auto',
-                    'minHeight': '220px',
+                    'minHeight': '180px',
                     'overflowY': 'auto',
                     'border': '1px solid #ddd',
-                    'padding': '15px',
+                    'padding': '10px',
                     'borderRadius': '8px',
                     'backgroundColor': '#fafafa'
                 }
             ),
+
+            # 对话模式和重复提票控制（放在对话框和发送区之间）
+            html.Div([
+                html.Div([
+                    dcc.RadioItems(
+                        id=f'{chat_id_prefix}-chat-mode',
+                        options=[
+                            {'label': ' 纯聊天', 'value': 'pure'},
+                            {'label': ' 摘要', 'value': 'summary'},
+                            {'label': ' Agent', 'value': 'agent'},
+                        ],
+                        value=default_mode,
+                        labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontSize': '12px'}
+                    ),
+                    html.Span(
+                        "纯=不读本地 | 摘要=数据库直读 | Agent=工具链",
+                        style={'fontSize': '11px', 'color': '#6b7280', 'marginLeft': '6px'}
+                    )
+                ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap', 'gap': '4px'}),
+                html.Div([
+                    dcc.Checklist(
+                        id=f'{chat_id_prefix}-known-issues',
+                        options=[{'label': ' 已知问题', 'value': 'known'}],
+                        value=[],
+                        style={'display': 'inline-block', 'fontSize': '12px'}
+                    ),
+                    html.Span(
+                        "检测重复提票",
+                        style={'fontSize': '11px', 'color': '#6b7280', 'marginLeft': '5px'}
+                    )
+                ], style={'display': 'flex', 'alignItems': 'center'})
+            ], style={
+                'display': 'flex',
+                'alignItems': 'center',
+                'justifyContent': 'space-between',
+                'padding': '6px 8px',
+                'backgroundColor': '#f8f9fa',
+                'border': '1px solid #e5e7eb',
+                'borderRadius': '8px',
+                'gap': '8px',
+                'flexWrap': 'wrap'
+            }),
 
             # 状态显示
             html.Div(
@@ -695,11 +709,11 @@ class EnhancedAIChatManager:
                 children=[],
                 style={
                     'textAlign': 'center',
-                    'marginTop': '10px',
-                    'marginBottom': '10px',
-                    'fontSize': '14px',
+                    'marginTop': '6px',
+                    'marginBottom': '6px',
+                    'fontSize': '12px',
                     'color': '#666',
-                    'minHeight': '20px'
+                    'minHeight': '16px'
                 }
             ),
 
@@ -710,12 +724,12 @@ class EnhancedAIChatManager:
                     type='text',
                     placeholder='请输入您的问题...',
                     style={
-                        'width': '82%',
-                        'padding': '12px',
-                        'marginRight': '10px',
+                        'width': '84%',
+                        'padding': '9px 10px',
+                        'marginRight': '8px',
                         'borderRadius': '8px',
-                        'border': '2px solid #e0e0e0',
-                        'fontSize': '14px'
+                        'border': '1px solid #d1d5db',
+                        'fontSize': '13px'
                     },
                     value='',
                     persistence=False
@@ -725,32 +739,32 @@ class EnhancedAIChatManager:
                     id=f'{chat_id_prefix}-send-button',
                     n_clicks=0,
                     style={
-                        'width': '15%',
-                        'padding': '12px',
+                        'width': '14%',
+                        'padding': '9px 10px',
                         'backgroundColor': '#3498db',
                         'color': 'white',
                         'border': 'none',
                         'borderRadius': '8px',
                         'cursor': 'pointer',
-                        'fontSize': '14px',
+                        'fontSize': '13px',
                         'fontWeight': 'bold'
                     }
                 )
-            ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '10px'}),
+            ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '6px'}),
 
             # 预设问题
             html.Div([
-                html.P("快速提问：", style={'fontSize': '14px', 'margin': '10px 0 5px 0', 'color': '#666'}),
+                html.P("快速提问：", style={'fontSize': '12px', 'margin': '6px 0 3px 0', 'color': '#666'}),
                 html.Div(
                     preset_buttons,
                     style={
                         'display': 'flex',
-                        'gap': '8px',
+                        'gap': '6px',
                         'flexWrap': 'wrap',
                         'justifyContent': 'center'
                     }
                 )
-            ], style={'marginTop': '15px'}),
+            ], style={'marginTop': '8px'}),
 
             # 控制面板
             html.Div([
@@ -760,7 +774,7 @@ class EnhancedAIChatManager:
                             id=f'{chat_id_prefix}-show-reasoning',
                             options=[{'label': ' 显示AI思考过程', 'value': 'show'}],
                             value=['show'],
-                            style={'fontSize': '14px'}
+                            style={'fontSize': '12px'}
                         )
                     ])
                 ], style={'flex': '1'}),
@@ -771,25 +785,25 @@ class EnhancedAIChatManager:
                         id=f'{chat_id_prefix}-clear-button',
                         n_clicks=0,
                         style={
-                            'padding': '6px 12px',
+                            'padding': '4px 10px',
                             'backgroundColor': '#dc3545',
                             'color': 'white',
                             'border': 'none',
                             'borderRadius': '4px',
                             'cursor': 'pointer',
-                            'fontSize': '12px'
+                            'fontSize': '11px'
                         }
                     )
                 ], style={'textAlign': 'right'})
             ], style={
                 'display': 'flex',
                 'alignItems': 'center',
-                'marginTop': '10px',
-                'padding': '8px',
+                'marginTop': '6px',
+                'padding': '6px 8px',
                 'backgroundColor': '#f8f9fa',
                 'borderRadius': '4px'
             })
-        ], style={'width': '100%', 'height': '100%', 'display': 'flex', 'flexDirection': 'column', 'gap': '10px', 'padding': '20px'})
+        ], style={'width': '100%', 'height': '100%', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px', 'padding': '12px'})
 
         return interface
 
@@ -1057,9 +1071,30 @@ class EnhancedAIChatManager:
 
             threading.Thread(target=worker, daemon=True).start()
 
-        def start_llm_streaming(task_id: str, question: str, current_data: Any, conversation_history: List[Dict[str, Any]]):
-            data_context = self._generate_data_context(current_data, question=question)
-            system_prompt = self._get_enhanced_system_prompt(data_context)
+        def start_llm_streaming(task_id: str, question: str, current_data: Any,
+                                conversation_history: List[Dict[str, Any]],
+                                chat_mode: str = "summary"):
+            # pure 模式用于直连LLM验证，不做数据库摘要兜底。
+            if chat_mode != "pure" and not self._has_data(current_data):
+                db_summary = _build_db_profile_summary(question)
+                if db_summary:
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        streaming_data[task_id]['status'] = 'completed'
+                        streaming_data[task_id]['response'] = db_summary
+                        streaming_data[task_id]['progress'] = '完成（数据库摘要）'
+                        streaming_data[task_id]['last_update'] = time.time()
+                    return
+
+            data_context = "" if chat_mode == "pure" else self._generate_data_context(current_data, question=question)
+            if chat_mode == "pure":
+                system_prompt = (
+                    "你是一个简洁友好的通用助手。"
+                    "优先直接回答用户问题；不主动要求提供缺陷/测试数据；"
+                    "除非用户明确要求数据分析。"
+                )
+            else:
+                system_prompt = self._get_enhanced_system_prompt(data_context)
             messages = [{"role": "system", "content": system_prompt}]
             for msg in (conversation_history or [])[-10:]:
                 if msg.get('role') in ['user', 'assistant']:
@@ -1077,6 +1112,455 @@ class EnhancedAIChatManager:
                 temperature=DEFAULT_TEMPERATURE,
                 max_tokens=DEFAULT_MAX_TOKENS
             )
+
+        def _guess_target_table(question_text: str) -> str:
+            q = (question_text or "").lower()
+            if any(k in q for k in ["manual run", "testrun", "测试执行", "测试运行"]):
+                return "octane_manual_runs"
+            if any(k in q for k in ["history", "历史", "阶段变化", "phase"]):
+                return "octane_defect_histories"
+            return "octane_defects"
+
+        def _stream_text_response(task_id: str, text: str, progress_text: str = '正在输出结果...'):
+            chunk_size = 90
+            content = str(text or "").strip()
+            for end in range(0, len(content), chunk_size):
+                partial = content[:end + chunk_size]
+                with streaming_lock:
+                    streaming_data[task_id]['status'] = 'processing'
+                    streaming_data[task_id]['response'] = partial
+                    streaming_data[task_id]['progress'] = progress_text
+                    streaming_data[task_id]['last_update'] = time.time()
+                time.sleep(0.02)
+            with streaming_lock:
+                streaming_data[task_id]['status'] = 'completed'
+                streaming_data[task_id]['progress'] = '完成'
+                streaming_data[task_id]['last_update'] = time.time()
+
+        def _safe_chat_completion(task_id: str, messages: List[Dict[str, str]], temperature: float,
+                                  max_tokens: int, stage_text: str) -> str:
+            """调用LLM时做容错，避免摘要模式因单次请求异常而整体失败。"""
+            if not self.chatbot or not hasattr(self.chatbot, 'chat_completion'):
+                return ""
+
+            try:
+                return str(self.chatbot.chat_completion(messages, temperature=temperature, max_tokens=max_tokens) or "").strip()
+            except Exception as e:
+                logger.warning(f"摘要模式LLM调用失败({stage_text}): {e}")
+                with streaming_lock:
+                    streaming_data.setdefault(task_id, {})
+                    streaming_data[task_id]['status'] = 'processing'
+                    streaming_data[task_id]['progress'] = f'{stage_text}失败，正在降级...'
+                    streaming_data[task_id]['llm_error'] = f"{stage_text}: {e}"
+                    streaming_data[task_id]['last_update'] = time.time()
+                return ""
+
+        def _extract_query_hints(question: str, columns: List[str]) -> Dict[str, Any]:
+            q = str(question or "")
+            ql = q.lower()
+
+            # 识别可能的项目/团队关键字（例如 IDCEVO）
+            tokens = re.findall(r"[A-Za-z][A-Za-z0-9_\-]{3,}", q)
+            entity_tokens = [t for t in tokens if t.lower() not in {"aida", "ticket", "topissue", "issue", "defect", "summary", "agent", "sqlite"}]
+
+            wants_aida_dist = any(k in ql for k in ["aida", "分布", "distribution", "领域", "模块"])
+            wants_topissue = any(k in ql for k in ["topissue", "top issue", "高风险", "风险", "严重"])
+            wants_detail = any(k in ql for k in ["详情", "详细", "detail", "ticket", "列表", "哪些"])
+
+            return {
+                "entity_tokens": entity_tokens[:5],
+                "wants_aida_dist": wants_aida_dist,
+                "wants_topissue": wants_topissue,
+                "wants_detail": wants_detail,
+                "columns": set(columns or []),
+            }
+
+        def _build_deterministic_sql(question: str, table_name: str, columns: List[str]) -> str:
+            """规则化SQL生成：摘要模式默认走这里，避免LLM生成SQL卡住。"""
+            hints = _extract_query_hints(question, columns)
+            cols = hints["columns"]
+
+            select_cols = []
+            for c in [
+                "defect_id", "id", "name", "project", "tproject", "team", "ecu",
+                "aida_english", "top_aida", "status_phase", "severity_group",
+                "topissue_display", "creation_time", "last_modified"
+            ]:
+                if c in cols:
+                    select_cols.append(c)
+
+            if not select_cols:
+                select_cols = list(columns[:10]) if columns else ["*"]
+
+            where_parts = []
+
+            if hints["wants_topissue"]:
+                if "topissue_display" in cols:
+                    where_parts.append("topissue_display IS NOT NULL AND CAST(topissue_display AS TEXT) <> ''")
+                elif "severity_group" in cols:
+                    where_parts.append("LOWER(CAST(severity_group AS TEXT)) IN ('critical','high','s1','s2')")
+
+            if hints["entity_tokens"]:
+                searchable = [c for c in ["project", "tproject", "team", "ecu", "name"] if c in cols]
+                for tok in hints["entity_tokens"]:
+                    if searchable:
+                        like_group = " OR ".join([f"LOWER(CAST({c} AS TEXT)) LIKE LOWER('%{tok}%')" for c in searchable])
+                        where_parts.append(f"({like_group})")
+
+            where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+            order_col = "creation_time" if "creation_time" in cols else "last_modified" if "last_modified" in cols else None
+            order_sql = f" ORDER BY {order_col} DESC" if order_col else ""
+
+            return f'SELECT {", ".join(select_cols)} FROM "{table_name}"{where_sql}{order_sql} LIMIT 120'
+
+        def _build_local_db_answer(question: str, table_name: str, sql_used: str,
+                                   rows: List[Dict[str, Any]], note: str = "") -> str:
+            """大模型不可用时的本地回答兜底。"""
+            safe_rows = [r for r in (rows or []) if isinstance(r, dict)]
+            lines: List[str] = ["[数据库直读模式｜本地降级摘要]", f"表: {table_name or '-'}", f"SQL: {sql_used or '-'}"]
+            if note:
+                lines.append(f"说明: {note}")
+
+            if not safe_rows:
+                lines.append("结果: 查询无数据。请调整问题或切换 Agent（工具链）模式。")
+                return "\n".join(lines)
+
+            lines.append("")
+            lines.append(f"命中记录: {len(safe_rows)}")
+
+            aida_col = None
+            for c in ['aida_english', 'top_aida', 'aida', 'product_area', 'service', 'module']:
+                if any(c in row for row in safe_rows):
+                    aida_col = c
+                    break
+
+            if aida_col:
+                counts: Dict[str, int] = {}
+                for row in safe_rows:
+                    v = str(row.get(aida_col) or '未标注').strip()
+                    if not v:
+                        v = '未标注'
+                    counts[v] = counts.get(v, 0) + 1
+                top_aidas = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:10]
+                lines.append("AIDA分布(Top10):")
+                for name, cnt in top_aidas:
+                    lines.append(f"- {name}: {cnt}")
+
+            key_cols = []
+            for c in ['defect_id', 'id', 'name', 'status_phase', 'project', 'tproject', 'ecu', 'severity_group', 'topissue_display']:
+                if any(c in row for row in safe_rows):
+                    key_cols.append(c)
+
+            lines.append("")
+            lines.append("Ticket详情(前20条):")
+            for i, row in enumerate(safe_rows[:20], 1):
+                parts = []
+                for c in key_cols[:8]:
+                    v = row.get(c)
+                    if v not in (None, ""):
+                        parts.append(f"{c}={v}")
+                if not parts:
+                    parts.append(str(row)[:220])
+                lines.append(f"{i}. " + " | ".join(parts))
+
+            lines.append("\n提示: 当前返回为本地降级结果，如需更深分析请切换 Agent（工具链）模式。")
+            return "\n".join(lines)
+
+        def _summary_debug_enabled() -> bool:
+            return (os.getenv("CHAT_SUMMARY_DEBUG", "1") or "1").strip().lower() not in {"0", "false", "no"}
+
+        def _append_summary_debug_block(text: str, mode: str, stage: str, elapsed_ms: int,
+                                        table_name: str, sql_used: str, row_count: int) -> str:
+            if not _summary_debug_enabled():
+                return text
+            debug_lines = [
+                "",
+                "[调试]",
+                f"- mode: {mode}",
+                f"- stage: {stage}",
+                f"- elapsed_ms: {elapsed_ms}",
+                f"- table: {table_name or '-'}",
+                f"- row_count: {int(row_count or 0)}",
+                f"- sql: {sql_used or '-'}",
+            ]
+            return f"{text.rstrip()}\n" + "\n".join(debug_lines)
+
+        def start_db_summary_streaming(task_id: str, question: str, conversation_history: List[Dict[str, Any]]):
+            """摘要模式：数据库直读 + LLM 解释，不走 Agent 工具链。"""
+            def worker():
+                target_table = ""
+                sql_clean = ""
+                out_rows: List[Dict[str, Any]] = []
+                stage = "init"
+                summary_sql_mode = "llm"
+                started_at = time.time()
+                try:
+                    stage = "open_db"
+                    db_path = os.getenv("AGENT_SQLITE_DB_PATH") or default_db_path()
+                    if not db_path or not os.path.exists(db_path):
+                        raise RuntimeError(f"数据库文件不存在: {db_path}")
+
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        streaming_data[task_id]['status'] = 'processing'
+                        streaming_data[task_id]['progress'] = '正在读取数据库结构...'
+                        streaming_data[task_id]['last_update'] = time.time()
+
+                    stage = "load_schema"
+                    target_table = _guess_target_table(question)
+                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                    conn.row_factory = sqlite3.Row
+                    cur = conn.cursor()
+                    try:
+                        cur.execute("PRAGMA query_only = ON")
+                    except Exception:
+                        pass
+
+                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+                    all_tables = []
+                    for r in (cur.fetchall() or []):
+                        if r is None:
+                            continue
+                        try:
+                            all_tables.append(str(r[0]))
+                        except Exception:
+                            continue
+                    if not all_tables:
+                        conn.close()
+                        raise RuntimeError("数据库无可用业务表")
+                    if target_table not in all_tables:
+                        target_table = all_tables[0]
+
+                    cur.execute(f'PRAGMA table_info("{target_table}")')
+                    schema_rows = cur.fetchall() or []
+                    columns = []
+                    for r in schema_rows:
+                        if r is None:
+                            continue
+                        try:
+                            columns.append(str(r[1]))
+                        except Exception:
+                            continue
+                    col_preview = columns[:30]
+
+                    # 默认使用规则化SQL，避免摘要模式因LLM生成SQL导致卡顿
+                    with streaming_lock:
+                        streaming_data[task_id]['progress'] = '正在生成数据库查询(规则模式)...'
+                        streaming_data[task_id]['last_update'] = time.time()
+
+                    stage = "generate_sql"
+                    summary_sql_mode = (os.getenv("CHAT_SUMMARY_SQL_MODE") or "llm").strip().lower()
+                    sql = ""
+
+                    if summary_sql_mode == "llm":
+                        hist = []
+                        for msg in (conversation_history or [])[-6:]:
+                            if msg.get('role') in ['user', 'assistant']:
+                                c = str(msg.get('content', '')).strip()
+                                if c:
+                                    hist.append({"role": msg.get('role'), "content": c[:300]})
+
+                        sql_messages = [
+                            {"role": "system", "content": "你是SQLite分析助手。请只输出JSON：{\"sql\":\"...\"}。SQL必须是只读（SELECT/WITH），且只查询给定表。"},
+                            {"role": "user", "content": json.dumps({
+                                "question": question,
+                                "table": target_table,
+                                "columns": col_preview,
+                                "history": hist,
+                                "rules": [
+                                    "仅允许SELECT/WITH",
+                                    "限制返回不超过200行",
+                                    "尽量包含与问题最相关的分组、失败率/计数字段"
+                                ]
+                            }, ensure_ascii=False)}
+                        ]
+
+                        sql_text = _safe_chat_completion(
+                            task_id=task_id,
+                            messages=sql_messages,
+                            temperature=0.1,
+                            max_tokens=450,
+                            stage_text='SQL生成'
+                        )
+                        m = re.search(r"\{[\s\S]*\}", str(sql_text or ""))
+                        if m:
+                            try:
+                                obj = json.loads(m.group(0))
+                                sql = str(obj.get("sql") or "").strip()
+                            except Exception:
+                                sql = ""
+
+                    if not sql:
+                        sql = _build_deterministic_sql(question=question, table_name=target_table, columns=col_preview)
+
+                    sql_clean = sql.strip().rstrip(';')
+                    if not re.match(r"^\s*(select|with)\b", sql_clean, flags=re.IGNORECASE):
+                        sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
+                    if re.search(r"\b(insert|update|delete|drop|alter|truncate|attach|detach|pragma\s+write)\b", sql_clean, flags=re.IGNORECASE):
+                        sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
+
+                    with streaming_lock:
+                        streaming_data[task_id]['progress'] = '正在执行数据库查询...'
+                        streaming_data[task_id]['last_update'] = time.time()
+
+                    stage = "run_sql"
+                    try:
+                        cur.execute(sql_clean)
+                        rows = cur.fetchmany(200)
+                    except Exception:
+                        sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
+                        cur.execute(sql_clean)
+                        rows = cur.fetchmany(200)
+
+                    out_rows = []
+                    for r in rows[:120]:
+                        try:
+                            d = dict(r) if r is not None else {}
+                        except Exception:
+                            d = {}
+                        out_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
+
+                    conn.close()
+
+                    with streaming_lock:
+                        streaming_data[task_id]['progress'] = '正在生成回答...'
+                        streaming_data[task_id]['last_update'] = time.time()
+
+                    ans_messages = [
+                        {"role": "system", "content": "你是数据分析助手。基于SQL结果回答用户，先给结论，再给关键数据点；若样本不足要明确说明。"},
+                        {"role": "user", "content": json.dumps({
+                            "question": question,
+                            "table": target_table,
+                            "sql": sql_clean,
+                            "row_count": len(out_rows),
+                            "rows": out_rows
+                        }, ensure_ascii=False)}
+                    ]
+                    stage = "generate_answer"
+                    answer = _safe_chat_completion(
+                        task_id=task_id,
+                        messages=ans_messages,
+                        temperature=0.2,
+                        max_tokens=1200,
+                        stage_text='答案生成'
+                    )
+
+                    # 第一次失败时，自动降采样重试，减少上下文负载造成的失败概率。
+                    if not answer:
+                        compact_rows = out_rows[:30]
+                        retry_messages = [
+                            {"role": "system", "content": "你是数据分析助手。请基于给定样本简洁回答，先结论后要点。"},
+                            {"role": "user", "content": json.dumps({
+                                "question": question,
+                                "table": target_table,
+                                "sql": sql_clean,
+                                "row_count": len(compact_rows),
+                                "rows": compact_rows,
+                                "note": "compact_retry"
+                            }, ensure_ascii=False)}
+                        ]
+                        answer = _safe_chat_completion(
+                            task_id=task_id,
+                            messages=retry_messages,
+                            temperature=0.2,
+                            max_tokens=800,
+                            stage_text='答案生成重试'
+                        )
+
+                    if not answer:
+                        llm_err = ""
+                        with streaming_lock:
+                            llm_err = str((streaming_data.get(task_id) or {}).get('llm_error') or "").strip()
+                        answer = _build_local_db_answer(
+                            question=question,
+                            table_name=target_table,
+                            sql_used=sql_clean,
+                            rows=out_rows,
+                            note=(f"大模型不可用，已返回本地汇总; {llm_err}" if llm_err else '大模型不可用，已返回本地汇总')
+                        )
+                    final = f"[数据库直读模式｜无工具链]\n表: {target_table}\nSQL: {sql_clean}\n\n{answer}"
+                    elapsed_ms = int((time.time() - started_at) * 1000)
+                    final = _append_summary_debug_block(
+                        text=final,
+                        mode=summary_sql_mode,
+                        stage=stage,
+                        elapsed_ms=elapsed_ms,
+                        table_name=target_table,
+                        sql_used=sql_clean,
+                        row_count=len(out_rows),
+                    )
+                    _stream_text_response(task_id, final)
+
+                except Exception as e:
+                    fallback_text = _build_local_db_answer(
+                        question=question,
+                        table_name=target_table,
+                        sql_used=sql_clean,
+                        rows=out_rows,
+                        note=f"阶段={stage}; 异常={e}"
+                    )
+                    elapsed_ms = int((time.time() - started_at) * 1000)
+                    fallback_text = _append_summary_debug_block(
+                        text=fallback_text,
+                        mode=summary_sql_mode,
+                        stage=stage,
+                        elapsed_ms=elapsed_ms,
+                        table_name=target_table,
+                        sql_used=sql_clean,
+                        row_count=len(out_rows),
+                    )
+                    if fallback_text.strip():
+                        _stream_text_response(task_id, fallback_text, progress_text='摘要模式降级输出中...')
+                    else:
+                        with streaming_lock:
+                            streaming_data.setdefault(task_id, {})
+                            streaming_data[task_id]['status'] = 'error'
+                            streaming_data[task_id]['error'] = f"数据库直读模式失败(stage={stage}): {e}"
+                            streaming_data[task_id]['last_update'] = time.time()
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def _format_db_profile_lines(result: Dict[str, Any]) -> str:
+            tables = (result or {}).get("tables") or {}
+            if not tables:
+                return "当前数据库可访问，但未读取到可用表结构。"
+            lines: List[str] = ["已切换为数据库摘要模式（SQLite）。"]
+            for tname, tinfo in list(tables.items())[:3]:
+                row_count = int((tinfo or {}).get("row_count") or 0)
+                lines.append(f"- 表 {tname}: {row_count} 行")
+                cols = (tinfo or {}).get("columns") or []
+                for c in cols[:8]:
+                    cname = c.get("name")
+                    if not cname:
+                        continue
+                    top_vals = c.get("top_values") or []
+                    if top_vals:
+                        preview = ", ".join([f"{str(v.get('value'))}:{int(v.get('count') or 0)}" for v in top_vals[:3]])
+                        lines.append(f"  - {cname}: {preview}")
+            lines.append("提示：如需更深入分析，请切换到 Agent（工具链）模式。")
+            return "\n".join(lines)
+
+        def _build_db_profile_summary(question_text: str) -> str:
+            try:
+                if not self.intelligent_agent or not getattr(self.intelligent_agent, "tool_executor", None):
+                    return ""
+                tool_executor = self.intelligent_agent.tool_executor
+                tool_names = set((tool_executor.tools or {}).keys()) if hasattr(tool_executor, "tools") else set()
+                if "get_db_profile" not in tool_names:
+                    return ""
+
+                table_name = _guess_target_table(question_text)
+                out = tool_executor.execute_tool("get_db_profile", None, table=table_name, top_n=5, sample_columns=12)
+                if not isinstance(out, dict) or out.get("success") is not True:
+                    # 指定表失败时回退全库概览
+                    out = tool_executor.execute_tool("get_db_profile", None, top_n=5, sample_columns=8)
+                if not isinstance(out, dict) or out.get("success") is not True:
+                    return ""
+                return _format_db_profile_lines(out.get("result") or {})
+            except Exception as e:
+                logger.warning(f"数据库摘要生成失败: {e}")
+                return ""
 
         def start_duplicate_check_streaming(task_id: str, question: str, current_data: Any, conversation_history: List[Dict[str, Any]]):
             df: pd.DataFrame = pd.DataFrame()
@@ -1289,13 +1773,26 @@ class EnhancedAIChatManager:
             prefer_agent_for_query = False
 
             if user_message:
+                # 问候语快速路径：避免被分析型提示词放大为长篇数据说明。
+                msg_norm = str(user_message or "").strip().lower()
+                greeting_set = {"hi", "hello", "hey", "你好", "嗨", "哈喽", "在吗", "在么", "hi!", "hello!"}
+                if msg_norm in greeting_set and len(msg_norm) <= 12:
+                    chat_messages.append({"role": "user", "content": user_message})
+                    chat_messages.append({
+                        "role": "assistant",
+                        "content": "你好，我在。你可以直接问我问题，或告诉我你想分析的范围。"
+                    })
+                    chat_messages = _trim_chat_messages(chat_messages)
+                    chat_history_children = render_chat_history(chat_messages)
+                    return chat_history_children, "", chat_messages, {'active': False, 'task_id': None}, True, "", {}
+
                 # 添加用户消息
                 chat_messages.append({"role": "user", "content": user_message})
                 chat_messages = _trim_chat_messages(chat_messages)
 
                 # 获取数据
                 current_data: Any = pd.DataFrame()
-                allow_local_data = (chat_mode in {"summary", "agent"}) or use_known_issues
+                allow_local_data = (chat_mode in {"agent"}) or use_known_issues
                 if filtered_data and allow_local_data:
                     try:
                         if data_processor_func:
@@ -1366,10 +1863,12 @@ class EnhancedAIChatManager:
                     if task_id in streaming_data:
                         streaming_data[task_id]['progress'] = '正在检索已知问题...'
                 start_duplicate_check_streaming(task_id, user_message, current_data, chat_messages)
+            elif chat_mode == "summary":
+                start_db_summary_streaming(task_id, user_message, chat_messages)
             elif ((chat_mode == "agent") or prefer_agent_for_query) and self.use_agent and self._has_data(current_data):
                 start_agent_streaming(task_id, user_message, current_data, chat_messages)
             else:
-                start_llm_streaming(task_id, user_message, current_data, chat_messages)
+                start_llm_streaming(task_id, user_message, current_data, chat_messages, chat_mode=chat_mode)
 
             streaming_state = {'active': True, 'task_id': task_id}
 

@@ -60,6 +60,7 @@ _DEFAULT_PUBLIC_BASE = "https://api.deepseek.com/v1"
 _DEFAULT_PUBLIC_MODEL = "deepseek-reasoner"
 _DEFAULT_MOONSHOT_BASE = "https://api.moonshot.cn/v1"
 _DEFAULT_MOONSHOT_MODEL = "kimi-k2.5"
+_DEFAULT_INTERNAL_TEMPLATE_URL = "https://aistudio.bmwbrill.cn/api/service/160/{access_code}/llama4/v2/chat/completions"
 
 HARDCODED_DEEPSEEK_ACCESS_CODE = "7FD25E1BD6124A1C8BF29030C8BFC43E"
 HARDCODED_DEEPSEEK_API_KEY = ""
@@ -141,6 +142,7 @@ class DeepSeekStreamingChat:
     
     def __init__(self, api_key: str = None, model: str = DEEPSEEK_MODEL, api_base: str = None):
         self.api_key = api_key or DEEPSEEK_API_KEY
+        self.access_code = ACCESS_CODE
         self.model = model
         self.api_base = api_base or DEEPSEEK_API_BASE
         self.client = self._create_client(self.api_key, self.api_base) if self.api_key else None
@@ -175,6 +177,96 @@ class DeepSeekStreamingChat:
         if "kimi" in model_text or "moonshot.cn" in base_text:
             return 1
         return temperature
+
+    def _extract_access_code(self) -> str:
+        key = str(self.api_key or "").strip()
+        if key.startswith("ACCESSCODE"):
+            parts = key.split(" ", 1)
+            if len(parts) == 2 and parts[1].strip():
+                return parts[1].strip()
+        return str(self.access_code or "").strip()
+
+    def _should_use_internal_template_for_nonstream(self) -> bool:
+        # 只要能拿到 access_code，就优先走已验证可用的内网模板接口。
+        return bool(self._extract_access_code())
+
+    def _resolve_internal_template_url(self) -> str:
+        tmpl = os.environ.get("DEEPSEEK_INTERNAL_TEMPLATE_URL") or _DEFAULT_INTERNAL_TEMPLATE_URL
+        code = self._extract_access_code()
+        if not code:
+            raise ValueError("未配置 access code，无法调用内网模板接口")
+        return tmpl.format(access_code=code)
+
+    def _request_internal_template_nonstream(self, messages: List[Dict[str, str]],
+                                             temperature: float, max_tokens: int) -> str:
+        url = self._resolve_internal_template_url()
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self._resolve_temperature(temperature, self.model, self.api_base),
+            "max_token_length": max_tokens,
+            "stream": False,
+        }
+        headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=60, verify=False)
+        resp.raise_for_status()
+        try:
+            obj = resp.json()
+        except Exception:
+            text = (resp.text or "").strip()
+            if text:
+                return text
+            raise RuntimeError("内网模板接口返回空响应")
+
+        if isinstance(obj, dict) and obj.get("code") and obj.get("message"):
+            raise RuntimeError(f"内网模板接口错误: code={obj.get('code')}, message={obj.get('message')}")
+
+        choices = obj.get("choices") if isinstance(obj, dict) else None
+        if isinstance(choices, list) and choices:
+            msg = (choices[0] or {}).get("message") or {}
+            content = msg.get("content")
+            if isinstance(content, list):
+                content = "".join([str(x.get("text") or x.get("content") or "") if isinstance(x, dict) else str(x) for x in content])
+            if content is not None:
+                return str(content).strip()
+
+        for k in ("content", "response", "answer", "text"):
+            if isinstance(obj, dict) and obj.get(k) is not None:
+                return str(obj.get(k)).strip()
+
+        return json.dumps(obj, ensure_ascii=False)
+
+    def _probe_non_stream_error(self, messages: List[Dict[str, str]], temperature: float, max_tokens: int) -> str:
+        """在SDK返回结构异常时，直接探测原始HTTP返回，给出可读错误。"""
+        try:
+            url = (self.api_base or "").rstrip("/") + "/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": self._resolve_temperature(temperature, self.model, self.api_base),
+                "max_tokens": max_tokens,
+                "stream": False,
+            }
+            resp = requests.post(url, headers=headers, json=payload, timeout=45, verify=False)
+            text = (resp.text or "").strip()
+            try:
+                obj = resp.json()
+            except Exception:
+                obj = None
+            if isinstance(obj, dict):
+                code = obj.get("code")
+                msg = obj.get("message") or obj.get("error") or text[:300]
+                return f"HTTP {resp.status_code}; code={code}; message={msg}"
+            return f"HTTP {resp.status_code}; body={text[:300]}"
+        except Exception as e:
+            return f"raw probe failed: {e}"
     
     def validate_api_key(self) -> bool:
         """验证API密钥"""
@@ -192,6 +284,12 @@ class DeepSeekStreamingChat:
     ) -> str:
         if not self.validate_api_key():
             raise ValueError("未配置可用的 DEEPSEEK_API_KEY")
+        if self._should_use_internal_template_for_nonstream():
+            try:
+                return self._request_internal_template_nonstream(messages, temperature, max_tokens)
+            except Exception as e:
+                logger.warning(f"内网模板接口调用失败，回退OpenAI兼容链路: {e}")
+
         if not self.client:
             self.client = self._create_client(self.api_key, self.api_base)
         try:
@@ -203,7 +301,17 @@ class DeepSeekStreamingChat:
                 max_tokens=max_tokens,
                 stream=False,
             )
-            return (resp.choices[0].message.content or "").strip()
+            choices = getattr(resp, "choices", None)
+            if not choices:
+                detail = self._probe_non_stream_error(messages, temperature, max_tokens)
+                raise RuntimeError(f"LLM响应缺少choices。{detail}")
+            first_choice = choices[0]
+            msg_obj = getattr(first_choice, "message", None)
+            content = getattr(msg_obj, "content", None) if msg_obj is not None else None
+            if content is None:
+                detail = self._probe_non_stream_error(messages, temperature, max_tokens)
+                raise RuntimeError(f"LLM响应content为空。{detail}")
+            return str(content).strip()
         except Exception as e:
             if not self.backup_api_key:
                 raise
@@ -217,7 +325,14 @@ class DeepSeekStreamingChat:
                     max_tokens=max_tokens,
                     stream=False,
                 )
-                return (resp.choices[0].message.content or "").strip()
+                choices = getattr(resp, "choices", None)
+                if not choices:
+                    raise RuntimeError("备用模型响应缺少choices")
+                msg_obj = getattr(choices[0], "message", None)
+                content = getattr(msg_obj, "content", None) if msg_obj is not None else None
+                if content is None:
+                    raise RuntimeError("备用模型响应content为空")
+                return str(content).strip()
             except Exception:
                 raise e
     
@@ -342,6 +457,52 @@ class DeepSeekStreamingChat:
             yield "done:完成"
             return
         else:
+            # 内网主链路统一走已验证可用的 access_code 模板接口。
+            if self._should_use_internal_template_for_nonstream():
+                with streaming_lock:
+                    streaming_data.setdefault(task_id, {})
+                    streaming_data[task_id].update({
+                        'status': 'processing',
+                        'progress': 'AI正在连接(v3.2模板)...',
+                        'last_update': time.time(),
+                    })
+
+                full_text = self._request_internal_template_nonstream(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                full_text = str(full_text or "")
+
+                content = ""
+                chunk_buf = ""
+                last_emit = time.time()
+                for ch in full_text:
+                    content += ch
+                    chunk_buf += ch
+                    now = time.time()
+                    if len(chunk_buf) >= 24 or (now - last_emit) > 0.05:
+                        with streaming_lock:
+                            streaming_data[task_id]['response'] = content
+                            streaming_data[task_id]['progress'] = 'AI正在回答(v3.2模板)...'
+                            streaming_data[task_id]['last_update'] = now
+                        yield f"content:{chunk_buf}"
+                        chunk_buf = ""
+                        last_emit = now
+
+                if chunk_buf:
+                    with streaming_lock:
+                        streaming_data[task_id]['response'] = content
+                        streaming_data[task_id]['last_update'] = time.time()
+                    yield f"content:{chunk_buf}"
+
+                with streaming_lock:
+                    streaming_data[task_id]['status'] = 'completed'
+                    streaming_data[task_id]['progress'] = '完成'
+                    streaming_data[task_id]['last_update'] = time.time()
+                yield "done:完成"
+                return
+
             if not self.client:
                 raise ValueError("未配置API密钥，请设置 DEEPSEEK_API_KEY 或 DEEPSEEK_ACCESS_CODE")
             client = self.client

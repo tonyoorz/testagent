@@ -104,6 +104,8 @@ class SmartToolSelector:
                 'defect_wordcloud_source'
             ],
             'test': [
+                'analyze_test_run',
+                'groupby_aggregate',
                 'top_counts',
                 'severity_rate_by'
             ]
