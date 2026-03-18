@@ -1271,7 +1271,9 @@ class EnhancedAIChatManager:
             return (os.getenv("CHAT_SUMMARY_DEBUG", "1") or "1").strip().lower() not in {"0", "false", "no"}
 
         def _append_summary_debug_block(text: str, mode: str, stage: str, elapsed_ms: int,
-                                        table_name: str, sql_used: str, row_count: int) -> str:
+                                        table_name: str, sql_used: str, row_count: int,
+                                        failure_category: str = "", execution_path: str = "",
+                                        stage_timeline: str = "") -> str:
             if not _summary_debug_enabled():
                 return text
             debug_lines = [
@@ -1284,19 +1286,125 @@ class EnhancedAIChatManager:
                 f"- row_count: {int(row_count or 0)}",
                 f"- sql: {sql_used or '-'}",
             ]
+            if execution_path:
+                debug_lines.append(f"- execution_path: {execution_path}")
+            if failure_category:
+                debug_lines.append(f"- failure_category: {failure_category}")
+            if stage_timeline:
+                debug_lines.append(f"- stage_timeline: {stage_timeline}")
             return f"{text.rstrip()}\n" + "\n".join(debug_lines)
 
+        def _classify_summary_failure(stage: str, reason: str) -> str:
+            rs = str(reason or "").lower()
+            st = str(stage or "").lower()
+            if "tool_executor" in rs or "tool" in rs:
+                return "tool_unavailable"
+            if "llm" in rs or "模型" in rs or "chat" in rs:
+                return "llm_failure"
+            if "schema" in rs or st == "load_schema":
+                return "schema_failure"
+            if st in {"generate_sql"}:
+                return "sql_generation_failure"
+            if st in {"run_sql_tool", "run_sql_local_fallback"} or "sql" in rs:
+                return "sql_execution_failure"
+            if st in {"generate_answer"}:
+                return "answer_generation_failure"
+            return "unknown"
+
+        def _log_summary_trace(task_id: str, trace: Dict[str, Any], success: bool, error: str = "") -> None:
+            try:
+                payload = {
+                    "event": "summary_trace",
+                    "task_id": str(task_id or ""),
+                    "success": bool(success),
+                    "error": str(error or ""),
+                    "trace": trace or {},
+                }
+                logger.info(json.dumps(payload, ensure_ascii=False))
+            except Exception:
+                pass
+
+        def _format_business_explanation_block(explanation: Dict[str, Any]) -> str:
+            if not isinstance(explanation, dict) or not explanation:
+                return ""
+            lines: List[str] = ["[业务解释]"]
+            highlights = explanation.get("highlights") or []
+            cautions = explanation.get("cautions") or []
+            if isinstance(highlights, list) and highlights:
+                lines.append("要点:")
+                for h in highlights[:6]:
+                    lines.append(f"- {str(h)}")
+            if isinstance(cautions, list) and cautions:
+                lines.append("提醒:")
+                for c in cautions[:4]:
+                    lines.append(f"- {str(c)}")
+            return "\n".join(lines)
+
+        def _build_structured_summary_text(
+            llm_answer: str,
+            table_name: str,
+            sql_used: str,
+            rows: List[Dict[str, Any]],
+            explanation: Dict[str, Any],
+            mode: str,
+            fallback_reason: str = "",
+        ) -> str:
+            row_count = len(rows or [])
+            conclusion = str(llm_answer or "").strip() or "暂无可用结论。"
+            lines: List[str] = [
+                f"[数据库直读模式｜工具链优先]",
+                "",
+                "[结论]",
+                conclusion,
+                "",
+                "[关键数字]",
+                f"- 命中记录: {row_count}",
+                f"- 数据表: {table_name or '-'}",
+                f"- SQL: {sql_used or '-'}",
+                f"- SQL模式: {mode or '-'}",
+            ]
+
+            explain_block = _format_business_explanation_block(explanation)
+            if explain_block:
+                lines.extend(["", explain_block])
+
+            cautions: List[str] = []
+            if row_count == 0:
+                cautions.append("当前查询命中为0，可尝试放宽时间范围、状态或模块筛选")
+            if fallback_reason:
+                cautions.append(f"本地兜底原因: {fallback_reason}")
+            if cautions:
+                lines.append("")
+                lines.append("[口径提醒]")
+                for c in cautions:
+                    lines.append(f"- {c}")
+
+            return "\n".join(lines)
+
         def start_db_summary_streaming(task_id: str, question: str, conversation_history: List[Dict[str, Any]]):
-            """摘要模式：数据库直读 + LLM 解释，不走 Agent 工具链。"""
+            """摘要模式：优先走 Agent 统一 SQL 工具链，再按需降级。"""
             def worker():
                 target_table = ""
                 sql_clean = ""
                 out_rows: List[Dict[str, Any]] = []
+                business_explanation: Dict[str, Any] = {}
                 stage = "init"
-                summary_sql_mode = "llm"
+                summary_sql_mode = "agent"
                 started_at = time.time()
+                tool_executor = getattr(self.intelligent_agent, 'tool_executor', None) if self.intelligent_agent else None
+                tool_sql_succeeded = False
+                local_fallback_reason = ""
+                failure_category = ""
+                execution_path: List[str] = []
+                stage_events: List[str] = []
+
+                def _mark_stage(new_stage: str) -> None:
+                    nonlocal stage
+                    stage = str(new_stage or "")
+                    stage_events.append(f"{stage}@{int((time.time() - started_at) * 1000)}ms")
+
                 try:
-                    stage = "open_db"
+                    _mark_stage("open_db")
                     db_path = os.getenv("AGENT_SQLITE_DB_PATH") or default_db_path()
                     if not db_path or not os.path.exists(db_path):
                         raise RuntimeError(f"数据库文件不存在: {db_path}")
@@ -1307,94 +1415,115 @@ class EnhancedAIChatManager:
                         streaming_data[task_id]['progress'] = '正在读取数据库结构...'
                         streaming_data[task_id]['last_update'] = time.time()
 
-                    stage = "load_schema"
+                    _mark_stage("load_schema")
                     target_table = _guess_target_table(question)
-                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-                    conn.row_factory = sqlite3.Row
-                    cur = conn.cursor()
-                    try:
-                        cur.execute("PRAGMA query_only = ON")
-                    except Exception:
-                        pass
+                    all_tables: List[str] = []
+                    col_preview: List[str] = []
 
-                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-                    all_tables = []
-                    for r in (cur.fetchall() or []):
-                        if r is None:
-                            continue
+                    if tool_executor:
+                        execution_path.append("schema:tool")
                         try:
-                            all_tables.append(str(r[0]))
+                            schema_out = tool_executor.execute_tool("get_sqlite_schema", None, table="")
+                            schema_result = schema_out.get("result") if isinstance(schema_out, dict) and schema_out.get("success") is True else {}
+                            table_map = (schema_result or {}).get("tables") or {}
+                            all_tables = [str(t) for t in table_map.keys()]
+                            if all_tables and target_table not in all_tables:
+                                target_table = all_tables[0]
+                            if target_table in table_map and isinstance(table_map.get(target_table), list):
+                                col_preview = [str((c or {}).get("name") or "") for c in table_map.get(target_table) if isinstance(c, dict)]
+                                col_preview = [c for c in col_preview if c][:30]
                         except Exception:
-                            continue
-                    if not all_tables:
+                            all_tables = []
+                            col_preview = []
+                            local_fallback_reason = "schema工具失败"
+
+                    if not all_tables or not col_preview:
+                        execution_path.append("schema:local")
+                        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                        conn.row_factory = sqlite3.Row
+                        cur = conn.cursor()
+                        try:
+                            cur.execute("PRAGMA query_only = ON")
+                        except Exception:
+                            pass
+
+                        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+                        all_tables = []
+                        for r in (cur.fetchall() or []):
+                            if r is None:
+                                continue
+                            try:
+                                all_tables.append(str(r[0]))
+                            except Exception:
+                                continue
+                        if not all_tables:
+                            conn.close()
+                            raise RuntimeError("数据库无可用业务表")
+                        if target_table not in all_tables:
+                            target_table = all_tables[0]
+
+                        cur.execute(f'PRAGMA table_info("{target_table}")')
+                        schema_rows = cur.fetchall() or []
+                        columns = []
+                        for r in schema_rows:
+                            if r is None:
+                                continue
+                            try:
+                                columns.append(str(r[1]))
+                            except Exception:
+                                continue
+                        col_preview = columns[:30]
                         conn.close()
-                        raise RuntimeError("数据库无可用业务表")
-                    if target_table not in all_tables:
-                        target_table = all_tables[0]
 
-                    cur.execute(f'PRAGMA table_info("{target_table}")')
-                    schema_rows = cur.fetchall() or []
-                    columns = []
-                    for r in schema_rows:
-                        if r is None:
-                            continue
-                        try:
-                            columns.append(str(r[1]))
-                        except Exception:
-                            continue
-                    col_preview = columns[:30]
-
-                    # 默认使用规则化SQL，避免摘要模式因LLM生成SQL导致卡顿
+                    # 摘要模式优先走统一工具链，避免与Agent模式SQL行为漂移。
                     with streaming_lock:
-                        streaming_data[task_id]['progress'] = '正在生成数据库查询(规则模式)...'
+                        streaming_data[task_id]['progress'] = '正在生成数据库查询(工具链优先)...'
                         streaming_data[task_id]['last_update'] = time.time()
 
-                    stage = "generate_sql"
-                    summary_sql_mode = (os.getenv("CHAT_SUMMARY_SQL_MODE") or "llm").strip().lower()
+                    _mark_stage("generate_sql")
+                    summary_sql_mode = (os.getenv("CHAT_SUMMARY_SQL_MODE") or "agent").strip().lower()
                     sql = ""
+                    rows: List[Any] = []
 
-                    if summary_sql_mode == "llm":
-                        hist = []
-                        for msg in (conversation_history or [])[-6:]:
-                            if msg.get('role') in ['user', 'assistant']:
-                                c = str(msg.get('content', '')).strip()
-                                if c:
-                                    hist.append({"role": msg.get('role'), "content": c[:300]})
+                    # 优先复用统一工具链，避免摘要模式与 Agent 模式出现两套SQL行为漂移。
+                    use_agent_sql = (os.getenv("CHAT_SUMMARY_SQL_USE_AGENT", "1") or "1").strip().lower() not in {"0", "false", "no"}
+                    if use_agent_sql and tool_executor:
+                        execution_path.append("sql_generate:tool")
+                        try:
+                            with streaming_lock:
+                                streaming_data[task_id]['progress'] = '正在通过Agent工具链生成SQL...'
+                                streaming_data[task_id]['last_update'] = time.time()
+                            agent_sql_out = tool_executor.execute_tool(
+                                "query_sqlite_with_fix",
+                                None,
+                                question=question,
+                                limit=120,
+                                table=target_table,
+                            )
+                            if isinstance(agent_sql_out, dict) and agent_sql_out.get("success") is True:
+                                rs = agent_sql_out.get("result") or {}
+                                sql = str(rs.get("generated_sql") or rs.get("sql") or "").strip()
+                                items = rs.get("rows") or []
+                                if isinstance(items, list):
+                                    out_rows = [r for r in items[:120] if isinstance(r, dict)]
+                                exp = rs.get("business_explanation")
+                                if isinstance(exp, dict):
+                                    business_explanation = exp
+                                tool_sql_succeeded = True
+                                summary_sql_mode = "agent"
+                        except Exception:
+                            local_fallback_reason = "query_sqlite_with_fix异常"
+                            failure_category = _classify_summary_failure(stage, local_fallback_reason)
+                            pass
 
-                        sql_messages = [
-                            {"role": "system", "content": "你是SQLite分析助手。请只输出JSON：{\"sql\":\"...\"}。SQL必须是只读（SELECT/WITH），且只查询给定表。"},
-                            {"role": "user", "content": json.dumps({
-                                "question": question,
-                                "table": target_table,
-                                "columns": col_preview,
-                                "history": hist,
-                                "rules": [
-                                    "仅允许SELECT/WITH",
-                                    "限制返回不超过200行",
-                                    "尽量包含与问题最相关的分组、失败率/计数字段"
-                                ]
-                            }, ensure_ascii=False)}
-                        ]
-
-                        sql_text = _safe_chat_completion(
-                            task_id=task_id,
-                            messages=sql_messages,
-                            temperature=0.1,
-                            max_tokens=450,
-                            stage_text='SQL生成'
-                        )
-                        m = re.search(r"\{[\s\S]*\}", str(sql_text or ""))
-                        if m:
-                            try:
-                                obj = json.loads(m.group(0))
-                                sql = str(obj.get("sql") or "").strip()
-                            except Exception:
-                                sql = ""
-
-                    if not sql:
+                    if not out_rows and not sql:
+                        execution_path.append("sql_generate:deterministic")
+                        summary_sql_mode = "deterministic"
                         sql = _build_deterministic_sql(question=question, table_name=target_table, columns=col_preview)
 
                     sql_clean = sql.strip().rstrip(';')
+                    if not sql_clean:
+                        sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
                     if not re.match(r"^\s*(select|with)\b", sql_clean, flags=re.IGNORECASE):
                         sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
                     if re.search(r"\b(insert|update|delete|drop|alter|truncate|attach|detach|pragma\s+write)\b", sql_clean, flags=re.IGNORECASE):
@@ -1404,29 +1533,66 @@ class EnhancedAIChatManager:
                         streaming_data[task_id]['progress'] = '正在执行数据库查询...'
                         streaming_data[task_id]['last_update'] = time.time()
 
-                    stage = "run_sql"
-                    try:
-                        cur.execute(sql_clean)
-                        rows = cur.fetchmany(200)
-                    except Exception:
-                        sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
-                        cur.execute(sql_clean)
-                        rows = cur.fetchmany(200)
+                    if not out_rows:
+                        _mark_stage("run_sql_tool")
+                        if tool_executor:
+                            execution_path.append("sql_run:tool")
+                            try:
+                                tool_run = tool_executor.execute_tool("run_sqlite_query", None, sql=sql_clean, limit=120)
+                                if isinstance(tool_run, dict) and tool_run.get("success") is True:
+                                    rs = tool_run.get("result") or {}
+                                    sql_clean = str(rs.get("sql") or sql_clean)
+                                    items = rs.get("rows") or []
+                                    if isinstance(items, list):
+                                        out_rows = [r for r in items[:120] if isinstance(r, dict)]
+                                    tool_sql_succeeded = True
+                                else:
+                                    local_fallback_reason = str((tool_run or {}).get("error") or "run_sqlite_query失败")
+                                    failure_category = _classify_summary_failure(stage, local_fallback_reason)
+                            except Exception:
+                                local_fallback_reason = "run_sqlite_query异常"
+                                failure_category = _classify_summary_failure(stage, local_fallback_reason)
+                                pass
+                        else:
+                            local_fallback_reason = "tool_executor不可用"
+                            failure_category = _classify_summary_failure(stage, local_fallback_reason)
 
-                    out_rows = []
-                    for r in rows[:120]:
+                    if (not out_rows) and (not tool_sql_succeeded):
+                        _mark_stage("run_sql_local_fallback")
+                        execution_path.append("sql_run:local_fallback")
+                        # 本地最终兜底仍保留，但也走只读连接，不复用上游游标。
                         try:
-                            d = dict(r) if r is not None else {}
+                            conn2 = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                            conn2.row_factory = sqlite3.Row
+                            cur2 = conn2.cursor()
+                            try:
+                                cur2.execute("PRAGMA query_only = ON")
+                            except Exception:
+                                pass
+                            try:
+                                cur2.execute(sql_clean)
+                                rows = cur2.fetchmany(200)
+                            except Exception:
+                                sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
+                                cur2.execute(sql_clean)
+                                rows = cur2.fetchmany(200)
+                            conn2.close()
                         except Exception:
-                            d = {}
-                        out_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
+                            rows = []
 
-                    conn.close()
+                        out_rows = []
+                        for r in rows[:120]:
+                            try:
+                                d = dict(r) if r is not None else {}
+                            except Exception:
+                                d = {}
+                            out_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
 
                     with streaming_lock:
                         streaming_data[task_id]['progress'] = '正在生成回答...'
                         streaming_data[task_id]['last_update'] = time.time()
 
+                    _mark_stage("generate_answer")
                     ans_messages = [
                         {"role": "system", "content": "你是数据分析助手。基于SQL结果回答用户，先给结论，再给关键数据点；若样本不足要明确说明。"},
                         {"role": "user", "content": json.dumps({
@@ -1477,10 +1643,41 @@ class EnhancedAIChatManager:
                             table_name=target_table,
                             sql_used=sql_clean,
                             rows=out_rows,
-                            note=(f"大模型不可用，已返回本地汇总; {llm_err}" if llm_err else '大模型不可用，已返回本地汇总')
+                            note=(
+                                f"大模型不可用，已返回本地汇总; {llm_err}" if llm_err
+                                else (f"本地兜底原因: {local_fallback_reason}" if local_fallback_reason else '大模型不可用，已返回本地汇总')
+                            )
                         )
-                    final = f"[数据库直读模式｜无工具链]\n表: {target_table}\nSQL: {sql_clean}\n\n{answer}"
+                        if not failure_category:
+                            failure_category = _classify_summary_failure(stage, llm_err or local_fallback_reason)
+                    final = _build_structured_summary_text(
+                        llm_answer=answer,
+                        table_name=target_table,
+                        sql_used=sql_clean,
+                        rows=out_rows,
+                        explanation=business_explanation,
+                        mode=summary_sql_mode,
+                        fallback_reason=local_fallback_reason,
+                    )
                     elapsed_ms = int((time.time() - started_at) * 1000)
+                    stage_timeline = " > ".join(stage_events)
+                    execution_path_text = " > ".join(execution_path)
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        summary_trace = {
+                            'mode': summary_sql_mode,
+                            'stage': stage,
+                            'execution_path': execution_path,
+                            'failure_category': failure_category,
+                            'fallback_reason': local_fallback_reason,
+                            'stage_timeline': stage_events,
+                            'elapsed_ms': elapsed_ms,
+                            'row_count': len(out_rows),
+                            'table': target_table,
+                            'sql': sql_clean,
+                        }
+                        streaming_data[task_id]['summary_trace'] = summary_trace
+                    _log_summary_trace(task_id=task_id, trace=summary_trace, success=True)
                     final = _append_summary_debug_block(
                         text=final,
                         mode=summary_sql_mode,
@@ -1489,10 +1686,14 @@ class EnhancedAIChatManager:
                         table_name=target_table,
                         sql_used=sql_clean,
                         row_count=len(out_rows),
+                        failure_category=failure_category,
+                        execution_path=execution_path_text,
+                        stage_timeline=stage_timeline,
                     )
                     _stream_text_response(task_id, final)
 
                 except Exception as e:
+                    failure_category = _classify_summary_failure(stage, str(e))
                     fallback_text = _build_local_db_answer(
                         question=question,
                         table_name=target_table,
@@ -1501,6 +1702,24 @@ class EnhancedAIChatManager:
                         note=f"阶段={stage}; 异常={e}"
                     )
                     elapsed_ms = int((time.time() - started_at) * 1000)
+                    stage_timeline = " > ".join(stage_events)
+                    execution_path_text = " > ".join(execution_path)
+                    summary_trace = {
+                        'mode': summary_sql_mode,
+                        'stage': stage,
+                        'execution_path': execution_path,
+                        'failure_category': failure_category,
+                        'fallback_reason': local_fallback_reason,
+                        'stage_timeline': stage_events,
+                        'elapsed_ms': elapsed_ms,
+                        'row_count': len(out_rows),
+                        'table': target_table,
+                        'sql': sql_clean,
+                    }
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        streaming_data[task_id]['summary_trace'] = summary_trace
+                    _log_summary_trace(task_id=task_id, trace=summary_trace, success=False, error=str(e))
                     fallback_text = _append_summary_debug_block(
                         text=fallback_text,
                         mode=summary_sql_mode,
@@ -1509,6 +1728,9 @@ class EnhancedAIChatManager:
                         table_name=target_table,
                         sql_used=sql_clean,
                         row_count=len(out_rows),
+                        failure_category=failure_category,
+                        execution_path=execution_path_text,
+                        stage_timeline=stage_timeline,
                     )
                     if fallback_text.strip():
                         _stream_text_response(task_id, fallback_text, progress_text='摘要模式降级输出中...')

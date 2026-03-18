@@ -26,6 +26,7 @@ import multiprocessing
 from functools import lru_cache
 from collections import defaultdict
 import logging
+from urllib.parse import quote
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analysis_utils import (
@@ -2024,7 +2025,7 @@ class SQLiteSchemaTool(DataAnalysisTool):
             return {"success": False, "tool": self.name, "error": "未配置SQLite数据库路径"}
         table = str(kwargs.get("table") or "").strip()
         try:
-            conn = sqlite3.connect(db_path)
+            conn = _open_sqlite_readonly(db_path)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             tables = []
@@ -2039,7 +2040,8 @@ class SQLiteSchemaTool(DataAnalysisTool):
             schema: Dict[str, Any] = {"db_path": db_path, "tables": {}}
             for t in tables:
                 try:
-                    cur.execute(f"PRAGMA table_info({t})")
+                    table_esc = str(t).replace("'", "''")
+                    cur.execute(f"PRAGMA table_info('{table_esc}')")
                     cols = []
                     for r in cur.fetchall():
                         cols.append(
@@ -2088,7 +2090,7 @@ class SQLiteDBProfileTool(DataAnalysisTool):
         sample_columns = max(1, min(100, sample_columns))
 
         try:
-            conn = sqlite3.connect(db_path)
+            conn = _open_sqlite_readonly(db_path)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
@@ -2181,6 +2183,19 @@ def _is_safe_readonly_sql(sql: str) -> bool:
     return True
 
 
+def _open_sqlite_readonly(db_path: str) -> sqlite3.Connection:
+    abs_path = os.path.abspath(str(db_path or ""))
+    # Use URI mode to enforce read-only access at the SQLite connection layer.
+    normalized_path = abs_path.replace("\\", "/")
+    uri = f"file:{quote(normalized_path, safe='/:')}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        conn.execute("PRAGMA query_only = ON")
+    except Exception:
+        pass
+    return conn
+
+
 def _ensure_limit(sql: str, limit: int) -> str:
     s = (sql or "").strip()
     if ";" in s:
@@ -2214,7 +2229,7 @@ class SQLiteQueryTool(DataAnalysisTool):
             return {"success": False, "tool": self.name, "error": "仅允许只读查询（SELECT/WITH），且禁止多语句与写操作"}
         try:
             final_sql = _ensure_limit(sql, limit)
-            conn = sqlite3.connect(db_path)
+            conn = _open_sqlite_readonly(db_path)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             cur.execute(final_sql)
@@ -2253,6 +2268,152 @@ def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _extract_business_query_hints(question: str) -> Dict[str, Any]:
+    q = str(question or "").strip()
+    ql = q.lower()
+    hints: Dict[str, Any] = {
+        "time_range": "",
+        "severity": [],
+        "status": [],
+        "matrix_levels": [],
+        "flags": [],
+        "module_keywords": [],
+        "aida_keywords": [],
+        "ecu_keywords": [],
+        "project_tokens": [],
+    }
+
+    if any(k in q for k in ["昨天", "昨日"]) or "yesterday" in ql:
+        hints["time_range"] = "yesterday"
+    elif any(k in q for k in ["今天", "今日"]) or "today" in ql:
+        hints["time_range"] = "today"
+    elif any(k in q for k in ["本周", "这周"]) or "this week" in ql:
+        hints["time_range"] = "this_week"
+    elif any(k in q for k in ["上周", "前一周"]) or "last week" in ql:
+        hints["time_range"] = "last_week"
+
+    sev = []
+    if any(k in q for k in ["高优先级", "严重", "紧急", "高风险"]) or any(k in ql for k in ["critical", "major", "high", "s1", "s2"]):
+        sev.extend(["critical", "major", "high"])
+    if any(k in q for k in ["中优先级", "中风险"]) or any(k in ql for k in ["medium", "s3"]):
+        sev.append("medium")
+    if any(k in q for k in ["低优先级", "低风险"]) or any(k in ql for k in ["minor", "low", "s4"]):
+        sev.append("low")
+    if sev:
+        hints["severity"] = sorted(set(sev))
+
+    if "topissue" in ql or "top issue" in ql or "topissue" in q:
+        hints["flags"].append("topissue")
+    if any(k in q for k in ["长跑", "长周期"]) or "long runner" in ql or "longrunner" in ql:
+        hints["flags"].append("long_runner")
+
+    status_tokens = {
+        "open": ["open", "打开", "待修复", "未关闭"],
+        "closed": ["closed", "关闭", "已关闭", "已修复"],
+        "in_progress": ["处理中", "进行中", "in progress", "working"],
+        "reopen": ["reopen", "重开", "重新打开"],
+    }
+    for canonical, keys in status_tokens.items():
+        if any(str(k).lower() in ql for k in keys):
+            hints["status"].append(canonical)
+
+    for lv in ["1a", "1b", "1c", "2a", "2b", "2c", "3a", "3b", "4a", "4b", "4c", "4d", "4e"]:
+        if lv in ql:
+            hints["matrix_levels"].append(lv.upper())
+    if "matrix" in ql or "矩阵" in q or "等级" in q:
+        hints["flags"].append("matrix")
+
+    aida_terms = ["aida", "音频", "导航", "蓝牙", "车机", "hmi", "voice", "display", "carplay", "android auto"]
+    for term in aida_terms:
+        if str(term).lower() in ql:
+            hints["aida_keywords"].append(str(term).lower())
+
+    ecu_patterns = re.findall(r"\bECU[_\-]?[A-Za-z0-9]+\b", q, flags=re.IGNORECASE)
+    if ecu_patterns:
+        hints["ecu_keywords"] = [str(e).upper() for e in ecu_patterns[:6]]
+
+    proj_tokens = re.findall(r"\b[A-Z]{2,}[A-Z0-9_\-]{1,}\b", q)
+    if proj_tokens:
+        hints["project_tokens"] = [p for p in proj_tokens[:6]]
+
+    module_map = {
+        "audio": ["音频", "声音", "audio"],
+        "navigation": ["导航", "地图", "navigation", "map"],
+        "connectivity": ["互联", "连接", "蓝牙", "carplay", "android auto", "connect"],
+        "display": ["显示", "屏幕", "display", "hmi"],
+        "voice": ["语音", "voice", "asr"],
+    }
+    modules = []
+    for canonical, keys in module_map.items():
+        if any(k in ql for k in [str(x).lower() for x in keys]):
+            modules.append(canonical)
+    if modules:
+        hints["module_keywords"] = sorted(set(modules))
+
+    hints["flags"] = sorted(set(hints["flags"]))
+    hints["status"] = sorted(set(hints["status"]))
+    hints["matrix_levels"] = sorted(set(hints["matrix_levels"]))
+    hints["aida_keywords"] = sorted(set(hints["aida_keywords"]))
+    hints["ecu_keywords"] = sorted(set(hints["ecu_keywords"]))
+    hints["project_tokens"] = sorted(set(hints["project_tokens"]))
+    return hints
+
+
+def _augment_question_with_business_hints(question: str) -> Tuple[str, Dict[str, Any]]:
+    q = str(question or "").strip()
+    hints = _extract_business_query_hints(q)
+    hint_lines = []
+    if hints.get("time_range"):
+        hint_lines.append(f"time_range={hints['time_range']}")
+    if hints.get("severity"):
+        hint_lines.append(f"severity={','.join(hints['severity'])}")
+    if hints.get("status"):
+        hint_lines.append(f"status={','.join(hints['status'])}")
+    if hints.get("matrix_levels"):
+        hint_lines.append(f"matrix_levels={','.join(hints['matrix_levels'])}")
+    if hints.get("flags"):
+        hint_lines.append(f"flags={','.join(hints['flags'])}")
+    if hints.get("module_keywords"):
+        hint_lines.append(f"module_keywords={','.join(hints['module_keywords'])}")
+    if hints.get("aida_keywords"):
+        hint_lines.append(f"aida_keywords={','.join(hints['aida_keywords'])}")
+    if hints.get("ecu_keywords"):
+        hint_lines.append(f"ecu_keywords={','.join(hints['ecu_keywords'])}")
+    if hints.get("project_tokens"):
+        hint_lines.append(f"project_tokens={','.join(hints['project_tokens'])}")
+    if not hint_lines:
+        return q, hints
+    augmented = f"{q}\n\n业务语义提示: {'; '.join(hint_lines)}"
+    return augmented, hints
+
+
+def _build_sql_result_explanation(question: str, sql: str, rows: List[Dict[str, Any]], hints: Dict[str, Any]) -> Dict[str, Any]:
+    row_count = len(rows or [])
+    cols = list(rows[0].keys()) if row_count else []
+    highlights: List[str] = [f"命中 {row_count} 条记录"]
+    if hints.get("time_range"):
+        highlights.append(f"时间范围推断: {hints.get('time_range')}")
+    if hints.get("severity"):
+        highlights.append(f"严重度关注: {', '.join(hints.get('severity') or [])}")
+    if hints.get("status"):
+        highlights.append(f"状态关注: {', '.join(hints.get('status') or [])}")
+    if hints.get("flags"):
+        highlights.append(f"业务标签: {', '.join(hints.get('flags') or [])}")
+    cautions: List[str] = []
+    if row_count == 0:
+        cautions.append("查询结果为空，建议放宽时间或筛选条件")
+    if row_count >= 180:
+        cautions.append("结果接近返回上限，建议追加聚合条件")
+    return {
+        "question": str(question or ""),
+        "sql": str(sql or ""),
+        "row_count": row_count,
+        "columns": cols,
+        "highlights": highlights,
+        "cautions": cautions,
+    }
+
+
 class SQLiteNLQueryWithFixTool(DataAnalysisTool):
     def __init__(self, db_path: Optional[str], llm: Any = None):
         super().__init__(
@@ -2279,6 +2440,7 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         question = str(kwargs.get("question") or "").strip()
         if not question:
             return {"success": False, "tool": self.name, "error": "question 不能为空"}
+        normalized_question, business_hints = _augment_question_with_business_hints(question)
         limit = int(kwargs.get("limit") or 200)
         table = str(kwargs.get("table") or "").strip()
 
@@ -2291,6 +2453,9 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
                 cached_run["result"]["generated_sql"] = cached_sql
                 cached_run["result"]["attempts"] = 0
                 cached_run["result"]["cache_hit"] = True
+                rows_cached = cached_run["result"].get("rows") or []
+                cached_run["result"]["business_hints"] = business_hints
+                cached_run["result"]["business_explanation"] = _build_sql_result_explanation(question, cached_sql, rows_cached, business_hints)
                 cached_run["tool"] = self.name
                 return cached_run
 
@@ -2305,9 +2470,17 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         sys_prompt = (
             "你是SQLite专家。根据用户问题与数据库schema生成只读SQL。\n"
             "严格要求：只允许 SELECT 或 WITH；必须使用 schema 中存在的表与列；只输出JSON。\n"
+            "优先参考业务语义提示中的 time_range、severity、status、matrix_levels、aida_keywords、ecu_keywords、project_tokens。\n"
             '输出格式：{\"sql\":\"...\"}'
         )
-        user_payload = {"question": question, "schema": schema, "db_profile": profile, "limit_hint": limit}
+        user_payload = {
+            "question": question,
+            "normalized_question": normalized_question,
+            "business_hints": business_hints,
+            "schema": schema,
+            "db_profile": profile,
+            "limit_hint": limit,
+        }
         messages = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)}]
         first = self._llm.chat_completion(messages, temperature=0.1, max_tokens=800)
         obj = _extract_json_object(first) or {}
@@ -2322,6 +2495,9 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             run_out["result"]["generated_sql"] = sql
             run_out["result"]["attempts"] = 1
             run_out["result"]["cache_hit"] = False
+            rows_out = run_out["result"].get("rows") or []
+            run_out["result"]["business_hints"] = business_hints
+            run_out["result"]["business_explanation"] = _build_sql_result_explanation(question, sql, rows_out, business_hints)
             run_out["tool"] = self.name
             return run_out
 
@@ -2331,7 +2507,15 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             "仍然只允许 SELECT 或 WITH；只输出JSON。\n"
             '输出格式：{\"sql\":\"...\"}'
         )
-        fix_payload = {"question": question, "schema": schema, "previous_sql": sql, "error": err, "limit_hint": limit}
+        fix_payload = {
+            "question": question,
+            "normalized_question": normalized_question,
+            "business_hints": business_hints,
+            "schema": schema,
+            "previous_sql": sql,
+            "error": err,
+            "limit_hint": limit,
+        }
         messages = [{"role": "system", "content": fix_prompt}, {"role": "user", "content": json.dumps(fix_payload, ensure_ascii=False)}]
         second = self._llm.chat_completion(messages, temperature=0.1, max_tokens=900)
         obj2 = _extract_json_object(second) or {}
@@ -2350,6 +2534,9 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             run2["result"]["generated_sql"] = sql2
             run2["result"]["attempts"] = 2
             run2["result"]["cache_hit"] = False
+            rows_out2 = run2["result"].get("rows") or []
+            run2["result"]["business_hints"] = business_hints
+            run2["result"]["business_explanation"] = _build_sql_result_explanation(question, sql2, rows_out2, business_hints)
             run2["tool"] = self.name
             return run2
 
