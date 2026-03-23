@@ -25,6 +25,7 @@ import time
 import multiprocessing
 from functools import lru_cache
 from collections import defaultdict
+from copy import deepcopy
 import logging
 from urllib.parse import quote
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2431,6 +2432,22 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         self._schema_tool = SQLiteSchemaTool(db_path)
         self._profile_tool = SQLiteDBProfileTool(db_path)
         self._query_tool = SQLiteQueryTool(db_path)
+        self._schema_cache: Dict[str, Any] = {}
+        self._profile_cache: Dict[str, Any] = {}
+        self._meta_cache_ts: Dict[str, float] = {}
+        self._result_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        try:
+            self._schema_cache_ttl = max(30, int(os.getenv("AGENT_SQL_SCHEMA_CACHE_TTL", "300") or 300))
+        except Exception:
+            self._schema_cache_ttl = 300
+        try:
+            self._result_cache_ttl = max(10, int(os.getenv("AGENT_SQL_RESULT_CACHE_TTL", "60") or 60))
+        except Exception:
+            self._result_cache_ttl = 60
+        try:
+            self._result_cache_max_rows = max(50, int(os.getenv("AGENT_SQL_RESULT_CACHE_MAX_ROWS", "500") or 500))
+        except Exception:
+            self._result_cache_max_rows = 500
 
     def execute(self, data: Any, **kwargs) -> Dict[str, Any]:
         if not self._db_path:
@@ -2443,8 +2460,20 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         normalized_question, business_hints = _augment_question_with_business_hints(question)
         limit = int(kwargs.get("limit") or 200)
         table = str(kwargs.get("table") or "").strip()
+        now = time.time()
 
         cache_key = f"{question}||{table or '*'}"
+        cached_result_entry = self._result_cache.get(cache_key)
+        if cached_result_entry:
+            cache_ts, cached_payload = cached_result_entry
+            if (now - float(cache_ts)) < self._result_cache_ttl:
+                out = deepcopy(cached_payload)
+                out.setdefault("result", {})
+                out["result"]["cache_hit"] = True
+                out["result"]["cache_type"] = "result_cache"
+                out["tool"] = self.name
+                return out
+
         cached_sql = self._sql_cache.get(cache_key)
         if cached_sql:
             cached_run = self._query_tool.execute(None, sql=cached_sql, limit=limit)
@@ -2453,23 +2482,51 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
                 cached_run["result"]["generated_sql"] = cached_sql
                 cached_run["result"]["attempts"] = 0
                 cached_run["result"]["cache_hit"] = True
+                cached_run["result"]["cache_type"] = "sql_cache"
                 rows_cached = cached_run["result"].get("rows") or []
                 cached_run["result"]["business_hints"] = business_hints
                 cached_run["result"]["business_explanation"] = _build_sql_result_explanation(question, cached_sql, rows_cached, business_hints)
                 cached_run["tool"] = self.name
+                if len(rows_cached) <= self._result_cache_max_rows:
+                    self._result_cache[cache_key] = (now, deepcopy(cached_run))
                 return cached_run
 
-        schema_out = self._schema_tool.execute(None, table=table)
-        if schema_out.get("success") is not True:
-            return {"success": False, "tool": self.name, "error": schema_out.get("error") or "读取schema失败"}
-        schema = (schema_out.get("result") or {})
+        cache_meta_key = table or "*"
+        meta_ts = float(self._meta_cache_ts.get(cache_meta_key) or 0)
+        schema = {}
+        profile = {}
+        if (
+            cache_meta_key in self._schema_cache
+            and cache_meta_key in self._profile_cache
+            and (now - meta_ts) < self._schema_cache_ttl
+        ):
+            schema = self._schema_cache.get(cache_meta_key) or {}
+            profile = self._profile_cache.get(cache_meta_key) or {}
+        else:
+            schema_out = self._schema_tool.execute(None, table=table)
+            if schema_out.get("success") is not True:
+                return {"success": False, "tool": self.name, "error": schema_out.get("error") or "读取schema失败"}
+            schema = (schema_out.get("result") or {})
 
-        profile_out = self._profile_tool.execute(None, table=table, top_n=5, sample_columns=20)
-        profile = (profile_out.get("result") or {}) if profile_out.get("success") is True else {}
+            profile_out = self._profile_tool.execute(None, table=table, top_n=5, sample_columns=20)
+            profile = (profile_out.get("result") or {}) if profile_out.get("success") is True else {}
+
+            self._schema_cache[cache_meta_key] = schema
+            self._profile_cache[cache_meta_key] = profile
+            self._meta_cache_ts[cache_meta_key] = now
+
+        semantic_context = ""
+        try:
+            from semantic_catalog.runtime import build_semantic_context
+
+            semantic_context = build_semantic_context(question=question, db_path=self._db_path, max_each=6)
+        except Exception as e:
+            logger.debug(f"build_semantic_context skipped: {e}")
 
         sys_prompt = (
             "你是SQLite专家。根据用户问题与数据库schema生成只读SQL。\n"
             "严格要求：只允许 SELECT 或 WITH；必须使用 schema 中存在的表与列；只输出JSON。\n"
+            "优先参考 semantic_context 中的业务定义和指标口径，结合 business_hints 约束筛选条件。\n"
             "优先参考业务语义提示中的 time_range、severity、status、matrix_levels、aida_keywords、ecu_keywords、project_tokens。\n"
             '输出格式：{\"sql\":\"...\"}'
         )
@@ -2479,6 +2536,7 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             "business_hints": business_hints,
             "schema": schema,
             "db_profile": profile,
+            "semantic_context": semantic_context,
             "limit_hint": limit,
         }
         messages = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)}]
@@ -2495,15 +2553,19 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             run_out["result"]["generated_sql"] = sql
             run_out["result"]["attempts"] = 1
             run_out["result"]["cache_hit"] = False
+            run_out["result"]["cache_type"] = "none"
             rows_out = run_out["result"].get("rows") or []
             run_out["result"]["business_hints"] = business_hints
             run_out["result"]["business_explanation"] = _build_sql_result_explanation(question, sql, rows_out, business_hints)
             run_out["tool"] = self.name
+            if len(rows_out) <= self._result_cache_max_rows:
+                self._result_cache[cache_key] = (time.time(), deepcopy(run_out))
             return run_out
 
         err = str(run_out.get("error") or "")
         fix_prompt = (
             "上一次SQL执行失败。请根据错误信息与schema修复SQL。\n"
+            "修复时也要参考 semantic_context 的口径定义，并保持与 business_hints 一致。\n"
             "仍然只允许 SELECT 或 WITH；只输出JSON。\n"
             '输出格式：{\"sql\":\"...\"}'
         )
@@ -2512,6 +2574,7 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             "normalized_question": normalized_question,
             "business_hints": business_hints,
             "schema": schema,
+            "semantic_context": semantic_context,
             "previous_sql": sql,
             "error": err,
             "limit_hint": limit,
@@ -2534,10 +2597,13 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             run2["result"]["generated_sql"] = sql2
             run2["result"]["attempts"] = 2
             run2["result"]["cache_hit"] = False
+            run2["result"]["cache_type"] = "none"
             rows_out2 = run2["result"].get("rows") or []
             run2["result"]["business_hints"] = business_hints
             run2["result"]["business_explanation"] = _build_sql_result_explanation(question, sql2, rows_out2, business_hints)
             run2["tool"] = self.name
+            if len(rows_out2) <= self._result_cache_max_rows:
+                self._result_cache[cache_key] = (time.time(), deepcopy(run2))
             return run2
 
         return {
@@ -2546,6 +2612,26 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             "error": str(run2.get("error") or "SQL纠错后仍失败"),
             "result": {"previous_sql": sql, "fixed_sql": sql2, "previous_error": err, "fixed_error": run2.get("error")},
         }
+
+    def clear_cache(self) -> None:
+        """Clear SQL/schema/profile/result caches for this tool instance."""
+        self._sql_cache.clear()
+        self._schema_cache.clear()
+        self._profile_cache.clear()
+        self._meta_cache_ts.clear()
+        self._result_cache.clear()
+
+    def refresh_schema_cache(self, table: str = "") -> None:
+        """Force refresh schema/profile cache for a specific table or all tables."""
+        table_key = str(table or "").strip()
+        cache_meta_key = table_key or "*"
+        schema_out = self._schema_tool.execute(None, table=table_key)
+        if schema_out.get("success") is not True:
+            raise RuntimeError(str(schema_out.get("error") or "读取schema失败"))
+        profile_out = self._profile_tool.execute(None, table=table_key, top_n=5, sample_columns=20)
+        self._schema_cache[cache_meta_key] = schema_out.get("result") or {}
+        self._profile_cache[cache_meta_key] = (profile_out.get("result") or {}) if profile_out.get("success") is True else {}
+        self._meta_cache_ts[cache_meta_key] = time.time()
 
 
 class SemanticCatalogTool(DataAnalysisTool):
@@ -3499,7 +3585,55 @@ class IntelligentContextManager:
             if 'aida' not in detected_intents:
                 detected_intents.append('aida')
 
+        # 补充规则：AIDA + 容易出错/问题类型 归入测试失败模式分析（避免退化到摘要）。
+        if (
+            'aida' in detected_intents
+            and ('case' in detected_intents or any(k in question_lower for k in ['容易出错', '出错', '失败最多', '问题', '问题类型', '什么样']))
+        ):
+            if 'test' not in detected_intents:
+                detected_intents.append('test')
+            if 'execution' not in detected_intents:
+                detected_intents.append('execution')
+            if 'distribution' not in detected_intents:
+                detected_intents.append('distribution')
+
         return detected_intents if detected_intents else ['general']
+
+    def analyze_intent_with_confidence(self, question: str) -> Tuple[List[str], float, Optional[str]]:
+        """Analyze intent confidence and return optional clarification when confidence is low."""
+        intents = self.analyze_intent(question)
+        q = str(question or "").strip()
+        ql = q.lower()
+
+        if not intents or intents == ['general']:
+            clarification = (
+                "我不太确定你想分析哪个方向。你可以直接说：\n"
+                "1. 缺陷风险\n"
+                "2. 测试通过率\n"
+                "3. 项目对比\n"
+                "4. 趋势分析"
+            )
+            return intents or ['general'], 0.3, clarification
+
+        if len(intents) >= 4:
+            clarification = f"你的问题覆盖多个方向（{', '.join(intents[:3])} 等），优先想看哪一个？"
+            return intents, 0.55, clarification
+
+        # 已经识别出明确单一意图时，不做早期拦截。
+        if len(intents) <= 2 and intents != ['general']:
+            return intents, 0.9, None
+
+        vague_keywords = ['怎么样', '如何', '怎样', '情况', '分析', '统计', 'how', 'what']
+        has_vague = any(k in ql for k in vague_keywords)
+        if len(q) < 15 and has_vague:
+            clarification = (
+                "这个问题有点宽泛，可以补充下范围：\n"
+                "- 关注项目（如 IDCevo / MGU）\n"
+                "- 时间范围（本周 / 本月 / 本季度）"
+            )
+            return intents, 0.62, clarification
+
+        return intents, 0.88, None
 
     @staticmethod
     def _tokenize_text(text: str) -> List[str]:
@@ -5169,8 +5303,32 @@ class TaskPlanner:
                 }
             })
 
+        ql = (query or "").lower()
+        aida_failure_focus = (
+            ('aida' in intents)
+            and (
+                ('case' in intents)
+                or any(k in ql for k in ['容易出错', '出错', '失败最多', '问题类型', '什么样的问题', '哪类问题'])
+            )
+        )
+        if aida_failure_focus:
+            datasets_in_context = (context.get('datasets') or {}) if isinstance(context, dict) else {}
+            if 'tests' in datasets_in_context:
+                steps.append({
+                    'step': len(steps) + 1,
+                    'tool': 'analyze_test_run',
+                    'description': '按 AIDA 分析测试失败率，定位容易出错模块',
+                    'params': {'group_by': 'aida', 'dataset': 'tests'}
+                })
+            if primary_dataset != 'tests':
+                steps.append({
+                    'step': len(steps) + 1,
+                    'tool': 'analyze_trend',
+                    'description': '按 AIDA 统计问题分布（缺陷侧）',
+                    'params': {'group_by': 'aida', 'metric': 'count', 'dataset': primary_dataset}
+                })
+
         if 'test' in intents:
-            ql = (query or "").lower()
             group_by = "week"
             if any(k in ql for k in ["按周", "按月", "week", "month", "cw", "calendar_week", "测试周"]):
                 group_by = "week" if "month" not in ql else "month"
@@ -5186,12 +5344,14 @@ class TaskPlanner:
                     group_by = dim
                 elif "project" in intents or "各项目" in ql or "项目" in ql or "project" in ql:
                     group_by = "project"
-            steps.append({
-                'step': len(steps) + 1,
-                'tool': 'analyze_test_run',
-                'description': f'分析测试运行状态与失败率（按{group_by}分组）',
-                'params': {'group_by': group_by, 'dataset': 'tests'}
-            })
+            planned_test_run = any(str(s.get('tool') or '').strip() == 'analyze_test_run' for s in steps)
+            if not planned_test_run:
+                steps.append({
+                    'step': len(steps) + 1,
+                    'tool': 'analyze_test_run',
+                    'description': f'分析测试运行状态与失败率（按{group_by}分组）',
+                    'params': {'group_by': group_by, 'dataset': 'tests'}
+                })
 
         if 'cross' in intents:
             steps.append({
@@ -5529,6 +5689,48 @@ class IntelligentAgent:
 
         # 1. 保存用户消息到记忆
         self.memory.add_message('user', question)
+
+        # 1.5 低置信度意图提前澄清，减少无效工具调用和不必要的SQL生成。
+        early_intents, early_confidence, clarification = self.context_manager.analyze_intent_with_confidence(question)
+
+        # 对“仅补充槽位”的追问（如“IDCevo 本季度”）自动继承最近一条明确意图。
+        if early_intents == ['general']:
+            q = str(question or "").strip()
+            ql = q.lower()
+            has_time_slot = any(k in ql for k in [
+                '本周', '这周', '上周', '本月', '上月', '本季度', '季度', '本年', '今年',
+                'today', 'yesterday', 'this week', 'last week', 'this month', 'quarter'
+            ])
+            has_project_slot = bool(re.search(r"\b(IDCEVO|IDC|MGU|APP|RSU|ENTRYEVO|G\d{2,})\b", q, flags=re.IGNORECASE))
+            if has_time_slot or has_project_slot:
+                inherited_intents: List[str] = []
+                for m in reversed(conversation_history or []):
+                    if str((m or {}).get('role') or '') != 'user':
+                        continue
+                    content = str((m or {}).get('content') or '').strip()
+                    if not content or content == q:
+                        continue
+                    cand = self.context_manager.analyze_intent(content)
+                    if cand and cand != ['general']:
+                        inherited_intents = cand
+                        break
+                if inherited_intents:
+                    early_intents = inherited_intents
+                    early_confidence = 0.78
+                    clarification = None
+
+        if clarification and early_confidence < 0.7:
+            return {
+                "text": clarification,
+                "insights": [],
+                "visualizations": [],
+                "tools_used": [],
+                "context": {
+                    "intents": early_intents,
+                    "confidence": early_confidence,
+                    "needs_clarification": True,
+                },
+            }
 
         # 2. 准备上下文
         context, prepared_data = self.context_manager.prepare_context(question, data)

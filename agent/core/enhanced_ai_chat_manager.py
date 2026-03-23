@@ -627,7 +627,8 @@ class EnhancedAIChatManager:
                 )
             )
 
-        default_mode = "agent" if self.use_agent else "summary"
+        # UI 默认选中 Agent（数据库直读）模式，避免首次进入直接落到 Skill 工具链。
+        default_mode = "summary"
 
         # 构建界面
         interface = html.Div([
@@ -639,7 +640,7 @@ class EnhancedAIChatManager:
                         html.I(className="fas fa-robot", style={'marginRight': '8px', 'color': '#3498db'}),
                         html.Span(
                             f"您好！我是{self.assistant_name}。"
-                            f"{'当前为 Agent（工具链）模式。' if default_mode == 'agent' else '当前为摘要模式。'}"
+                            f"{'当前为 Skill（工具链）模式。' if default_mode == 'agent' else '当前为 Agent（数据库直读）模式。'}"
                         )
                     ], style={
                         'padding': '8px 10px',
@@ -668,14 +669,14 @@ class EnhancedAIChatManager:
                         id=f'{chat_id_prefix}-chat-mode',
                         options=[
                             {'label': ' 纯聊天', 'value': 'pure'},
-                            {'label': ' 摘要', 'value': 'summary'},
-                            {'label': ' Agent', 'value': 'agent'},
+                            {'label': ' Agent', 'value': 'summary'},
+                            {'label': ' Skill', 'value': 'agent'},
                         ],
                         value=default_mode,
                         labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontSize': '12px'}
                     ),
                     html.Span(
-                        "纯=不读本地 | 摘要=数据库直读 | Agent=工具链",
+                        "纯=不读本地 | Agent=数据库直读 | Skill=工具链",
                         style={'fontSize': '11px', 'color': '#6b7280', 'marginLeft': '6px'}
                     )
                 ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap', 'gap': '4px'}),
@@ -1223,7 +1224,7 @@ class EnhancedAIChatManager:
                 lines.append(f"说明: {note}")
 
             if not safe_rows:
-                lines.append("结果: 查询无数据。请调整问题或切换 Agent（工具链）模式。")
+                lines.append("结果: 查询无数据。请调整问题或切换 Skill（工具链）模式。")
                 return "\n".join(lines)
 
             lines.append("")
@@ -1264,7 +1265,7 @@ class EnhancedAIChatManager:
                     parts.append(str(row)[:220])
                 lines.append(f"{i}. " + " | ".join(parts))
 
-            lines.append("\n提示: 当前返回为本地降级结果，如需更深分析请切换 Agent（工具链）模式。")
+            lines.append("\n提示: 当前返回为本地降级结果，如需更深分析请切换 Skill（工具链）模式。")
             return "\n".join(lines)
 
         def _summary_debug_enabled() -> bool:
@@ -1747,7 +1748,7 @@ class EnhancedAIChatManager:
             tables = (result or {}).get("tables") or {}
             if not tables:
                 return "当前数据库可访问，但未读取到可用表结构。"
-            lines: List[str] = ["已切换为数据库摘要模式（SQLite）。"]
+            lines: List[str] = ["已切换为 Agent 模式（数据库直读 / SQLite）。"]
             for tname, tinfo in list(tables.items())[:3]:
                 row_count = int((tinfo or {}).get("row_count") or 0)
                 lines.append(f"- 表 {tname}: {row_count} 行")
@@ -1760,7 +1761,7 @@ class EnhancedAIChatManager:
                     if top_vals:
                         preview = ", ".join([f"{str(v.get('value'))}:{int(v.get('count') or 0)}" for v in top_vals[:3]])
                         lines.append(f"  - {cname}: {preview}")
-            lines.append("提示：如需更深入分析，请切换到 Agent（工具链）模式。")
+            lines.append("提示：如需更深入分析，请切换到 Skill（工具链）模式。")
             return "\n".join(lines)
 
         def _build_db_profile_summary(question_text: str) -> str:
