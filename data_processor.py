@@ -21,6 +21,7 @@ if not IS_RELOADER:
     from functools import lru_cache
     import concurrent.futures
     from typing import Dict, Optional, List
+    from cache_versioning import get_cache_version
 else:
     # Reloader进程的占位符导入
     print("🔄 data_processor: Reloader进程跳过重度导入")
@@ -234,27 +235,12 @@ def get_history_data(defect_id: str, history_dir: str = "history", db_path: Opti
         return cached_data
     
     db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
-    history_data_db = _load_history_from_db(defect_id, db_path_val)
-    if history_data_db is not None:
-        history_cache.set(defect_id, history_data_db)
-        return history_data_db
-
-    # 缓存未命中，从文件加载
-    try:
-        history_file = os.path.join(history_dir, f"{defect_id}_history.json")
-        if not os.path.exists(history_file):
-            return None
-        
-        with open(history_file, 'r', encoding='utf-8') as f:
-            history_data = json.load(f)
-        
-        # 存入缓存
-        history_cache.set(defect_id, history_data)
-        return history_data
-        
-    except Exception as e:
-        print(f"读取历史文件失败 {defect_id}: {e}")
+    history_data = _load_history_with_fallback(defect_id, history_dir=history_dir, db_path=db_path_val)
+    if history_data is None:
         return None
+
+    history_cache.set(defect_id, history_data)
+    return history_data
 
 
 def _load_history_with_fallback(defect_id: str, history_dir: str = "history", db_path: Optional[str] = None) -> Optional[Dict]:
@@ -556,7 +542,10 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
             print(f"📦 从数据库加载 {year_val} 年 defects 数据成功: {len(db_defect_data)} 条")
             dfs.append(pd.json_normalize(db_defect_data, max_level=0))
 
-    files = [] if (dfs and _DEFAULT_OCTANE_SOURCE in ("db_only", "db_first")) else glob.glob(file_pattern)
+    if _DEFAULT_OCTANE_SOURCE == "db_only":
+        files = []
+    else:
+        files = [] if (dfs and _DEFAULT_OCTANE_SOURCE in ("db_first",)) else glob.glob(file_pattern)
     
     # 过滤掉失败记录文件和master数据文件，只保留实际的缺陷数据文件
     filtered_files = [f for f in files if not any(pattern in f for pattern in [
@@ -3514,7 +3503,14 @@ def calculate_inflow_outflow_trends(history_dir="history", date_range_weeks=52, 
     # 构建缓存键
     if CACHE_AVAILABLE:
         import hashlib
-        cache_key = f"inflow_outflow_trends_{history_dir}_{date_range_weeks}"
+        try:
+            data_version = get_cache_version(
+                prefix="v5",
+                extra_tag=os.environ.get("APP_CACHE_CODE_VERSION", "inflow_outflow"),
+            )
+        except Exception:
+            data_version = "v5_fallback"
+        cache_key = f"inflow_outflow_trends_{history_dir}_{date_range_weeks}_{data_version}"
         cache_key_hash = hashlib.md5(cache_key.encode()).hexdigest()
         
         # 如果不强制刷新，先尝试从缓存获取
@@ -3566,6 +3562,62 @@ def _calculate_inflow_outflow_trends_impl(history_dir="history", date_range_week
     weekly_inflow = {}
     weekly_outflow = {}
 
+    def try_db_phase_aggregate() -> bool:
+        """Use SQLite JSON aggregation to avoid Python-level full-history scanning."""
+        if _DEFAULT_OCTANE_SOURCE == "file_only" or not db_path_val or not os.path.exists(db_path_val):
+            return False
+
+        # ISO-like lexical compare works for UTC timestamps in Octane payloads.
+        start_ts = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+        end_ts = end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        sql = """
+        SELECT
+            week_key,
+            SUM(CASE
+                WHEN ((old_val LIKE '00%' AND new_val LIKE '01%')
+                      OR (old_val = '' AND new_val LIKE '01%'))
+                THEN 1 ELSE 0 END) AS inflow_count,
+            SUM(CASE
+                WHEN (new_val LIKE '06%' OR new_val LIKE '09%')
+                THEN 1 ELSE 0 END) AS outflow_count
+        FROM (
+            SELECT
+                strftime('%Y-W%W', replace(substr(json_extract(e.value, '$.timestamp'), 1, 19), 'T', ' ')) AS week_key,
+                COALESCE(json_extract(c.value, '$.old_value_text'), '') AS old_val,
+                COALESCE(NULLIF(json_extract(c.value, '$.value_text'), ''), json_extract(c.value, '$.valueName'), '') AS new_val
+              FROM octane_defect_histories h,
+                  json_each(h.payload_json, '$.data') e,
+                  json_each(e.value, '$.change_set') c
+            WHERE json_extract(c.value, '$.field_name') = 'phase'
+              AND json_extract(e.value, '$.timestamp') >= ?
+              AND json_extract(e.value, '$.timestamp') <= ?
+        ) t
+        GROUP BY week_key
+        ORDER BY week_key
+        """
+
+        try:
+            conn = sqlite3.connect(db_path_val)
+            try:
+                cur = conn.execute(sql, (start_ts, end_ts))
+                rows = cur.fetchall()
+            finally:
+                conn.close()
+
+            for week_key, inflow_count, outflow_count in rows:
+                wk = str(week_key or '').strip()
+                if not wk:
+                    continue
+                weekly_inflow[wk] = int(inflow_count or 0)
+                weekly_outflow[wk] = int(outflow_count or 0)
+
+            print(f"⚡ 数据库聚合模式完成: {len(rows)} 个周期")
+            return True
+        except Exception as e:
+            print(f"⚠️ 数据库聚合模式失败，回退逐条扫描: {e}")
+            return False
+
     def process_entry(entry):
         timestamp_str = entry.get('timestamp')
         if not timestamp_str:
@@ -3604,8 +3656,12 @@ def _calculate_inflow_outflow_trends_impl(history_dir="history", date_range_week
     processed = 0
     total_sources = 0
 
+    # Fast path: SQL aggregation (much faster than Python JSON full scan).
+    if try_db_phase_aggregate():
+        processed = 1
+
     # 数据库优先：直接扫描 octane_defect_histories
-    if _DEFAULT_OCTANE_SOURCE != "file_only" and db_path_val and os.path.exists(db_path_val):
+    if processed == 0 and _DEFAULT_OCTANE_SOURCE != "file_only" and db_path_val and os.path.exists(db_path_val):
         try:
             conn = sqlite3.connect(db_path_val)
             try:

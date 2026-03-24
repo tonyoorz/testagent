@@ -11,6 +11,7 @@ import pandas as pd
 import dash_bootstrap_components as dbc
 import gc
 import numpy as np
+from typing import Dict
 
 # 词云图相关导入
 try:
@@ -45,6 +46,26 @@ color_map = {
     "Requires Attention": "yellow",
     "Planned": "lightgrey",
 }
+
+# 页面级服务端缓存，避免将大体量测试数据通过 dcc.Store 发送到浏览器
+_TEST_COVERAGE_DATA_CACHE: Dict[str, pd.DataFrame] = {}
+
+
+def cache_test_coverage_data(cache_key: str, tdf: pd.DataFrame) -> None:
+    """缓存测试覆盖率页面数据，供回调函数在服务端读取。"""
+    if not cache_key:
+        return
+    _TEST_COVERAGE_DATA_CACHE[cache_key] = tdf.copy(deep=False)
+
+
+def get_cached_test_coverage_data(cache_key: str) -> pd.DataFrame:
+    """根据缓存键获取测试覆盖率数据。"""
+    if not cache_key:
+        return pd.DataFrame()
+    cached = _TEST_COVERAGE_DATA_CACHE.get(cache_key)
+    if cached is None:
+        return pd.DataFrame()
+    return cached.copy(deep=False)
 
 # === Feature Region映射函数 ===
 def get_feature_region(top_aida):
@@ -199,6 +220,8 @@ def create_test_coverage_filters(tdf, prefix="tc"):
         statuses = sorted([s for s in tdf[status_column].apply(lambda x: str(x) if isinstance(x, dict) else x).dropna().unique() if s and str(s) != 'nan'])
     
     
+    cache_test_coverage_data(prefix, tdf)
+
     return html.Div([
         # 年份筛选器
         html.Div([
@@ -440,8 +463,8 @@ def create_test_coverage_page(source="standalone"):
         # 图表区域
         create_test_coverage_charts(prefix),
         
-        # 隐藏的数据存储
-        dcc.Store(id=f'{prefix}-data-store', data=tdf.to_dict('records')),
+        # 隐藏的数据存储（仅传递轻量缓存键，数据保存在服务端）
+        dcc.Store(id=f'{prefix}-data-store', data={'cache_key': prefix, 'rows': int(len(tdf))}),
         dcc.Store(id=f'{prefix}-chart3-filtered-store'),
         dcc.Download(id=f'{prefix}-download-chart3-xlsx'),
     ])

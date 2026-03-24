@@ -362,6 +362,17 @@ ai_chat_manager.register_chat_callbacks(
 python cleanup_cache.py
 ```
 
+### 启动前预热缓存（推荐）
+```bash
+# 预热 defect/test/inflow-outflow/longrunner 常用缓存
+python warmup_cache.py --years 2025,2026 --weeks 52 --longrunner 200
+```
+
+说明：
+- 当底层数据不更新时，预热后的缓存可被后续访问复用，页面打开和切页会明显更快。
+- 适合在服务重启后先执行一次，再开放给其他用户访问。
+- 若数据已更新，请重新执行一次预热命令。
+
 ### 手动清理
 ```bash
 # 清理 Python 缓存

@@ -27,6 +27,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import io
+import httpx
 
 import dash
 from dash import dcc, html, Input, Output, State, callback_context
@@ -39,6 +40,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 # Configure logging first before importing enhancement modules
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Dify Workflow (RAG) config
+HARDCODED_DIFY_API_BASE = "http://10.86.150.232/v1"
+HARDCODED_DIFY_API_KEY = "app-YweK9LdWefjG11niKLtqTBV8"
+DEFAULT_DIFY_WORKFLOW_QUERY_KEY = "query"
+DEFAULT_DIFY_WORKFLOW_CONTEXT_KEY = "context"
+DEFAULT_DIFY_WORKFLOW_USER_PREFIX = "preanalysis"
 
 # Import new enhancement modules
 try:
@@ -101,6 +109,15 @@ except ImportError as e:
     HybridRetriever = None
     logger.warning(f"⚠️ Hybrid Retriever not available: {e}")
 
+try:
+    from agent.core.confluence_retriever import ConfluenceRetriever, create_confluence_retriever
+    CONFLUENCE_RETRIEVER_AVAILABLE = True
+    logger.info("✅ Confluence Retriever loaded")
+except ImportError as e:
+    CONFLUENCE_RETRIEVER_AVAILABLE = False
+    ConfluenceRetriever = None
+    logger.warning(f"⚠️ Confluence Retriever not available: {e}")
+
 # 导入原有的 AI Chat Manager 组件
 try:
     from agent.core.ai_chat_manager import (
@@ -149,6 +166,183 @@ except ImportError as e:
 # ============================================================================
 # 增强版 AI Chat Manager
 # ============================================================================
+
+
+class DifyWorkflowClient:
+    """最小化 Dify Workflow 客户端（用于 RAG 模式）。"""
+
+    def __init__(self, api_base: Optional[str] = None, api_key: Optional[str] = None):
+        self.api_base = (api_base or os.environ.get("DIFY_API_BASE") or HARDCODED_DIFY_API_BASE).rstrip("/")
+        self.api_key = api_key or os.environ.get("DIFY_API_KEY") or HARDCODED_DIFY_API_KEY
+        self.query_key = os.environ.get("DIFY_WORKFLOW_QUERY_KEY") or DEFAULT_DIFY_WORKFLOW_QUERY_KEY
+        self.context_key = os.environ.get("DIFY_WORKFLOW_CONTEXT_KEY") or DEFAULT_DIFY_WORKFLOW_CONTEXT_KEY
+        self.user_prefix = os.environ.get("DIFY_USER_PREFIX") or DEFAULT_DIFY_WORKFLOW_USER_PREFIX
+        self.timeout = float(os.environ.get("DIFY_TIMEOUT", "120"))
+        self.enabled = bool(self.api_base and self.api_key)
+        self.http_client = httpx.Client(timeout=self.timeout, verify=False)
+
+    def build_user(self, dashboard_type: str) -> str:
+        return f"{self.user_prefix}-{dashboard_type}"
+
+    def run_workflow(self, question: str, context: str = "", user: Optional[str] = None) -> Dict[str, Any]:
+        if not self.enabled:
+            raise RuntimeError("Dify Workflow 未配置，请设置 DIFY_API_BASE 和 DIFY_API_KEY")
+
+        inputs: Dict[str, Any] = {
+            self.query_key: question,
+        }
+        if context:
+            inputs[self.context_key] = context
+
+        extra_inputs_raw = os.environ.get("DIFY_WORKFLOW_EXTRA_INPUTS", "").strip()
+        if extra_inputs_raw:
+            try:
+                extra_inputs = json.loads(extra_inputs_raw)
+                if isinstance(extra_inputs, dict):
+                    inputs.update(extra_inputs)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"DIFY_WORKFLOW_EXTRA_INPUTS 不是合法 JSON: {exc}") from exc
+
+        payload = {
+            "inputs": inputs,
+            "response_mode": os.environ.get("DIFY_RESPONSE_MODE", "blocking"),
+            "user": user or self.build_user("general"),
+        }
+
+        response = self.http_client.post(
+            f"{self.api_base}/workflows/run",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = response.text.strip()
+            raise RuntimeError(f"Dify Workflow 请求失败: HTTP {response.status_code} - {detail}") from exc
+
+        body = response.json()
+        data = body.get("data") or {}
+        status = data.get("status") or "succeeded"
+        if status in {"failed", "stopped"}:
+            raise RuntimeError(data.get("error") or "Dify Workflow 执行失败")
+
+        outputs = data.get("outputs") or {}
+        text = self._extract_text(outputs)
+
+        return {
+            "status": status,
+            "outputs": outputs,
+            "text": text,
+            "raw": body,
+        }
+
+    def stream_workflow(self, question: str, context: str = "", user: Optional[str] = None) -> Generator[Dict[str, Any], None, None]:
+        """以 SSE 方式流式调用 Dify Workflow，逐步产出文本片段。"""
+        if not self.enabled:
+            raise RuntimeError("Dify Workflow 未配置，请设置 DIFY_API_BASE 和 DIFY_API_KEY")
+
+        inputs: Dict[str, Any] = {
+            self.query_key: question,
+        }
+        if context:
+            inputs[self.context_key] = context
+
+        extra_inputs_raw = os.environ.get("DIFY_WORKFLOW_EXTRA_INPUTS", "").strip()
+        if extra_inputs_raw:
+            try:
+                extra_inputs = json.loads(extra_inputs_raw)
+                if isinstance(extra_inputs, dict):
+                    inputs.update(extra_inputs)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"DIFY_WORKFLOW_EXTRA_INPUTS 不是合法 JSON: {exc}") from exc
+
+        payload = {
+            "inputs": inputs,
+            "response_mode": "streaming",
+            "user": user or self.build_user("general"),
+        }
+
+        with self.http_client.stream(
+            "POST",
+            f"{self.api_base}/workflows/run",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+            json=payload,
+        ) as response:
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                detail = response.text.strip()
+                raise RuntimeError(f"Dify Workflow 流式请求失败: HTTP {response.status_code} - {detail}") from exc
+
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                text_line = str(line).strip()
+                if not text_line.startswith("data:"):
+                    continue
+                raw_data = text_line[5:].strip()
+                if not raw_data or raw_data == "[DONE]":
+                    continue
+
+                try:
+                    event_data = json.loads(raw_data)
+                except json.JSONDecodeError:
+                    continue
+
+                event_name = str(event_data.get("event") or "").strip()
+
+                if event_name in {"workflow_finished", "message_end", "done"}:
+                    yield {"type": "done", "event": event_name, "data": event_data}
+                    continue
+
+                if event_name in {"error", "workflow_failed"}:
+                    message = (
+                        event_data.get("message")
+                        or event_data.get("error")
+                        or event_data.get("detail")
+                        or "Dify Workflow 流式执行失败"
+                    )
+                    raise RuntimeError(str(message))
+
+                chunk = ""
+                if isinstance(event_data.get("answer"), str):
+                    chunk = event_data.get("answer") or ""
+                elif isinstance(event_data.get("text"), str):
+                    chunk = event_data.get("text") or ""
+                else:
+                    data_obj = event_data.get("data")
+                    if isinstance(data_obj, dict):
+                        if isinstance(data_obj.get("answer"), str):
+                            chunk = data_obj.get("answer") or ""
+                        elif isinstance(data_obj.get("text"), str):
+                            chunk = data_obj.get("text") or ""
+
+                if chunk:
+                    yield {"type": "chunk", "event": event_name, "text": chunk, "data": event_data}
+
+    def _extract_text(self, outputs: Dict[str, Any]) -> str:
+        if not outputs:
+            return ""
+
+        preferred_keys = ["answer", "text", "result", "output", "content"]
+        for key in preferred_keys:
+            value = outputs.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        for value in outputs.values():
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        return json.dumps(outputs, ensure_ascii=False, indent=2)
 
 
 # ============================================================================
@@ -203,6 +397,7 @@ class EnhancedAIChatManager:
         self.explainable_agent = None
         self.entity_tracker = None
         self.hybrid_retriever = None
+        self.confluence_retriever = None
         
         # Initialize smart context generator
         if SMART_CONTEXT_AVAILABLE:
@@ -254,6 +449,17 @@ class EnhancedAIChatManager:
             except Exception as e:
                 logger.error(f"Failed to initialize hybrid retriever: {e}")
 
+        # Initialize Confluence retriever
+        if CONFLUENCE_RETRIEVER_AVAILABLE:
+            try:
+                self.confluence_retriever = create_confluence_retriever()
+                logger.info(
+                    "Confluence retriever initialized (%s)",
+                    "enabled" if getattr(self.confluence_retriever, "enabled", False) else "disabled"
+                )
+            except Exception as e:
+                logger.error(f"Failed to initialize confluence retriever: {e}")
+
         self.use_agent = use_agent and AGENT_AVAILABLE
         if assistant_name:
             self.assistant_name = assistant_name
@@ -267,6 +473,13 @@ class EnhancedAIChatManager:
         except Exception as e:
             logger.error(f"DeepSeek聊天机器人初始化失败: {e}")
             self.chatbot = None
+
+        try:
+            self.dify_client = DifyWorkflowClient()
+            logger.info(f"Dify Workflow 客户端初始化{'成功' if self.dify_client.enabled else '未启用'}")
+        except Exception as e:
+            logger.error(f"Dify Workflow 客户端初始化失败: {e}")
+            self.dify_client = None
 
         # 初始化智能 Agent
         if self.use_agent:
@@ -453,6 +666,151 @@ class EnhancedAIChatManager:
             logger.error(f"LLM处理失败: {e}")
             return self._get_fallback_response(question, data_context)
 
+    def process_with_dify_workflow(self, question: str, data_context: str) -> Dict[str, Any]:
+        """使用 Dify Workflow 处理问题（RAG 模式）。"""
+        if not self.dify_client or not self.dify_client.enabled:
+            return {
+                'success': False,
+                'error': 'Dify Workflow 未配置',
+                'text': 'Dify Workflow 当前不可用，请检查 DIFY_API_BASE、DIFY_API_KEY 和工作流输入变量。'
+            }
+
+        try:
+            result = self.dify_client.run_workflow(
+                question=question,
+                context=data_context,
+                user=self.dify_client.build_user(self.dashboard_type)
+            )
+            text = (result.get('text') or '').strip()
+            if not text:
+                text = 'Dify Workflow 已返回结果，但没有可展示的文本输出。'
+            return {
+                'success': True,
+                'text': text,
+                'dify_status': result.get('status'),
+                'dify_outputs': result.get('outputs', {}),
+            }
+        except Exception as e:
+            logger.error(f"Dify Workflow 处理失败: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'text': f'Dify Workflow 调用失败：{str(e)}'
+            }
+
+    def process_with_confluence(self, question: str, data_context: str = "") -> Dict[str, Any]:
+        """使用 Confluence 作为知识源进行检索增强对话。"""
+        if not self.confluence_retriever or not getattr(self.confluence_retriever, "enabled", False):
+            return {
+                'success': False,
+                'error': 'Confluence 未配置',
+                'text': (
+                    'Confluence 模式当前不可用。请配置环境变量：'
+                    'CONFLUENCE_BASE_URL、CONFLUENCE_TOKEN，以及 CONFLUENCE_SPACE_KEY 或 CONFLUENCE_ROOT_PAGE_ID。'
+                ),
+            }
+
+        try:
+            top_k = max(1, int((os.getenv("CONFLUENCE_TOP_K") or "5").strip() or "5"))
+        except Exception:
+            top_k = 5
+
+        try:
+            retrieved = self.confluence_retriever.retrieve(question, top_k=top_k)
+            results = list((retrieved or {}).get("results") or [])
+            meta = dict((retrieved or {}).get("meta") or {})
+
+            if not results:
+                return {
+                    'success': True,
+                    'text': 'Confluence 已连接，但未检索到与当前问题相关的页面内容。',
+                    'meta': meta,
+                    'sources': [],
+                }
+
+            context_parts: List[str] = []
+            source_list: List[Dict[str, Any]] = []
+            for idx, item in enumerate(results, 1):
+                title = str(item.get("title") or "").strip() or f"Page {idx}"
+                url = str(item.get("url") or "").strip()
+                snippet = str(item.get("content") or "").strip()
+                score = float(item.get("score") or 0.0)
+                source_list.append(
+                    {
+                        "title": title,
+                        "url": url,
+                        "score": score,
+                    }
+                )
+                context_parts.append(f"[{idx}] 标题: {title}")
+                if url:
+                    context_parts.append(f"[{idx}] 链接: {url}")
+                if snippet:
+                    context_parts.append(f"[{idx}] 内容: {snippet}")
+
+            context_block = "\n".join(context_parts).strip()
+            merged_context = "\n\n".join([x for x in [data_context, context_block] if x]).strip()
+
+            system_prompt = (
+                "你是企业知识库助手。请基于给定的 Confluence 证据回答问题。"
+                "输出要求：先给结论，再给依据；若证据不足请明确说明。"
+                "引用证据时使用 [1] [2] 这样的编号。"
+            )
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": (
+                        f"问题：{question}\n\n"
+                        f"Confluence证据：\n{merged_context}\n\n"
+                        "请严格基于证据回答。"
+                    ),
+                },
+            ]
+
+            if not self.chatbot:
+                lines = ["[结论]", "已完成 Confluence 检索，但当前 LLM 不可用。", "", "[候选来源]"]
+                for i, src in enumerate(source_list, 1):
+                    lines.append(f"{i}. {src.get('title')} ({src.get('url')})")
+                return {
+                    'success': True,
+                    'text': "\n".join(lines),
+                    'meta': meta,
+                    'sources': source_list,
+                }
+
+            answer = ""
+            if hasattr(self.chatbot, "chat_completion"):
+                answer = str(
+                    self.chatbot.chat_completion(
+                        messages,
+                        temperature=0.2,
+                        max_tokens=1200,
+                    ) or ""
+                ).strip()
+
+            if not answer:
+                answer = "基于当前 Confluence 检索结果，暂时无法生成有效总结。"
+
+            source_lines = ["", "[来源]"]
+            for i, src in enumerate(source_list, 1):
+                source_lines.append(f"{i}. {src.get('title')} - {src.get('url')}")
+
+            return {
+                'success': True,
+                'text': answer + "\n" + "\n".join(source_lines),
+                'meta': meta,
+                'sources': source_list,
+            }
+        except Exception as e:
+            logger.error(f"Confluence 模式处理失败: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'text': f'Confluence 调用失败：{str(e)}',
+            }
+
     def _get_enhanced_system_prompt(self, data_context: str = "") -> str:
         """获取增强的系统提示词 - 使用新的统一模板"""
         # 默认增强提示词（确保任何路径都有可用 prompt）
@@ -632,6 +990,74 @@ class EnhancedAIChatManager:
 
         # 构建界面
         interface = html.Div([
+            # 会话与视图控制栏
+            html.Div([
+                html.Div([
+                    dcc.Dropdown(
+                        id=f'{chat_id_prefix}-session-selector',
+                        options=[{'label': '当前会话', 'value': 'session-default'}],
+                        value='session-default',
+                        placeholder='选择历史会话',
+                        clearable=False,
+                        style={'minWidth': '260px', 'fontSize': '12px'}
+                    ),
+                    html.Button(
+                        [html.I(className="fas fa-plus", style={'marginRight': '5px'}), '新会话'],
+                        id=f'{chat_id_prefix}-new-session-btn',
+                        n_clicks=0,
+                        style={
+                            'padding': '6px 10px',
+                            'backgroundColor': '#2563eb',
+                            'color': 'white',
+                            'border': 'none',
+                            'borderRadius': '6px',
+                            'cursor': 'pointer',
+                            'fontSize': '12px'
+                        }
+                    ),
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'flexWrap': 'wrap'}),
+                html.Div([
+                    html.Button(
+                        [html.I(className="fas fa-compress-alt", style={'marginRight': '5px'}), '紧凑排版'],
+                        id=f'{chat_id_prefix}-compact-toggle-btn',
+                        n_clicks=0,
+                        style={
+                            'padding': '6px 10px',
+                            'backgroundColor': '#f3f4f6',
+                            'color': '#374151',
+                            'border': '1px solid #d1d5db',
+                            'borderRadius': '6px',
+                            'cursor': 'pointer',
+                            'fontSize': '12px'
+                        }
+                    ),
+                    html.Button(
+                        [html.I(className="fas fa-expand", style={'marginRight': '5px'}), '放大全屏'],
+                        id=f'{chat_id_prefix}-fullscreen-btn',
+                        n_clicks=0,
+                        style={
+                            'padding': '6px 10px',
+                            'backgroundColor': '#f3f4f6',
+                            'color': '#374151',
+                            'border': '1px solid #d1d5db',
+                            'borderRadius': '6px',
+                            'cursor': 'pointer',
+                            'fontSize': '12px'
+                        }
+                    ),
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'flexWrap': 'wrap'})
+            ], style={
+                'display': 'flex',
+                'justifyContent': 'space-between',
+                'alignItems': 'center',
+                'gap': '8px',
+                'flexWrap': 'wrap',
+                'padding': '6px 8px',
+                'backgroundColor': '#f9fafb',
+                'border': '1px solid #e5e7eb',
+                'borderRadius': '8px'
+            }),
+
             # 对话历史区域
             html.Div(
                 id=f'{chat_id_prefix}-history',
@@ -643,20 +1069,22 @@ class EnhancedAIChatManager:
                             f"{'当前为 Skill（工具链）模式。' if default_mode == 'agent' else '当前为 Agent（数据库直读）模式。'}"
                         )
                     ], style={
-                        'padding': '8px 10px',
+                        'padding': '6px 9px',
                         'backgroundColor': '#f8f9fa',
                         'borderRadius': '8px',
-                        'margin': '4px 0',
+                        'margin': '2px 0',
                         'border': '1px solid #e9ecef',
-                        'fontSize': '13px'
+                        'fontSize': '12px',
+                        'lineHeight': '1.35'
                     })
                 ],
                 style={
                     'flex': '1 1 auto',
-                    'minHeight': '180px',
+                    'minHeight': '240px',
+                    'height': 'calc(100vh - 360px)',
                     'overflowY': 'auto',
                     'border': '1px solid #ddd',
-                    'padding': '10px',
+                    'padding': '8px',
                     'borderRadius': '8px',
                     'backgroundColor': '#fafafa'
                 }
@@ -669,6 +1097,8 @@ class EnhancedAIChatManager:
                         id=f'{chat_id_prefix}-chat-mode',
                         options=[
                             {'label': ' 纯聊天', 'value': 'pure'},
+                            {'label': ' RAG', 'value': 'rag'},
+                            {'label': ' Confluence', 'value': 'confluence'},
                             {'label': ' Agent', 'value': 'summary'},
                             {'label': ' Skill', 'value': 'agent'},
                         ],
@@ -676,7 +1106,7 @@ class EnhancedAIChatManager:
                         labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontSize': '12px'}
                     ),
                     html.Span(
-                        "纯=不读本地 | Agent=数据库直读 | Skill=工具链",
+                        "纯=不读本地 | RAG=Dify Chatflow | Confluence=知识空间检索 | Agent=数据库直读 | Skill=工具链",
                         style={'fontSize': '11px', 'color': '#6b7280', 'marginLeft': '6px'}
                     )
                 ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap', 'gap': '4px'}),
@@ -726,11 +1156,11 @@ class EnhancedAIChatManager:
                     placeholder='请输入您的问题...',
                     style={
                         'width': '84%',
-                        'padding': '9px 10px',
+                        'padding': '8px 10px',
                         'marginRight': '8px',
                         'borderRadius': '8px',
                         'border': '1px solid #d1d5db',
-                        'fontSize': '13px'
+                        'fontSize': '12px'
                     },
                     value='',
                     persistence=False
@@ -741,13 +1171,13 @@ class EnhancedAIChatManager:
                     n_clicks=0,
                     style={
                         'width': '14%',
-                        'padding': '9px 10px',
+                        'padding': '8px 10px',
                         'backgroundColor': '#3498db',
                         'color': 'white',
                         'border': 'none',
                         'borderRadius': '8px',
                         'cursor': 'pointer',
-                        'fontSize': '13px',
+                        'fontSize': '12px',
                         'fontWeight': 'bold'
                     }
                 )
@@ -804,7 +1234,16 @@ class EnhancedAIChatManager:
                 'backgroundColor': '#f8f9fa',
                 'borderRadius': '4px'
             })
-        ], style={'width': '100%', 'height': '100%', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px', 'padding': '12px'})
+        ], id=f'{chat_id_prefix}-container', style={
+            'width': '100%',
+            'height': 'calc(100vh - 120px)',
+            'minHeight': '520px',
+            'display': 'flex',
+            'flexDirection': 'column',
+            'gap': '6px',
+            'padding': '10px',
+            'boxSizing': 'border-box'
+        })
 
         return interface
 
@@ -819,6 +1258,19 @@ class EnhancedAIChatManager:
             except Exception as e:
                 logger.warning(f"Failed to create initial conversation state: {e}")
 
+        now_ts = int(time.time())
+        default_session_id = 'session-default'
+        default_sessions = {
+            'sessions': [
+                {
+                    'id': default_session_id,
+                    'title': '当前会话',
+                    'messages': [],
+                    'updated_at': now_ts,
+                }
+            ]
+        }
+
         stores = [
             dcc.Store(id=f'{chat_id_prefix}-messages', data=[], storage_type='session'),
             dcc.Store(id=f'{chat_id_prefix}-use-agent-state', data={'use_agent': self.use_agent}, storage_type='session'),
@@ -826,9 +1278,12 @@ class EnhancedAIChatManager:
             dcc.Store(id=f'{chat_id_prefix}-known-issue-state', data={'enabled': False}, storage_type='session'),
             dcc.Store(id=f'{chat_id_prefix}-streaming-state', data={'active': False, 'task_id': None}, storage_type='session'),
             dcc.Store(id=f'{chat_id_prefix}-conversation-state', data=initial_conversation_state, storage_type='session'),
+            dcc.Store(id=f'{chat_id_prefix}-chat-sessions', data=default_sessions, storage_type='local'),
+            dcc.Store(id=f'{chat_id_prefix}-active-session-id', data=default_session_id, storage_type='session'),
+            dcc.Store(id=f'{chat_id_prefix}-ui-state', data={'fullscreen': False, 'compact': True}, storage_type='session'),
             dcc.Interval(
                 id=f'{chat_id_prefix}-update-interval',
-                interval=1000,
+                interval=max(100, int(os.getenv("CHAT_UI_POLL_INTERVAL_MS", "250") or 250)),
                 n_intervals=0,
                 disabled=True
             )
@@ -865,7 +1320,12 @@ class EnhancedAIChatManager:
                 return messages
             return messages[-max_store_messages:]
 
-        def render_chat_history(chat_messages: List[Dict[str, Any]]):
+        def _is_compact(ui_state: Optional[Dict[str, Any]]) -> bool:
+            if not isinstance(ui_state, dict):
+                return True
+            return bool(ui_state.get('compact', True))
+
+        def render_chat_history(chat_messages: List[Dict[str, Any]], compact: bool = True):
             chat_history_children = []
             messages = _trim_chat_messages(chat_messages or [])
             visible = messages
@@ -888,20 +1348,23 @@ class EnhancedAIChatManager:
                 visible = visible[-max_render_messages:]
             for msg in visible:
                 if msg.get("role") == "user":
+                    bubble_padding = '8px 10px' if compact else '12px'
+                    bubble_margin = '4px 0' if compact else '8px 0'
+                    msg_font = '12px' if compact else '13px'
                     chat_history_children.append(
                         html.Div([
                             html.Div([
                                 html.I(className="fas fa-user", style={'marginRight': '8px', 'color': '#2c3e50'}),
                                 html.Span("您", style={'fontWeight': 'bold', 'color': '#2c3e50'})
                             ], style={'marginBottom': '5px'}),
-                            html.Div(msg.get("content", ""), style={'paddingLeft': '24px'})
+                            html.Div(msg.get("content", ""), style={'paddingLeft': '20px', 'fontSize': msg_font, 'lineHeight': '1.4'})
                         ], style={
-                            'padding': '12px',
+                            'padding': bubble_padding,
                             'backgroundColor': '#e3f2fd',
                             'borderRadius': '8px',
-                            'margin': '8px 0',
+                            'margin': bubble_margin,
                             'border': '1px solid #bbdefb',
-                            'marginLeft': '20px'
+                            'marginLeft': '8px'
                         })
                     )
                 elif msg.get("role") == "assistant":
@@ -932,8 +1395,10 @@ class EnhancedAIChatManager:
                         title = self.assistant_name
 
                     content_style = {
-                        'paddingLeft': '24px',
-                        'whiteSpace': 'pre-line'
+                        'paddingLeft': '20px',
+                        'whiteSpace': 'pre-line',
+                        'fontSize': '12px' if compact else '13px',
+                        'lineHeight': '1.4'
                     }
                     if msg_type == "reasoning":
                         content_style.update({
@@ -951,15 +1416,224 @@ class EnhancedAIChatManager:
                             ], style={'marginBottom': '5px'}),
                             html.Div(msg.get("content", ""), style=content_style)
                         ], style={
-                            'padding': '12px',
+                            'padding': '8px 10px' if compact else '12px',
                             'backgroundColor': bg_color,
                             'borderRadius': '8px',
-                            'margin': '8px 0',
+                            'margin': '4px 0' if compact else '8px 0',
                             'border': f'1px solid {border_color}',
-                            'marginRight': '20px'
+                            'marginRight': '8px'
                         })
                     )
             return chat_history_children
+
+        def _session_title_from_messages(messages: List[Dict[str, Any]]) -> str:
+            for msg in messages or []:
+                if msg.get('role') == 'user':
+                    t = str(msg.get('content') or '').strip()
+                    if t:
+                        return t[:24]
+            return '新会话'
+
+        def _session_options(sessions_data: Dict[str, Any]) -> List[Dict[str, str]]:
+            sessions = list((sessions_data or {}).get('sessions') or [])
+            # new -> old ordering
+            sessions = sorted(sessions, key=lambda s: int(s.get('updated_at') or 0), reverse=True)
+            return [
+                {
+                    'label': str(s.get('title') or '会话'),
+                    'value': str(s.get('id') or ''),
+                }
+                for s in sessions if s.get('id')
+            ]
+
+        def _build_container_style(ui_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+            fullscreen = bool((ui_state or {}).get('fullscreen', False))
+            if fullscreen:
+                try:
+                    left_px = int(os.getenv('CHAT_FULLSCREEN_LEFT_PX', '300'))
+                except Exception:
+                    left_px = 300
+                return {
+                    'position': 'fixed',
+                    'top': '8px',
+                    'right': '8px',
+                    'bottom': '8px',
+                    'left': f'{left_px}px',
+                    'zIndex': 2000,
+                    'backgroundColor': '#ffffff',
+                    'border': '1px solid #d1d5db',
+                    'borderRadius': '10px',
+                    'boxShadow': '0 8px 24px rgba(0,0,0,0.16)',
+                    'display': 'flex',
+                    'flexDirection': 'column',
+                    'gap': '6px',
+                    'padding': '10px',
+                    'boxSizing': 'border-box'
+                }
+
+            return {
+                'width': '100%',
+                'height': 'calc(100vh - 120px)',
+                'minHeight': '520px',
+                'display': 'flex',
+                'flexDirection': 'column',
+                'gap': '6px',
+                'padding': '10px',
+                'boxSizing': 'border-box'
+            }
+
+        def _build_history_style(ui_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+            fullscreen = bool((ui_state or {}).get('fullscreen', False))
+            compact = _is_compact(ui_state)
+            return {
+                'flex': '1 1 auto',
+                'minHeight': '240px' if compact else '220px',
+                'height': 'calc(100vh - 200px)' if fullscreen else 'calc(100vh - 360px)',
+                'overflowY': 'auto',
+                'border': '1px solid #ddd',
+                'padding': '8px' if compact else '10px',
+                'borderRadius': '8px',
+                'backgroundColor': '#fafafa'
+            }
+
+        @app.callback(
+            [Output(f'{chat_id_prefix}-chat-sessions', 'data', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-session-selector', 'options', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-session-selector', 'value', allow_duplicate=True)],
+            [Input(f'{chat_id_prefix}-messages', 'data')],
+            [State(f'{chat_id_prefix}-chat-sessions', 'data'),
+             State(f'{chat_id_prefix}-active-session-id', 'data')],
+            prevent_initial_call=True
+        )
+        def sync_active_session(messages, sessions_data, active_session_id):
+            sessions_data = sessions_data or {'sessions': []}
+            sessions = list(sessions_data.get('sessions') or [])
+            sid = str(active_session_id or '').strip()
+            if not sid:
+                return dash.no_update, dash.no_update, dash.no_update
+
+            updated = False
+            now_ts = int(time.time())
+            for s in sessions:
+                if str(s.get('id') or '') == sid:
+                    s['messages'] = _trim_chat_messages(messages or [])
+                    s['updated_at'] = now_ts
+                    s['title'] = _session_title_from_messages(s.get('messages') or [])
+                    updated = True
+                    break
+
+            if not updated:
+                sessions.append({
+                    'id': sid,
+                    'title': _session_title_from_messages(messages or []),
+                    'messages': _trim_chat_messages(messages or []),
+                    'updated_at': now_ts,
+                })
+
+            data = {'sessions': sessions}
+            options = _session_options(data)
+            return data, options, sid
+
+        @app.callback(
+            [Output(f'{chat_id_prefix}-messages', 'data', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-active-session-id', 'data', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-chat-sessions', 'data', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-session-selector', 'options', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-session-selector', 'value', allow_duplicate=True)],
+            [Input(f'{chat_id_prefix}-new-session-btn', 'n_clicks'),
+             Input(f'{chat_id_prefix}-session-selector', 'value')],
+            [State(f'{chat_id_prefix}-chat-sessions', 'data'),
+             State(f'{chat_id_prefix}-active-session-id', 'data')],
+            prevent_initial_call=True
+        )
+        def handle_session_switch(new_session_clicks, selected_session_id, sessions_data, active_session_id):
+            sessions_data = sessions_data or {'sessions': []}
+            sessions = list(sessions_data.get('sessions') or [])
+            ctx = callback_context
+            if not ctx.triggered:
+                raise PreventUpdate
+
+            prop_id = ctx.triggered[0]['prop_id']
+            now_ts = int(time.time())
+
+            if prop_id == f'{chat_id_prefix}-new-session-btn.n_clicks':
+                sid = f'session-{int(time.time() * 1000)}'
+                sessions.append({'id': sid, 'title': '新会话', 'messages': [], 'updated_at': now_ts})
+                data = {'sessions': sessions}
+                options = _session_options(data)
+                return [], sid, data, options, sid
+
+            sid = str(selected_session_id or '').strip()
+            if not sid:
+                raise PreventUpdate
+
+            for s in sessions:
+                if str(s.get('id') or '') == sid:
+                    data = {'sessions': sessions}
+                    options = _session_options(data)
+                    return _trim_chat_messages(s.get('messages') or []), sid, data, options, sid
+
+            raise PreventUpdate
+
+        @app.callback(
+            [Output(f'{chat_id_prefix}-container', 'style', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-history', 'style', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-fullscreen-btn', 'children', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-compact-toggle-btn', 'children', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-ui-state', 'data', allow_duplicate=True)],
+            [Input(f'{chat_id_prefix}-fullscreen-btn', 'n_clicks'),
+             Input(f'{chat_id_prefix}-compact-toggle-btn', 'n_clicks')],
+            [State(f'{chat_id_prefix}-ui-state', 'data')],
+            prevent_initial_call=True
+        )
+        def toggle_ui_modes(fullscreen_clicks, compact_clicks, ui_state):
+            ui_state = dict(ui_state or {'fullscreen': False, 'compact': True})
+            ctx = callback_context
+            if not ctx.triggered:
+                raise PreventUpdate
+            prop_id = ctx.triggered[0]['prop_id']
+
+            if prop_id == f'{chat_id_prefix}-fullscreen-btn.n_clicks':
+                ui_state['fullscreen'] = not bool(ui_state.get('fullscreen', False))
+            elif prop_id == f'{chat_id_prefix}-compact-toggle-btn.n_clicks':
+                ui_state['compact'] = not bool(ui_state.get('compact', True))
+
+            fullscreen_btn_text = (
+                [html.I(className="fas fa-compress", style={'marginRight': '5px'}), '退出全屏']
+                if ui_state.get('fullscreen') else
+                [html.I(className="fas fa-expand", style={'marginRight': '5px'}), '放大全屏']
+            )
+            compact_btn_text = (
+                [html.I(className="fas fa-compress-alt", style={'marginRight': '5px'}), '紧凑排版']
+                if ui_state.get('compact', True) else
+                [html.I(className="fas fa-text-height", style={'marginRight': '5px'}), '舒适排版']
+            )
+            return _build_container_style(ui_state), _build_history_style(ui_state), fullscreen_btn_text, compact_btn_text, ui_state
+
+        @app.callback(
+            [Output(f'{chat_id_prefix}-history', 'children', allow_duplicate=True)],
+            [Input(f'{chat_id_prefix}-messages', 'data'),
+             Input(f'{chat_id_prefix}-ui-state', 'data')],
+            prevent_initial_call=True
+        )
+        def rerender_history_on_session_switch(messages, ui_state):
+            compact = _is_compact(ui_state)
+            if not messages:
+                return [[
+                    html.Div([
+                        html.I(className="fas fa-robot", style={'marginRight': '8px', 'color': '#3498db'}),
+                        html.Span(f"您好！我是{self.assistant_name}。可以从历史会话继续，或新建会话。")
+                    ], style={
+                        'padding': '6px 9px',
+                        'backgroundColor': '#f8f9fa',
+                        'borderRadius': '8px',
+                        'margin': '2px 0',
+                        'border': '1px solid #e9ecef',
+                        'fontSize': '12px',
+                        'lineHeight': '1.35'
+                    })
+                ]]
+            return [render_chat_history(messages, compact=compact)]
 
         def start_agent_streaming(task_id: str, question: str, current_data: Any, conversation_history: List[Dict[str, Any]]):
             def worker():
@@ -1114,6 +1788,90 @@ class EnhancedAIChatManager:
                 max_tokens=DEFAULT_MAX_TOKENS
             )
 
+        def start_dify_streaming(task_id: str, question: str, current_data: Any):
+            def worker():
+                try:
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        streaming_data[task_id]['status'] = 'processing'
+                        streaming_data[task_id]['progress'] = '正在调用 Dify Workflow...'
+                        streaming_data[task_id]['last_update'] = time.time()
+
+                    data_context = ""
+                    if self._has_data(current_data):
+                        data_context = self._generate_data_context(current_data, question=question)
+
+                    use_streaming = (os.environ.get("DIFY_RESPONSE_MODE", "streaming") or "streaming").strip().lower() == "streaming"
+                    full_text = ""
+
+                    if use_streaming and self.dify_client and self.dify_client.enabled:
+                        for event in self.dify_client.stream_workflow(
+                            question=question,
+                            context=data_context,
+                            user=self.dify_client.build_user(self.dashboard_type)
+                        ):
+                            if event.get("type") == "chunk":
+                                full_text += str(event.get("text") or "")
+                                with streaming_lock:
+                                    streaming_data.setdefault(task_id, {})
+                                    streaming_data[task_id]['status'] = 'processing'
+                                    streaming_data[task_id]['response'] = full_text
+                                    streaming_data[task_id]['progress'] = 'RAG 正在输出...'
+                                    streaming_data[task_id]['last_update'] = time.time()
+
+                    if not full_text.strip():
+                        result = self.process_with_dify_workflow(question, data_context)
+                        if not result.get('success'):
+                            raise RuntimeError(result.get('text') or result.get('error') or 'Dify Workflow 执行失败')
+                        full_text = str(result.get('text') or '').strip()
+                        _stream_text_response(task_id, full_text, progress_text='RAG 正在输出...')
+                        return
+
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        streaming_data[task_id]['status'] = 'completed'
+                        streaming_data[task_id]['progress'] = '完成'
+                        streaming_data[task_id]['last_update'] = time.time()
+                except Exception as e:
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        streaming_data[task_id]['status'] = 'error'
+                        streaming_data[task_id]['error'] = str(e)
+                        streaming_data[task_id]['last_update'] = time.time()
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def start_confluence_streaming(task_id: str, question: str, current_data: Any):
+            def worker():
+                try:
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        streaming_data[task_id]['status'] = 'processing'
+                        streaming_data[task_id]['progress'] = '正在检索 Confluence 空间...'
+                        streaming_data[task_id]['last_update'] = time.time()
+
+                    data_context = ""
+                    if self._has_data(current_data):
+                        data_context = self._generate_data_context(current_data, question=question)
+
+                    result = self.process_with_confluence(question, data_context=data_context)
+                    if not result.get('success'):
+                        raise RuntimeError(result.get('text') or result.get('error') or 'Confluence 模式执行失败')
+
+                    full_text = str(result.get('text') or '').strip()
+                    if not full_text:
+                        full_text = 'Confluence 已返回结果，但没有可展示的文本输出。'
+
+                    _stream_text_response(task_id, full_text, progress_text='Confluence 正在输出...')
+                except Exception as e:
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        streaming_data[task_id]['status'] = 'error'
+                        streaming_data[task_id]['error'] = str(e)
+                        streaming_data[task_id]['last_update'] = time.time()
+
+            threading.Thread(target=worker, daemon=True).start()
+
         def _guess_target_table(question_text: str) -> str:
             q = (question_text or "").lower()
             if any(k in q for k in ["manual run", "testrun", "测试执行", "测试运行"]):
@@ -1161,18 +1919,46 @@ class EnhancedAIChatManager:
             ql = q.lower()
 
             # 识别可能的项目/团队关键字（例如 IDCEVO）
-            tokens = re.findall(r"[A-Za-z][A-Za-z0-9_\-]{3,}", q)
-            entity_tokens = [t for t in tokens if t.lower() not in {"aida", "ticket", "topissue", "issue", "defect", "summary", "agent", "sqlite"}]
+            en_tokens = re.findall(r"[A-Za-z][A-Za-z0-9_\-]{1,}", q)
+            zh_tokens = re.findall(r"[\u4e00-\u9fff]{2,8}", q)
+            entity_tokens = []
+            stop_words = {
+                "aida", "ticket", "topissue", "issue", "defect", "summary", "agent", "sqlite",
+                "tester", "reporter", "owner", "team", "project", "status", "phase", "query"
+            }
+            for t in en_tokens:
+                tl = t.lower()
+                if tl in stop_words:
+                    continue
+                if len(tl) <= 1:
+                    continue
+                entity_tokens.append(t)
+            for t in zh_tokens:
+                if any(k in t for k in ["提票", "情况", "如何", "分析", "查询", "统计", "数据", "测试", "缺陷", "团队", "项目"]):
+                    continue
+                entity_tokens.append(t)
+
+            # 去重并限制长度，避免生成过长 where 子句
+            dedup_tokens = []
+            seen = set()
+            for t in entity_tokens:
+                tl = str(t).strip().lower()
+                if not tl or tl in seen:
+                    continue
+                seen.add(tl)
+                dedup_tokens.append(str(t).strip())
 
             wants_aida_dist = any(k in ql for k in ["aida", "分布", "distribution", "领域", "模块"])
             wants_topissue = any(k in ql for k in ["topissue", "top issue", "高风险", "风险", "严重"])
             wants_detail = any(k in ql for k in ["详情", "详细", "detail", "ticket", "列表", "哪些"])
+            wants_tester = any(k in ql for k in ["提票", "提单", "报缺陷", "提交人", "报告人", "发现人", "测试员", "测试人员", "tester", "reporter", "found by", "found_by", "detected by", "detected_by"])
 
             return {
-                "entity_tokens": entity_tokens[:5],
+                "entity_tokens": dedup_tokens[:6],
                 "wants_aida_dist": wants_aida_dist,
                 "wants_topissue": wants_topissue,
                 "wants_detail": wants_detail,
+                "wants_tester": wants_tester,
                 "columns": set(columns or []),
             }
 
@@ -1181,10 +1967,14 @@ class EnhancedAIChatManager:
             hints = _extract_query_hints(question, columns)
             cols = hints["columns"]
 
+            def _esc_like(token: str) -> str:
+                return str(token or "").replace("'", "''")
+
             select_cols = []
             for c in [
                 "defect_id", "id", "name", "project", "tproject", "team", "ecu",
                 "aida_english", "top_aida", "status_phase", "severity_group",
+                "tester", "detected_by", "reporter", "found_by", "author_name", "owner",
                 "topissue_display", "creation_time", "last_modified"
             ]:
                 if c in cols:
@@ -1202,10 +1992,13 @@ class EnhancedAIChatManager:
                     where_parts.append("LOWER(CAST(severity_group AS TEXT)) IN ('critical','high','s1','s2')")
 
             if hints["entity_tokens"]:
-                searchable = [c for c in ["project", "tproject", "team", "ecu", "name"] if c in cols]
+                person_fields = [c for c in ["tester", "detected_by", "reporter", "found_by", "author_name", "owner"] if c in cols]
+                generic_fields = [c for c in ["project", "tproject", "team", "ecu", "name"] if c in cols]
+                searchable = person_fields if (hints.get("wants_tester") and person_fields) else (person_fields + generic_fields if person_fields else generic_fields)
                 for tok in hints["entity_tokens"]:
                     if searchable:
-                        like_group = " OR ".join([f"LOWER(CAST({c} AS TEXT)) LIKE LOWER('%{tok}%')" for c in searchable])
+                        safe_tok = _esc_like(tok)
+                        like_group = " OR ".join([f"LOWER(CAST({c} AS TEXT)) LIKE LOWER('%{safe_tok}%')" for c in searchable])
                         where_parts.append(f"({like_group})")
 
             where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
@@ -1219,7 +2012,14 @@ class EnhancedAIChatManager:
                                    rows: List[Dict[str, Any]], note: str = "") -> str:
             """大模型不可用时的本地回答兜底。"""
             safe_rows = [r for r in (rows or []) if isinstance(r, dict)]
-            lines: List[str] = ["[数据库直读模式｜本地降级摘要]", f"表: {table_name or '-'}", f"SQL: {sql_used or '-'}"]
+            lines: List[str] = [
+                "[结论]",
+                "当前为本地降级摘要结果。",
+                "",
+                "[关键数字]",
+                f"- 数据表: {table_name or '-'}",
+                f"- SQL: {sql_used or '-'}",
+            ]
             if note:
                 lines.append(f"说明: {note}")
 
@@ -1348,18 +2148,20 @@ class EnhancedAIChatManager:
             rows: List[Dict[str, Any]],
             explanation: Dict[str, Any],
             mode: str,
+            total_count: Optional[int] = None,
+            sample_limit: int = 120,
             fallback_reason: str = "",
         ) -> str:
             row_count = len(rows or [])
             conclusion = str(llm_answer or "").strip() or "暂无可用结论。"
+            safe_total = int(total_count) if isinstance(total_count, int) and total_count >= 0 else None
             lines: List[str] = [
-                f"[数据库直读模式｜工具链优先]",
-                "",
                 "[结论]",
                 conclusion,
                 "",
                 "[关键数字]",
-                f"- 命中记录: {row_count}",
+                f"- 总命中记录: {safe_total if safe_total is not None else row_count}",
+                f"- 返回样本: {row_count}",
                 f"- 数据表: {table_name or '-'}",
                 f"- SQL: {sql_used or '-'}",
                 f"- SQL模式: {mode or '-'}",
@@ -1372,6 +2174,8 @@ class EnhancedAIChatManager:
             cautions: List[str] = []
             if row_count == 0:
                 cautions.append("当前查询命中为0，可尝试放宽时间范围、状态或模块筛选")
+            if (safe_total is not None) and (safe_total > row_count):
+                cautions.append(f"为保证响应速度，回答详情按样本返回（上限 {int(sample_limit)} 条），已提供全量命中总数")
             if fallback_reason:
                 cautions.append(f"本地兜底原因: {fallback_reason}")
             if cautions:
@@ -1388,9 +2192,11 @@ class EnhancedAIChatManager:
                 target_table = ""
                 sql_clean = ""
                 out_rows: List[Dict[str, Any]] = []
+                total_count: Optional[int] = None
                 business_explanation: Dict[str, Any] = {}
                 stage = "init"
                 summary_sql_mode = "agent"
+                summary_row_limit = max(1, int((os.getenv("CHAT_SUMMARY_ROW_LIMIT", "120") or "120").strip() or "120"))
                 started_at = time.time()
                 tool_executor = getattr(self.intelligent_agent, 'tool_executor', None) if self.intelligent_agent else None
                 tool_sql_succeeded = False
@@ -1398,6 +2204,52 @@ class EnhancedAIChatManager:
                 failure_category = ""
                 execution_path: List[str] = []
                 stage_events: List[str] = []
+
+                def _unwrap_sql_for_count(sql_text: str, table_name: str) -> str:
+                    s = str(sql_text or "").strip().rstrip(";")
+                    if not s:
+                        return f'SELECT * FROM "{table_name}"'
+                    # run_sqlite_query 会把 SQL 包成: SELECT * FROM (<inner>) AS _q LIMIT N
+                    m = re.match(r"^\s*SELECT\s+\*\s+FROM\s+\((.*)\)\s+AS\s+_q\s+LIMIT\s+\d+\s*$", s, flags=re.IGNORECASE | re.DOTALL)
+                    if m:
+                        s = str(m.group(1) or "").strip()
+                    s = re.sub(r"\s+LIMIT\s+\d+\s*$", "", s, flags=re.IGNORECASE)
+                    if not re.match(r"^\s*(select|with)\b", s, flags=re.IGNORECASE):
+                        return f'SELECT * FROM "{table_name}"'
+                    return s
+
+                def _compute_total_count(db_path: str, table_name: str, sql_text: str) -> Optional[int]:
+                    base_sql = _unwrap_sql_for_count(sql_text, table_name)
+                    count_sql = f"SELECT COUNT(*) AS total_count FROM ({base_sql}) AS _cnt"
+
+                    if tool_executor:
+                        try:
+                            c_out = tool_executor.execute_tool("run_sqlite_query", None, sql=count_sql, limit=1)
+                            if isinstance(c_out, dict) and c_out.get("success") is True:
+                                rs = c_out.get("result") or {}
+                                items = rs.get("rows") or []
+                                if isinstance(items, list) and items and isinstance(items[0], dict):
+                                    v = items[0].get("total_count")
+                                    if v is not None:
+                                        return int(v)
+                        except Exception:
+                            pass
+
+                    try:
+                        conn3 = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                        cur3 = conn3.cursor()
+                        try:
+                            cur3.execute("PRAGMA query_only = ON")
+                        except Exception:
+                            pass
+                        cur3.execute(count_sql)
+                        one = cur3.fetchone()
+                        conn3.close()
+                        if one is not None:
+                            return int(one[0])
+                    except Exception:
+                        return None
+                    return None
 
                 def _mark_stage(new_stage: str) -> None:
                     nonlocal stage
@@ -1498,7 +2350,7 @@ class EnhancedAIChatManager:
                                 "query_sqlite_with_fix",
                                 None,
                                 question=question,
-                                limit=120,
+                                limit=summary_row_limit,
                                 table=target_table,
                             )
                             if isinstance(agent_sql_out, dict) and agent_sql_out.get("success") is True:
@@ -1506,7 +2358,7 @@ class EnhancedAIChatManager:
                                 sql = str(rs.get("generated_sql") or rs.get("sql") or "").strip()
                                 items = rs.get("rows") or []
                                 if isinstance(items, list):
-                                    out_rows = [r for r in items[:120] if isinstance(r, dict)]
+                                    out_rows = [r for r in items[:summary_row_limit] if isinstance(r, dict)]
                                 exp = rs.get("business_explanation")
                                 if isinstance(exp, dict):
                                     business_explanation = exp
@@ -1539,13 +2391,13 @@ class EnhancedAIChatManager:
                         if tool_executor:
                             execution_path.append("sql_run:tool")
                             try:
-                                tool_run = tool_executor.execute_tool("run_sqlite_query", None, sql=sql_clean, limit=120)
+                                tool_run = tool_executor.execute_tool("run_sqlite_query", None, sql=sql_clean, limit=summary_row_limit)
                                 if isinstance(tool_run, dict) and tool_run.get("success") is True:
                                     rs = tool_run.get("result") or {}
                                     sql_clean = str(rs.get("sql") or sql_clean)
                                     items = rs.get("rows") or []
                                     if isinstance(items, list):
-                                        out_rows = [r for r in items[:120] if isinstance(r, dict)]
+                                        out_rows = [r for r in items[:summary_row_limit] if isinstance(r, dict)]
                                     tool_sql_succeeded = True
                                 else:
                                     local_fallback_reason = str((tool_run or {}).get("error") or "run_sqlite_query失败")
@@ -1582,12 +2434,14 @@ class EnhancedAIChatManager:
                             rows = []
 
                         out_rows = []
-                        for r in rows[:120]:
+                        for r in rows[:summary_row_limit]:
                             try:
                                 d = dict(r) if r is not None else {}
                             except Exception:
                                 d = {}
                             out_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
+
+                    total_count = _compute_total_count(db_path=db_path, table_name=target_table, sql_text=sql_clean)
 
                     with streaming_lock:
                         streaming_data[task_id]['progress'] = '正在生成回答...'
@@ -1600,6 +2454,9 @@ class EnhancedAIChatManager:
                             "question": question,
                             "table": target_table,
                             "sql": sql_clean,
+                            "total_count": total_count,
+                            "sample_count": len(out_rows),
+                            "sample_limit": summary_row_limit,
                             "row_count": len(out_rows),
                             "rows": out_rows
                         }, ensure_ascii=False)}
@@ -1622,6 +2479,9 @@ class EnhancedAIChatManager:
                                 "question": question,
                                 "table": target_table,
                                 "sql": sql_clean,
+                                "total_count": total_count,
+                                "sample_count": len(compact_rows),
+                                "sample_limit": summary_row_limit,
                                 "row_count": len(compact_rows),
                                 "rows": compact_rows,
                                 "note": "compact_retry"
@@ -1658,6 +2518,8 @@ class EnhancedAIChatManager:
                         rows=out_rows,
                         explanation=business_explanation,
                         mode=summary_sql_mode,
+                        total_count=total_count,
+                        sample_limit=summary_row_limit,
                         fallback_reason=local_fallback_reason,
                     )
                     elapsed_ms = int((time.time() - started_at) * 1000)
@@ -1920,19 +2782,21 @@ class EnhancedAIChatManager:
              State(f'{chat_id_prefix}-streaming-state', 'data'),
              State(data_store_id, 'data'),
              State(f'{chat_id_prefix}-chat-mode', 'value'),
-             State(f'{chat_id_prefix}-known-issues', 'value')]
+               State(f'{chat_id_prefix}-known-issues', 'value'),
+               State(f'{chat_id_prefix}-ui-state', 'data')]
         )
         def handle_enhanced_chat(*args):
             send_clicks = args[0]
             input_submit = args[1]
             clear_clicks = args[2]
-            preset_clicks = args[3:-6]
-            input_value = args[-6]
-            chat_messages = _trim_chat_messages(args[-5] or [])
-            streaming_state = args[-4] or {'active': False, 'task_id': None}
-            filtered_data = args[-3]
-            chat_mode = (args[-2] or "summary")
-            known_issues_checked = args[-1] or []
+            preset_clicks = args[3:-7]
+            input_value = args[-7]
+            chat_messages = _trim_chat_messages(args[-6] or [])
+            streaming_state = args[-5] or {'active': False, 'task_id': None}
+            filtered_data = args[-4]
+            chat_mode = (args[-3] or "summary")
+            known_issues_checked = args[-2] or []
+            ui_state = args[-1] if isinstance(args[-1], dict) else {}
 
             ctx = callback_context
             if not ctx.triggered:
@@ -2006,7 +2870,7 @@ class EnhancedAIChatManager:
                         "content": "你好，我在。你可以直接问我问题，或告诉我你想分析的范围。"
                     })
                     chat_messages = _trim_chat_messages(chat_messages)
-                    chat_history_children = render_chat_history(chat_messages)
+                    chat_history_children = render_chat_history(chat_messages, compact=_is_compact(ui_state))
                     return chat_history_children, "", chat_messages, {'active': False, 'task_id': None}, True, "", {}
 
                 # 添加用户消息
@@ -2015,7 +2879,7 @@ class EnhancedAIChatManager:
 
                 # 获取数据
                 current_data: Any = pd.DataFrame()
-                allow_local_data = (chat_mode in {"agent"}) or use_known_issues
+                allow_local_data = (chat_mode in {"agent", "rag", "confluence"}) or use_known_issues
                 if filtered_data and allow_local_data:
                     try:
                         if data_processor_func:
@@ -2030,7 +2894,7 @@ class EnhancedAIChatManager:
                         logger.error(f"数据解析失败: {e}")
                 prefer_agent_for_query = (
                     (not use_known_issues)
-                    and (chat_mode != "pure")
+                    and (chat_mode == "agent")
                     and self.use_agent
                     and _is_advanced_decision_query(user_message)
                 )
@@ -2086,6 +2950,10 @@ class EnhancedAIChatManager:
                     if task_id in streaming_data:
                         streaming_data[task_id]['progress'] = '正在检索已知问题...'
                 start_duplicate_check_streaming(task_id, user_message, current_data, chat_messages)
+            elif chat_mode == "rag":
+                start_dify_streaming(task_id, user_message, current_data)
+            elif chat_mode == "confluence":
+                start_confluence_streaming(task_id, user_message, current_data)
             elif chat_mode == "summary":
                 start_db_summary_streaming(task_id, user_message, chat_messages)
             elif ((chat_mode == "agent") or prefer_agent_for_query) and self.use_agent and self._has_data(current_data):
@@ -2095,7 +2963,7 @@ class EnhancedAIChatManager:
 
             streaming_state = {'active': True, 'task_id': task_id}
 
-            chat_history_children = render_chat_history(chat_messages)
+            chat_history_children = render_chat_history(chat_messages, compact=_is_compact(ui_state))
             interval_disabled = not streaming_state.get('active')
             return chat_history_children, "", chat_messages, streaming_state, interval_disabled, status_display, agent_results
 
@@ -2110,10 +2978,11 @@ class EnhancedAIChatManager:
             [State(f'{chat_id_prefix}-messages', 'data'),
              State(f'{chat_id_prefix}-streaming-state', 'data'),
              State(f'{chat_id_prefix}-show-reasoning', 'value'),
-             State(f'{chat_id_prefix}-agent-results', 'data')],
+             State(f'{chat_id_prefix}-agent-results', 'data'),
+             State(f'{chat_id_prefix}-ui-state', 'data')],
             prevent_initial_call=True
         )
-        def update_streaming_response(n_intervals, chat_messages, streaming_state, show_reasoning, agent_results):
+        def update_streaming_response(n_intervals, chat_messages, streaming_state, show_reasoning, agent_results, ui_state):
             if not streaming_state or not streaming_state.get('active'):
                 raise PreventUpdate
 
@@ -2135,7 +3004,7 @@ class EnhancedAIChatManager:
                     chat_messages[response_index]["type"] = "error"
                     chat_messages[response_index]["content"] = "❌ 流式任务已失效（可能刷新页面/后端重启/网络中断）。请重新发送。"
                 streaming_state = {'active': False, 'task_id': None}
-                chat_history_children = render_chat_history(chat_messages)
+                chat_history_children = render_chat_history(chat_messages, compact=_is_compact(ui_state))
                 interval_disabled = True
                 status_display = ""
                 return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, agent_results
@@ -2222,7 +3091,7 @@ class EnhancedAIChatManager:
                         logger.info(f"Cleaned up streaming data for task {task_id}")
                 status_display = ""
 
-            chat_history_children = render_chat_history(chat_messages)
+            chat_history_children = render_chat_history(chat_messages, compact=_is_compact(ui_state))
             interval_disabled = not streaming_state.get('active')
             return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, agent_results
 

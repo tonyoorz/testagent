@@ -1,5 +1,6 @@
 # Test Coverage Analysis 回调函数模块
 import gc
+import os
 import pandas as pd
 from dash import callback_context, html
 from dash.dependencies import Input, Output, State
@@ -10,9 +11,29 @@ from test_coverage_components import (
     create_enhanced_status_distribution_pie,
     create_pass_rate_trend_chart, 
     create_test_aida_wordcloud,
-    filter_test_data
+    filter_test_data,
+    get_cached_test_coverage_data
 )
 from data_processor import create_empty_figure
+
+
+def _resolve_test_data_from_store(stored_data):
+    """支持两种 data-store 形态：旧版 records 列表、或新版 cache_key 字典。"""
+    if not stored_data:
+        return pd.DataFrame()
+
+    if isinstance(stored_data, list):
+        return pd.DataFrame(stored_data)
+
+    if isinstance(stored_data, dict):
+        cache_key = stored_data.get('cache_key')
+        if cache_key:
+            return get_cached_test_coverage_data(cache_key)
+
+    return pd.DataFrame()
+
+
+PHASE1_ENABLED = os.environ.get('TC_PHASE1_ENABLE', '0').strip().lower() in {'1', 'true', 'yes'}
 
 def build_chart3_export_xlsx(store_data):
     if not store_data:
@@ -241,7 +262,11 @@ def register_test_coverage_callbacks(app, prefix="de-tc"):
             return empty_fig, empty_fig, empty_fig, [], [], []
         
         try:
-            tdf = pd.DataFrame(stored_data)
+            tdf = _resolve_test_data_from_store(stored_data)
+            if tdf.empty:
+                print("警告: 无法从数据存储恢复测试数据")
+                empty_fig = create_empty_figure("数据加载失败")
+                return empty_fig, empty_fig, empty_fig, [], [], []
             print(f"数据加载成功: {len(tdf)} 行")
             
             # 内存管理
@@ -428,7 +453,7 @@ def register_test_coverage_callbacks(app, prefix="de-tc"):
          Input(f'{prefix}-fvp-dropdown', 'value'),
          Input(f'{prefix}-fv-dropdown', 'value'),
          Input(f'{prefix}-data-store', 'data')],
-        prevent_initial_call=False
+        prevent_initial_call=True
     )
     def update_phase1_charts(selected_years, selected_projects, selected_testweeks, selected_pus,
                            selected_aidas, selected_statuses, selected_feature_regions, 
@@ -436,6 +461,11 @@ def register_test_coverage_callbacks(app, prefix="de-tc"):
         
         try:
             print("--- Phase 1 图表更新 ---")
+
+            if not PHASE1_ENABLED:
+                empty_fig = create_empty_figure("Phase 1 图表默认关闭", height=400)
+                empty_kpi = html.Div()
+                return empty_fig, empty_fig, empty_fig, empty_kpi
             
             if not stored_data:
                 empty_fig = create_empty_figure("数据加载失败", height=400)
@@ -446,7 +476,11 @@ def register_test_coverage_callbacks(app, prefix="de-tc"):
             def is_filter_active(filter_value):
                 return filter_value and len(filter_value) > 0 and 'all' not in filter_value
             
-            working_tdf = pd.DataFrame(stored_data)
+            working_tdf = _resolve_test_data_from_store(stored_data)
+            if working_tdf.empty:
+                empty_fig = create_empty_figure("数据加载失败", height=400)
+                empty_kpi = html.Div("数据加载失败", style={'textAlign': 'center', 'color': '#dc3545'})
+                return empty_fig, empty_fig, empty_fig, empty_kpi
             filtered_tdf = working_tdf.copy()
 
             # 年份筛选

@@ -19,6 +19,7 @@ python longrunner_analysis.py --summary         # 只显示汇总报告
 import json
 import os
 import sqlite3
+import hashlib
 import argparse
 from collections import defaultdict
 from datetime import datetime
@@ -42,6 +43,7 @@ def _default_octane_db_path() -> str:
 
 def _load_history_data(ticket_id: str, history_folder: str = "history") -> Optional[Dict]:
     """数据库优先获取历史数据，文件兜底。"""
+    source_mode = os.environ.get("OCTANE_DATA_SOURCE", "db_only").strip().lower()
     try:
         from data_processor import get_history_data as _dp_get_history_data
         data = _dp_get_history_data(ticket_id, history_folder)
@@ -49,6 +51,9 @@ def _load_history_data(ticket_id: str, history_folder: str = "history") -> Optio
             return data
     except Exception:
         pass
+
+    if source_mode == "db_only":
+        return None
 
     history_file = os.path.join(history_folder, f"{ticket_id}_history.json")
     if not os.path.exists(history_file):
@@ -213,6 +218,33 @@ def _history_file_fingerprint(history_file: str) -> Optional[Dict]:
         return None
 
 
+def _history_db_fingerprint(ticket_id: str) -> Optional[Dict]:
+    db_path = _default_octane_db_path()
+    if not db_path or not os.path.exists(db_path):
+        return None
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT payload_json FROM octane_defect_histories WHERE defect_id = ?",
+                (str(ticket_id),),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if not row or not row[0]:
+            return None
+
+        payload_text = str(row[0])
+        return {
+            "hash": hashlib.md5(payload_text.encode("utf-8")).hexdigest(),
+            "size": len(payload_text),
+            "source": "db",
+        }
+    except Exception:
+        return None
+
+
 def _cache_file_path(cache_dir: str, ticket_id: str) -> str:
     safe_ticket_id = str(ticket_id).strip()
     return os.path.join(cache_dir, f"{safe_ticket_id}.json")
@@ -228,11 +260,19 @@ def analyze_ticket_phases_cached(
         return analyze_ticket_phases(ticket_id, history_folder)
 
     history_file = os.path.join(history_folder, f"{ticket_id}_history.json")
-    fingerprint = _history_file_fingerprint(history_file)
+    fingerprint = _history_db_fingerprint(ticket_id)
+    if fingerprint is None:
+        file_fp = _history_file_fingerprint(history_file)
+        if file_fp is not None:
+            fingerprint = {
+                "hash": f"{file_fp['mtime_ns']}:{file_fp['size']}",
+                "size": int(file_fp["size"]),
+                "source": "file",
+            }
     if fingerprint is None:
         return analyze_ticket_phases(ticket_id, history_folder)
 
-    cache_key = (os.path.abspath(history_file), fingerprint["mtime_ns"], fingerprint["size"])
+    cache_key = (str(ticket_id), str(fingerprint.get("source")), str(fingerprint.get("hash")), int(fingerprint.get("size", 0)))
     with _TICKET_ANALYSIS_CACHE_LOCK:
         cached = _TICKET_ANALYSIS_CACHE.get(cache_key)
     if cached is not None:
@@ -245,8 +285,8 @@ def analyze_ticket_phases_cached(
                 payload = json.load(f)
             if (
                 payload.get("cache_version") == _CACHE_VERSION
-                and int(payload.get("source_mtime_ns", -1)) == fingerprint["mtime_ns"]
-                and int(payload.get("source_size", -1)) == fingerprint["size"]
+                and str(payload.get("source_hash", "")) == str(fingerprint.get("hash", ""))
+                and int(payload.get("source_size", -1)) == int(fingerprint.get("size", -1))
                 and payload.get("ticket_id") == str(ticket_id)
                 and "phase_durations" in payload
             ):
@@ -291,8 +331,8 @@ def analyze_ticket_phases_cached(
                     {
                         "cache_version": _CACHE_VERSION,
                         "ticket_id": str(ticket_id),
-                        "source_mtime_ns": fingerprint["mtime_ns"],
-                        "source_size": fingerprint["size"],
+                        "source_hash": str(fingerprint.get("hash", "")),
+                        "source_size": int(fingerprint.get("size", 0)),
                         "phase_durations": minimal_result["phase_durations"],
                         "found_in_functions": minimal_result["found_in_functions"],
                         "phase02_found_in_functions": minimal_result["phase02_found_in_functions"],
@@ -339,6 +379,9 @@ def get_all_ticket_ids(history_folder: str = 'history') -> List[str]:
     ticket_ids_db = _get_ticket_ids_from_db()
     if ticket_ids_db:
         return sorted(set(ticket_ids_db))
+
+    if os.environ.get("OCTANE_DATA_SOURCE", "db_only").strip().lower() == "db_only":
+        return []
 
     ticket_ids = []
     if not os.path.exists(history_folder):

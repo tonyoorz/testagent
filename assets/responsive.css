@@ -29,8 +29,8 @@
     }
     
     /* Adjust main content */
-    .main-content-wrapper {
-        margin-left: 0 !important;
+    .main-content-wrapper,
+    #main-content-wrapper {
         padding: 10px !important;
     }
     
@@ -82,8 +82,8 @@
     }
     
     /* Adjust main content margin */
-    .main-content-wrapper {
-        margin-left: 250px !important;
+    .main-content-wrapper,
+    #main-content-wrapper {
         padding: 15px !important;
     }
     
@@ -112,8 +112,8 @@
         width: 280px !important;
     }
     
-    .main-content-wrapper {
-        margin-left: 300px !important;
+    .main-content-wrapper,
+    #main-content-wrapper {
         padding: 20px !important;
     }
     
@@ -138,8 +138,8 @@
 /* Large screens (1200px and up) */
 @media only screen and (min-width: 1200px) {
     /* Wider main content */
-    .main-content-wrapper {
-        margin-left: 300px !important;
+    .main-content-wrapper,
+    #main-content-wrapper {
         padding: 30px !important;
         max-width: 1400px !important;
     }
@@ -164,8 +164,8 @@
         display: none !important;
     }
     
-    .main-content-wrapper {
-        margin-left: 0 !important;
+    .main-content-wrapper,
+    #main-content-wrapper {
         padding: 0 !important;
     }
     
@@ -214,14 +214,16 @@
 }
 
 /* 确保图表在容器中正确显示 */
+#main-content-wrapper .js-plotly-plot,
 .main-content-wrapper .js-plotly-plot {
     width: 100% !important;
-    max-width: calc(100vw - 340px) !important; /* 减去侧边栏宽度和边距 */
+    max-width: 100% !important;
 }
 
 /* 当侧边栏关闭时的图表宽度 */
+#main-content-wrapper.sidebar-closed .js-plotly-plot,
 .main-content-wrapper.sidebar-closed .js-plotly-plot {
-    max-width: calc(100vw - 40px) !important; /* 只减去内容边距 */
+    max-width: 100% !important;
 }
 
 /* Utility classes for responsive design */
@@ -252,5 +254,12 @@
     
     .Select-control {
         min-height: 44px !important;
+    }
+
+    #project-kpi-cards > div,
+    #testing-kpi-cards > div,
+    #efficiency-kpi-cards > div {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
     }
 }

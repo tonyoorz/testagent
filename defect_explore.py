@@ -43,6 +43,7 @@ from functools import lru_cache, wraps
 import base64
 from io import BytesIO, StringIO
 from dimension_utils import normalize_dimension_value, build_preferred_dimension, build_chart_dimension, sort_dimension_with_unknown_last
+from cache_versioning import get_cache_version
 
 # 统一缓存管理器导入
 try:
@@ -284,6 +285,23 @@ def create_unified_filters(prefix='', active_label_style=None):
     if not status_default_values:
         status_default_values = ['01-New', '02-In Pre-Analysis', '03-In Analysis', '04-In Progress', '05-In Testing', '07-In Pre-Verification']
 
+    loaded_years = set()
+    if not df.empty:
+        try:
+            loaded_years = {int(y) for y in extract_year_series(df).dropna().astype(int).tolist()}
+        except Exception:
+            loaded_years = set()
+
+    discovered_years = set(_discover_defect_years_from_files())
+    preloaded_years = set(int(y) for y in _loaded_defect_years) if _loaded_defect_years else set()
+    year_options_values = sorted(
+        set([DEFAULT_DEFECT_YEAR - 1, DEFAULT_DEFECT_YEAR]).union(loaded_years, discovered_years, preloaded_years)
+    )
+    if year_options_values:
+        year_default = [DEFAULT_DEFECT_YEAR] if DEFAULT_DEFECT_YEAR in year_options_values else [year_options_values[-1]]
+    else:
+        year_default = []
+
     return html.Div([
         # 第一行过滤器
         html.Div([
@@ -291,8 +309,8 @@ def create_unified_filters(prefix='', active_label_style=None):
                 html.Label('Year:', style=active_label_style),
                 dcc.Dropdown(
                     id=f'{prefix}year-dropdown',
-                    options=[{'label': str(y), 'value': int(y)} for y in sorted({int(y) for y in extract_year_series(df).dropna().astype(int).tolist()})] if not df.empty else [],
-                    value=[2026] if (not df.empty and 2026 in set(extract_year_series(df).dropna().astype(int).tolist())) else [],
+                    options=[{'label': str(y), 'value': int(y)} for y in year_options_values],
+                    value=year_default,
                     multi=True,
                     clearable=True,
                     placeholder='Select Year...',
@@ -374,7 +392,7 @@ def create_unified_filters(prefix='', active_label_style=None):
                     style={'width': '100%'}
                 ),
             ], style={'width': '14.5%', 'display': 'inline-block', 'verticalAlign': 'top'}),
-        ], style={'marginBottom': '20px', 'marginTop': '20px'}),
+        ], className='filter-container', style={'marginBottom': '20px', 'marginTop': '20px'}),
         
         # 第二行过滤器 - FV、ECU、Market、Lead Model和FVP
         html.Div([
@@ -443,7 +461,7 @@ def create_unified_filters(prefix='', active_label_style=None):
                     style={'width': '100%'}
                 ),
             ], style={'width': '18%', 'display': 'inline-block'}),
-        ], style={'marginBottom': '20px', 'marginTop': '20px'}),
+        ], className='filter-container', style={'marginBottom': '20px', 'marginTop': '20px'}),
 
         # 严重性Matrix选择器
         html.Div([
@@ -476,7 +494,7 @@ def create_unified_filters(prefix='', active_label_style=None):
                 ),
                 html.Small('Select which Classification should be classified as critical issues', style={'color': 'gray'})
             ], style={'width': '48%', 'display': 'inline-block'})
-        ], style={'marginBottom': '20px'}),
+        ], className='filter-container', style={'marginBottom': '20px'}),
     ])
 
 # 词云图生成函数
@@ -792,8 +810,15 @@ except ImportError:
 
 
 
-# 缓存版本号 - 修改此值可使缓存失效
-_DATA_CACHE_VERSION = "v4_db_first_fast_start"
+# 缓存版本号：由数据指纹驱动，数据更新时自动失效
+try:
+    _DATA_CACHE_VERSION = get_cache_version(
+        prefix="v5",
+        extra_tag=os.environ.get("APP_CACHE_CODE_VERSION", "defect_explore"),
+    )
+except Exception as _cache_version_error:
+    print(f"⚠️ 数据指纹缓存版本生成失败，使用回退版本: {_cache_version_error}")
+    _DATA_CACHE_VERSION = "v5_fallback"
 try:
     DEFAULT_DEFECT_YEAR = int(os.environ.get("DEFAULT_DEFECT_YEAR", "2026"))
 except (TypeError, ValueError):
@@ -801,6 +826,7 @@ except (TypeError, ValueError):
 
 FAST_START_MODE = os.environ.get("DEFECT_EXPLORE_FAST_START", "1").lower() in ("1", "true", "yes")
 OCTANE_TEAM = os.environ.get("OCTANE_TEAM", "DTSV_China")
+OCTANE_DATA_SOURCE = os.environ.get("OCTANE_DATA_SOURCE", "db_only").strip().lower()
 _loaded_defect_years = set()
 _defect_data_load_lock = threading.Lock()
 
@@ -893,6 +919,23 @@ def _extract_years_from_date_range(start_date=None, end_date=None):
     return _normalize_defect_years(years)
 
 
+@lru_cache(maxsize=1)
+def _discover_defect_years_from_files():
+    """扫描 defect 目录，推断可选缺陷年份。"""
+    discovered = set()
+    try:
+        defect_dir = Path("defect")
+        if defect_dir.exists():
+            for p in defect_dir.glob("*_defect.json"):
+                m = re.match(r"(\d{4})_defect\.json$", p.name)
+                if m:
+                    discovered.add(int(m.group(1)))
+    except Exception:
+        pass
+
+    return tuple(sorted(discovered))
+
+
 def _combine_yearly_dataframes(dataframes):
     """合并多个年度 DataFrame，保留原有列并尽量维持时间排序。"""
     valid_frames = [frame for frame in dataframes if frame is not None and not frame.empty]
@@ -925,6 +968,9 @@ def _cached_load_master_data(years_key=None, cache_version=None):
         if data_list:
             print(f"📦 从数据库加载 {year} 年 master 数据 {len(data_list)} 条")
         else:
+            if OCTANE_DATA_SOURCE == "db_only":
+                print(f"⚠️ db_only 模式：{year} 年 master 数据数据库未命中，跳过本地文件回退")
+                continue
             if not os.path.exists(master_file_path):
                 print(f"⚠️ 未找到 {year} 年 master 文件且数据库无数据: {master_file_path}")
                 continue
@@ -1058,6 +1104,28 @@ def ensure_defect_data_for_date_range(start_date=None, end_date=None):
         master_df = _cached_load_master_data(target_years, cache_version=_DATA_CACHE_VERSION)
         _loaded_defect_years = set(target_years)
         print(f"✅ 缺陷数据补载完成，已加载年份: {sorted(_loaded_defect_years)}，总行数: {len(df)}")
+
+
+def ensure_defect_data_for_years(years=None):
+    """根据年份筛选按需补载缺陷数据。"""
+    global df, master_df, _loaded_defect_years
+
+    required_years = set(_normalize_defect_years(years))
+    missing_years = sorted(required_years - _loaded_defect_years)
+    if not missing_years:
+        return
+
+    with _defect_data_load_lock:
+        missing_years = sorted(required_years - _loaded_defect_years)
+        if not missing_years:
+            return
+
+        target_years = _normalize_defect_years(tuple(_loaded_defect_years.union(required_years)))
+        print(f"⏳ 检测到年份筛选补载，缺失年份: {missing_years}，当前目标年份集合: {target_years}")
+        df = _cached_load_defect_data(target_years, cache_version=_DATA_CACHE_VERSION)
+        master_df = _cached_load_master_data(target_years, cache_version=_DATA_CACHE_VERSION)
+        _loaded_defect_years = set(target_years)
+        print(f"✅ 年份补载完成，已加载年份: {sorted(_loaded_defect_years)}，总行数: {len(df)}")
 
 # 导入统一缓存管理器
 try:
@@ -1495,6 +1563,13 @@ master_df = load_master_data()
 def filter_dataframe(df, years=None, projects=None, start_date=None, end_date=None, aidas=None, statuses=None, pus=None, testers=None, fvs=None, ecus=None, lead_models=None, fvps=None, markets=None):
     """通用数据筛选函数"""
     ensure_defect_data_for_date_range(start_date, end_date)
+    if years:
+        try:
+            year_targets = [int(y) for y in years if str(y).strip().isdigit()]
+            if year_targets:
+                ensure_defect_data_for_years(year_targets)
+        except Exception:
+            pass
     filtered_df = globals().get('df', df).copy()
 
     if years:
@@ -6518,35 +6593,35 @@ def update_testing_kpi_cards(years, projects, start_date, end_date, aidas, statu
         return html.Div(f"数据处理错误: {str(e)}", style={'textAlign': 'center', 'padding': '20px', 'color': 'red'})
     
     # 创建KPI卡片
-    cards = html.Div([
+    cards = [
         html.Div([
-            html.H4(f"{total_defects}", style={'margin': '0', 'color': '#2c3e50'}),
-            html.P("总缺陷数", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ecf0f1', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
+            html.H4(f"{total_defects}", className='kpi-value', style={'margin': '0', 'color': '#2c3e50'}),
+            html.P("总缺陷数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ecf0f1', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{total_testers}", style={'margin': '0', 'color': '#27ae60'}),
-            html.P("活跃测试人员", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d5f4e6', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
+            html.H4(f"{total_testers}", className='kpi-value', style={'margin': '0', 'color': '#27ae60'}),
+            html.P("活跃测试人员", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d5f4e6', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{severe_rate:.1f}%", style={'margin': '0', 'color': '#e74c3c'}),
-            html.P("严重缺陷率", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#fadbd8', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
+            html.H4(f"{severe_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#e74c3c'}),
+            html.P("严重缺陷率", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#fadbd8', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{daily_avg:.1f}", style={'margin': '0', 'color': '#3498db'}),
-            html.P("日均发现缺陷", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d6eaf8', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
+            html.H4(f"{daily_avg:.1f}", className='kpi-value', style={'margin': '0', 'color': '#3498db'}),
+            html.P("日均发现缺陷", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d6eaf8', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{top_tester}", style={'margin': '0', 'color': '#9b59b6', 'fontSize': '13px',
+            html.H4(f"{top_tester}", className='kpi-value', style={'margin': '0', 'color': '#9b59b6', 'fontSize': '13px',
                             'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
                             'border': '1px solid #f3f4f6',
                             'color': '#374151'}),
-            html.P("最活跃测试员", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ebdef0', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'})
-    ])
+            html.P("最活跃测试员", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ebdef0', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
+    ]
     
     return cards
 
@@ -6997,11 +7072,6 @@ def update_efficiency_kpi_cards(selected_years, start_date, end_date, selected_p
     severe_rate = (severe_defects / total_defects * 100) if total_defects > 0 else 0
     daily_avg = total_defects / date_diff if date_diff > 0 else 0
     
-    # 测试覆盖的AIDA领域数
-    aida_coverage = len(filtered_data['aida_english'].apply(lambda x: str(x) if isinstance(x, dict) else x).dropna().unique())
-    total_aidas = len(df['aida_english'].apply(lambda x: str(x) if isinstance(x, dict) else x).dropna().unique())
-    coverage_rate = (aida_coverage / total_aidas * 100) if total_aidas > 0 else 0
-    
     # 缺陷密度（每个项目平均缺陷数）
     project_count = len(filtered_data['ecu'].apply(lambda x: str(x) if isinstance(x, dict) else x).dropna().unique()) if len(filtered_data) > 0 else 1
     defect_density = total_defects / project_count
@@ -7009,37 +7079,32 @@ def update_efficiency_kpi_cards(selected_years, start_date, end_date, selected_p
     # 平均解决时间（简化计算）
     avg_resolution_time = 5.2  # 示例值
     
-    cards = html.Div([
+    cards = [
         html.Div([
-            html.H4(f"{total_defects:,}", style={'margin': '0', 'color': '#2c3e50', 'fontSize': '28px'}),
-            html.P("总缺陷数", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
-        ], style={'textAlign': 'center', 'backgroundColor': '#ecf0f1', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
+            html.H4(f"{total_defects:,}", className='kpi-value', style={'margin': '0', 'color': '#2c3e50', 'fontSize': '28px'}),
+            html.P("总缺陷数", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+        ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#ecf0f1', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
         
         html.Div([
-            html.H4(f"{severe_rate:.1f}%", style={'margin': '0', 'color': '#e74c3c', 'fontSize': '28px'}),
-            html.P("严重缺陷率", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
-        ], style={'textAlign': 'center', 'backgroundColor': '#fadbd8', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
+            html.H4(f"{severe_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#e74c3c', 'fontSize': '28px'}),
+            html.P("严重缺陷率", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+        ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#fadbd8', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
         
         html.Div([
-            html.H4(f"{daily_avg:.1f}", style={'margin': '0', 'color': '#3498db', 'fontSize': '28px'}),
-            html.P("日均发现缺陷", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
-        ], style={'textAlign': 'center', 'backgroundColor': '#d6eaf8', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
+            html.H4(f"{daily_avg:.1f}", className='kpi-value', style={'margin': '0', 'color': '#3498db', 'fontSize': '28px'}),
+            html.P("日均发现缺陷", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+        ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#d6eaf8', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
         
         html.Div([
-            html.H4(f"{coverage_rate:.1f}%", style={'margin': '0', 'color': '#27ae60', 'fontSize': '28px'}),
-            html.P("AIDA覆盖率", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
-        ], style={'textAlign': 'center', 'backgroundColor': '#d5f4e6', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
+            html.H4(f"{defect_density:.1f}", className='kpi-value', style={'margin': '0', 'color': '#f39c12', 'fontSize': '28px'}),
+            html.P("缺陷密度", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+        ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#fdeaa7', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
         
         html.Div([
-            html.H4(f"{defect_density:.1f}", style={'margin': '0', 'color': '#f39c12', 'fontSize': '28px'}),
-            html.P("缺陷密度", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
-        ], style={'textAlign': 'center', 'backgroundColor': '#fdeaa7', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
-        
-        html.Div([
-            html.H4(f"{avg_resolution_time:.1f}天", style={'margin': '0', 'color': '#9b59b6', 'fontSize': '28px'}),
-            html.P("平均解决时间", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
-        ], style={'textAlign': 'center', 'backgroundColor': '#e8daef', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
-    ], style={'display': 'flex', 'flexWrap': 'wrap', 'justifyContent': 'space-around'})
+            html.H4(f"{avg_resolution_time:.1f}天", className='kpi-value', style={'margin': '0', 'color': '#9b59b6', 'fontSize': '28px'}),
+            html.P("平均解决时间", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+        ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#e8daef', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
+    ]
     
     return cards
 
@@ -8353,34 +8418,34 @@ def update_project_kpi_cards(tab):
     # 创建KPI卡片列表
     return [
         html.Div([
-            html.H4(f"{total_projects}", style={'margin': '0', 'color': '#2c3e50'}),
-            html.P("总项目数", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ecf0f1', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
+            html.H4(f"{total_projects}", className='kpi-value', style={'margin': '0', 'color': '#2c3e50'}),
+            html.P("总项目数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ecf0f1', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{total_defects}", style={'margin': '0', 'color': '#3498db'}),
-            html.P("总缺陷数", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d6eaf8', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
+            html.H4(f"{total_defects}", className='kpi-value', style={'margin': '0', 'color': '#3498db'}),
+            html.P("总缺陷数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d6eaf8', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{severe_rate:.1f}%", style={'margin': '0', 'color': '#e74c3c'}),
-            html.P("严重缺陷率", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#fadbd8', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
+            html.H4(f"{severe_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#e74c3c'}),
+            html.P("严重缺陷率", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#fadbd8', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{resolution_rate:.1f}%", style={'margin': '0', 'color': '#27ae60'}),
-            html.P("缺陷解决率", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d5f4e6', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
+            html.H4(f"{resolution_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#27ae60'}),
+            html.P("缺陷解决率", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d5f4e6', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{total_aidas}", style={'margin': '0', 'color': '#9b59b6'}),
-            html.P("AIDA领域数", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ebdef0', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
+            html.H4(f"{total_aidas}", className='kpi-value', style={'margin': '0', 'color': '#9b59b6'}),
+            html.P("AIDA领域数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ebdef0', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{avg_defects_per_project:.1f}", style={'margin': '0', 'color': '#f39c12'}),
-            html.P("平均项目缺陷数", style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
-        ], style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#fdeaa7', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'})
+            html.H4(f"{avg_defects_per_project:.1f}", className='kpi-value', style={'margin': '0', 'color': '#f39c12'}),
+            html.P("平均项目缺陷数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+        ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#fdeaa7', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'})
     ]
 
 # 项目缺陷总量对比图表
@@ -10459,11 +10524,6 @@ app.index_string = '''
         {%css%}
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
         <style>
-            /* 导航栏样式 */
-            .nav-item:hover {
-                background-color: #34495e !important;
-            }
-            
             /* 确保聊天框在全屏模式下正确显示 */
             .ai-chat-fullscreen {
                 position: fixed !important;
@@ -10475,80 +10535,11 @@ app.index_string = '''
                 background-color: white !important;
                 overflow-y: auto !important;
             }
-            
-            .nav-toggle-btn:hover {
-                background-color: #218838 !important;
-                transform: scale(1.05);
-            }
-            
-            /* 边缘条样式 */
-            #nav-edge-bar:hover {
-                background-color: #34495e !important;
-            }
-            
-            #nav-edge-toggle-btn:hover,
-            #nav-edge-toggle-btn-2:hover {
-                background-color: rgba(255,255,255,0.2) !important;
-            }
-            
-            /* 导航栏滚动条样式 */
-            .sidebar-nav::-webkit-scrollbar {
-                width: 6px;
-            }
-            
-            .sidebar-nav::-webkit-scrollbar-track {
-                background: #34495e;
-            }
-            
-            .sidebar-nav::-webkit-scrollbar-thumb {
-                background: #3498db;
-                border-radius: 3px;
-            }
-            
-            .sidebar-nav::-webkit-scrollbar-thumb:hover {
-                background: #2980b9;
-            }
-            
-            /* 响应式设计 */
-            @media (max-width: 768px) {
-                .sidebar-nav {
-                    width: 250px !important;
-                    left: -250px !important;
-                }
-                
-                .main-content-wrapper.nav-open {
-                    margin-left: 0px !important;
-                }
-            }
-            
+
             /* 主题切换按钮位置调整 */
             .global-theme-switcher {
                 position: relative;
                 z-index: 500;
-            }
-            
-            /* 优化移动端体验 */
-            @media (max-width: 480px) {
-                .nav-toggle-btn {
-                    top: 10px !important;
-                    left: 10px !important;
-                    padding: 10px !important;
-                }
-                
-                .sidebar-nav {
-                    width: 90vw !important;
-                    left: -90vw !important;
-                }
-            }
-            
-            /* 确保内容不被导航按钮遮挡 */
-            .main-content-wrapper {
-                padding-top: 10px;
-            }
-            
-            /* 防止内容溢出 */
-            html, body {
-                overflow-x: hidden;
             }
             
             /* AI助手按钮悬停效果 */
