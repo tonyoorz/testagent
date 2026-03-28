@@ -11,11 +11,23 @@ import re # 用于解析 history 文件名
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 配置 ---
-# 将数据库文件创建在 pre-analysis/database 目录下
-DB_FILE = '/Users/tonyorz/pre-analysis/database/local_data.db'
-MR_FOLDER = '/Users/tonyorz/pre-analysis/mr'
-DEFECT_FOLDER = '/Users/tonyorz/pre-analysis/defect'
-HISTORY_FOLDER = '/Users/tonyorz/pre-analysis/history'
+# 优先从 config_center 读取路径配置，否则使用相对路径（相对于本文件所在目录）
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+try:
+    from config_center import cfg
+    DB_FILE = cfg.get_db_path()
+    MR_FOLDER = str(cfg.MR_DIR)
+    DEFECT_FOLDER = str(cfg.DATA_DIR)
+    HISTORY_FOLDER = os.path.join(str(cfg.PROJECT_ROOT), 'history')
+    logging.info(f"db_storage: 使用 config_center 路径配置，DB={DB_FILE}")
+except ImportError:
+    # 降级：使用相对于本文件目录的路径
+    DB_FILE = os.path.join(_THIS_DIR, 'database', 'local_data.db')
+    MR_FOLDER = os.path.join(_THIS_DIR, 'mr')
+    DEFECT_FOLDER = os.path.join(_THIS_DIR, 'defect')
+    HISTORY_FOLDER = os.path.join(_THIS_DIR, 'history')
+    logging.info(f"db_storage: config_center 不可用，使用相对路径，DB={DB_FILE}")
 
 # --- 辅助函数 (简化嵌套 JSON 提取) ---
 def safe_get(data, keys, default=None):

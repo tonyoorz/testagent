@@ -1,0 +1,114 @@
+{
+  "version": "2.0",
+  "description": "AI Analysis 多 Agent 协作配置",
+  
+  "bindings": [
+    {
+      "agentId": "coordinator",
+      "match": {
+        "channel": "telegram",
+        "keywords": ["分析", "报告", "评估", "综合", "团队"]
+      }
+    },
+    {
+      "agentId": "defect-analyst",
+      "match": {
+        "channel": "telegram",
+        "keywords": ["缺陷", "bug", "issue", "问题", "缺陷分析"]
+      }
+    },
+    {
+      "agentId": "test-analyst",
+      "match": {
+        "channel": "telegram",
+        "keywords": ["测试", "覆盖", "用例", "测试分析", "自动化"]
+      }
+    },
+    {
+      "agentId": "risk-assessor",
+      "match": {
+        "channel": "telegram",
+        "keywords": ["风险", "评估", "预警", "风险分析", "FMEA"]
+      }
+    },
+    {
+      "agentId": "strategy-advisor",
+      "match": {
+        "channel": "telegram",
+        "keywords": ["策略", "建议", "改进", "最佳实践", "优化"]
+      }
+    }
+  ],
+
+  "tools": {
+    "agentToAgent": {
+      "enabled": true,
+      "allow": ["coordinator", "defect-analyst", "test-analyst", "risk-assessor", "strategy-advisor"]
+    },
+    "codeInterpreter": {
+      "enabled": true,
+      "timeout": 60000
+    },
+    "webSearch": {
+      "enabled": true,
+      "provider": "tavily"
+    }
+  },
+
+  "agents": {
+    "coordinator": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "maxConcurrency": 5,
+      "timeout": 120000,
+      "priority": "high",
+      "description": "多Agent协调者，负责任务分配和结果整合"
+    },
+    "defect-analyst": {
+      "model": "deepseek/deepseek-chat",
+      "maxConcurrency": 3,
+      "timeout": 60000,
+      "priority": "high",
+      "description": "缺陷分析专家，专注于缺陷诊断和趋势分析"
+    },
+    "test-analyst": {
+      "model": "openai/gpt-4o",
+      "maxConcurrency": 3,
+      "timeout": 60000,
+      "priority": "normal",
+      "description": "测试分析专家，专注于覆盖率分析和测试策略"
+    },
+    "risk-assessor": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "maxConcurrency": 3,
+      "timeout": 60000,
+      "priority": "high",
+      "description": "风险评估专家，专注于风险识别和量化"
+    },
+    "strategy-advisor": {
+      "model": "openai/gpt-4o",
+      "maxConcurrency": 2,
+      "timeout": 90000,
+      "priority": "normal",
+      "description": "策略顾问，专注于综合策略和最佳实践"
+    }
+  },
+
+  "cache": {
+    "enabled": true,
+    "ttl": 3600,
+    "maxSize": 1000,
+    "perAgent": true
+  },
+
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "file": "~/.openclaw/logs/agents.log"
+  },
+
+  "monitoring": {
+    "enabled": true,
+    "metrics": ["latency", "tokens", "success_rate", "handoffs"],
+    "interval": 60
+  }
+}

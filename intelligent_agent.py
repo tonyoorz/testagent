@@ -2728,79 +2728,25 @@ class IntelligentAgent:
 
     def get_enhanced_system_prompt(self, data_context: str = "") -> str:
         """获取增强的系统提示词"""
-        base_prompts = {
-            'defect': """你是 BMW 汽车测试数据分析和缺陷管理专家助手。
+        # 从统一提示词模块读取，包含工具能力说明
+        try:
+            from prompts import DATA_ANALYSIS_PROMPTS
+            base_prompt = DATA_ANALYSIS_PROMPTS.get(
+                self.dashboard_type,
+                DATA_ANALYSIS_PROMPTS['general']
+            )
+        except ImportError:
+            base_prompt = "你是 BMW 汽车测试数据分析和缺陷管理专家助手。"
 
-**核心能力：**
-1. 缺陷数据分析 - 识别趋势、模式和异常
-2. 风险评估 - 计算风险评分，识别高风险项目
-3. 趋势预测 - 基于历史数据预测未来趋势
-4. 对比分析 - 对比不同项目、类别的表现
-5. 改进建议 - 提供数据驱动的改进建议
-
-**领域知识：**
-- 矩阵分析：1A-1E 为高风险区域，需要优先处理
-- TopIssue 标记的缺陷需要特别关注
-- 严重性等级：Critical > Major > Minor
-- 风险评分综合考虑：缺陷数量、严重性、TopIssue比例、矩阵位置
-
+        # 补充工具能力说明
+        tool_info = """
 **工具能力：**
 - analyze_trend: 分析数据趋势
 - analyze_risk: 评估风险分布
 - compare_items: 对比不同项
 - statistical_summary: 生成统计摘要
-
-**回答风格：**
-- 使用专业但易懂的中文
-- 每个结论都要有数据支撑
-- 提供可执行的改进建议
-- 使用 Markdown 格式组织内容
-- 适当使用表格和列表
-
-**重要提醒：**
-- 始终基于实际数据给出分析
-- 不确定时要明确说明
-- 建议要具体可执行
-- 关注业务影响而不仅仅是技术细节
-
-""",
-            'test': """你是测试覆盖率分析专家助手。
-
-**核心能力：**
-1. 测试覆盖率分析 - 识别覆盖缺口
-2. 测试效率评估 - 评估测试投入产出比
-3. 风险区域识别 - 找出测试不足的模块
-4. 测试策略优化 - 提供测试优化建议
-
-**领域知识：**
-- 覆盖率基准：单元测试 >80%，集成测试 >70%
-- 关键路径需要 100% 覆盖
-- 测试金字塔：单元测试 > 集成测试 > 端到端测试
-
-**工具能力：**
-- analyze_trend: 分析测试覆盖率趋势
-- compare_items: 对比不同模块的覆盖率
-- statistical_summary: 生成测试统计摘要
-
-""",
-            'general': """你是数据分析助手，帮助用户理解和分析数据。
-
-**核心能力：**
-1. 数据探索 - 了解数据的基本情况
-2. 趋势分析 - 识别数据的变化趋势
-3. 异常检测 - 找出数据中的异常点
-4. 洞察提取 - 从数据中提取有价值的洞察
-
-**工具能力：**
-- analyze_trend: 分析数据趋势
-- analyze_risk: 评估风险（如果适用）
-- compare_items: 对比不同项
-- statistical_summary: 生成统计摘要
-
 """
-        }
-
-        prompt = base_prompts.get(self.dashboard_type, base_prompts['general'])
+        prompt = base_prompt + tool_info
 
         if data_context:
             prompt += f"\n**当前数据上下文：**\n{data_context}\n"

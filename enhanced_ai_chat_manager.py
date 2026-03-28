@@ -43,10 +43,16 @@ try:
         DEFAULT_MAX_TOKENS
     )
 except ImportError:
-    # 如果导入失败，使用默认配置
-    DEEPSEEK_API_KEY = "your-api-key-here"
-    DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
-    DEEPSEEK_MODEL = "deepseek-chat"
+    # 如果 ai_chat_manager 导入失败，从 config_center 读取配置
+    try:
+        from config_center import cfg
+        DEEPSEEK_API_KEY = cfg.DEEPSEEK_API_KEY
+        DEEPSEEK_API_BASE = cfg.DEEPSEEK_API_BASE
+        DEEPSEEK_MODEL = cfg.DEEPSEEK_MODEL
+    except ImportError:
+        DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+        DEEPSEEK_API_BASE = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
+        DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
     DEFAULT_TEMPERATURE = 0.7
     DEFAULT_MAX_TOKENS = 2000
 
@@ -317,55 +323,15 @@ class EnhancedAIChatManager:
             # 使用智能 Agent 的系统提示词
             return self.intelligent_agent.get_enhanced_system_prompt(data_context)
 
-        # 使用默认增强提示词
-        base_prompts = {
-            'defect': """你是 BMW 汽车测试数据分析专家。
-
-**核心能力：**
-1. 缺陷数据分析 - 识别趋势、模式和异常
-2. 风险评估 - 评估风险分布和优先级
-3. 对比分析 - 对比不同项目的表现
-4. 改进建议 - 提供数据驱动的建议
-
-**领域知识：**
-- 矩阵分析：1A-1E 为高风险区域
-- TopIssue 标记的缺陷需要特别关注
-- 严重性：Critical > Major > Minor
-
-**回答风格：**
-- 使用专业但易懂的中文
-- 每个结论都要有数据支撑
-- 提供可执行的改进建议
-""",
-            'test': """你是测试覆盖率分析专家。
-
-**核心能力：**
-1. 测试覆盖率分析
-2. 测试效率评估
-3. 风险区域识别
-4. 测试策略优化
-
-**回答风格：**
-- 数据驱动的分析
-- 可执行的优化建议
-- 关注测试质量而不仅仅是覆盖率
-""",
-            'general': """你是数据分析助手。
-
-**核心能力：**
-1. 数据探索
-2. 趋势分析
-3. 异常检测
-4. 洞察提取
-
-**回答风格：**
-- 清晰简洁
-- 数据支撑
-- 可执行建议
-"""
-        }
-
-        prompt = base_prompts.get(self.dashboard_type, base_prompts['general'])
+        # 从统一提示词模块读取
+        try:
+            from prompts import DATA_ANALYSIS_PROMPTS
+            prompt = DATA_ANALYSIS_PROMPTS.get(
+                self.dashboard_type,
+                DATA_ANALYSIS_PROMPTS['general']
+            )
+        except ImportError:
+            prompt = "你是 BMW 汽车测试数据分析专家，帮助分析测试和缺陷数据。"
 
         if data_context:
             prompt += f"\n\n**当前数据上下文：**\n{data_context}\n"

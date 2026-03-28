@@ -1,0 +1,778 @@
+- generic [ref=e49]:
+  - banner [ref=e50]:
+    - generic [ref=e51]:
+      - generic [ref=e55]:
+        - generic [ref=e56]: OpenClaw
+        - generic [ref=e57]: ›
+        - generic [ref=e58]: 聊天
+      - generic [ref=e59]:
+        - button "Open command palette" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: 搜索
+          - generic [ref=e62]: ⌘K
+        - group "Color mode" [ref=e64]:
+          - 'button "Color mode: System" [pressed] [ref=e65] [cursor=pointer]':
+            - img [ref=e66]
+          - 'button "Color mode: Light" [ref=e68] [cursor=pointer]':
+            - img [ref=e69]
+          - 'button "Color mode: Dark" [ref=e75] [cursor=pointer]':
+            - img [ref=e76]
+  - complementary [ref=e79]:
+    - generic [ref=e80]:
+      - generic [ref=e81]:
+        - generic [ref=e82]:
+          - img "OpenClaw" [ref=e83]
+          - generic [ref=e84]:
+            - generic [ref=e85]: 控制
+            - generic [ref=e86]: OpenClaw
+        - button "折叠侧边栏" [ref=e87] [cursor=pointer]:
+          - img [ref=e89]
+      - navigation [ref=e91]:
+        - generic [ref=e92]:
+          - button "聊天" [expanded] [ref=e93] [cursor=pointer]:
+            - generic [ref=e94]: 聊天
+            - img [ref=e96]
+          - link "聊天" [ref=e99] [cursor=pointer]:
+            - /url: /chat
+            - img [ref=e101]
+            - generic [ref=e103]: 聊天
+        - generic [ref=e104]:
+          - button "控制" [expanded] [ref=e105] [cursor=pointer]:
+            - generic [ref=e106]: 控制
+            - img [ref=e108]
+          - generic [ref=e110]:
+            - link "概览" [ref=e111] [cursor=pointer]:
+              - /url: /overview
+              - img [ref=e113]
+              - generic [ref=e114]: 概览
+            - link "频道" [ref=e115] [cursor=pointer]:
+              - /url: /channels
+              - img [ref=e117]
+              - generic [ref=e120]: 频道
+            - link "实例" [ref=e121] [cursor=pointer]:
+              - /url: /instances
+              - img [ref=e123]
+              - generic [ref=e126]: 实例
+            - link "会话" [ref=e127] [cursor=pointer]:
+              - /url: /sessions
+              - img [ref=e129]
+              - generic [ref=e132]: 会话
+            - link "使用情况" [ref=e133] [cursor=pointer]:
+              - /url: /usage
+              - img [ref=e135]
+              - generic [ref=e136]: 使用情况
+            - link "定时任务" [ref=e137] [cursor=pointer]:
+              - /url: /cron
+              - img [ref=e139]
+              - generic [ref=e144]: 定时任务
+        - generic [ref=e145]:
+          - button "代理" [expanded] [ref=e146] [cursor=pointer]:
+            - generic [ref=e147]: 代理
+            - img [ref=e149]
+          - generic [ref=e151]:
+            - link "代理" [ref=e152] [cursor=pointer]:
+              - /url: /agents
+              - img [ref=e154]
+              - generic [ref=e156]: 代理
+            - link "技能" [ref=e157] [cursor=pointer]:
+              - /url: /skills
+              - img [ref=e159]
+              - generic [ref=e161]: 技能
+            - link "节点" [ref=e162] [cursor=pointer]:
+              - /url: /nodes
+              - img [ref=e164]
+              - generic [ref=e166]: 节点
+        - generic [ref=e167]:
+          - button "设置" [expanded] [ref=e168] [cursor=pointer]:
+            - generic [ref=e169]: 设置
+            - img [ref=e171]
+          - generic [ref=e173]:
+            - link "配置" [ref=e174] [cursor=pointer]:
+              - /url: /config
+              - img [ref=e176]
+              - generic [ref=e179]: 配置
+            - link "通信" [ref=e180] [cursor=pointer]:
+              - /url: /communications
+              - img [ref=e182]
+              - generic [ref=e185]: 通信
+            - link "外观与设置" [ref=e186] [cursor=pointer]:
+              - /url: /appearance
+              - img [ref=e188]
+              - generic [ref=e190]: 外观与设置
+            - link "自动化" [ref=e191] [cursor=pointer]:
+              - /url: /automation
+              - img [ref=e193]
+              - generic [ref=e195]: 自动化
+            - link "基础设施" [ref=e196] [cursor=pointer]:
+              - /url: /infrastructure
+              - img [ref=e198]
+              - generic [ref=e201]: 基础设施
+            - link "AI 与代理" [ref=e202] [cursor=pointer]:
+              - /url: /ai-agents
+              - img [ref=e204]
+              - generic [ref=e214]: AI 与代理
+            - link "调试" [ref=e215] [cursor=pointer]:
+              - /url: /debug
+              - img [ref=e217]
+              - generic [ref=e226]: 调试
+            - link "日志" [ref=e227] [cursor=pointer]:
+              - /url: /logs
+              - img [ref=e229]
+              - generic [ref=e232]: 日志
+      - generic [ref=e234]:
+        - link "文档" [ref=e235] [cursor=pointer]:
+          - /url: https://docs.openclaw.ai
+          - img [ref=e237]
+          - generic [ref=e239]: 文档
+          - img [ref=e241]
+        - generic "v2026.3.13" [ref=e244]:
+          - generic [ref=e245]: 版本
+          - generic [ref=e246]: v2026.3.13
+          - 'img "Gateway status: 在线" [ref=e247]'
+  - main [ref=e248]:
+    - generic [ref=e249]:
+      - generic [ref=e251]:
+        - combobox [ref=e253] [cursor=pointer]:
+          - option "main" [selected]
+        - combobox "Chat model" [ref=e255] [cursor=pointer]:
+          - option "Default (claude-opus-4-6)" [selected]
+          - option "anthropic.claude-3-haiku-20240307-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-3-5-haiku-20241022-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-haiku-4-5-20251001-v1:0 · amazon-bedrock"
+          - option "eu.anthropic.claude-haiku-4-5-20251001-v1:0 · amazon-bedrock"
+          - option "global.anthropic.claude-haiku-4-5-20251001-v1:0 · amazon-bedrock"
+          - option "us.anthropic.claude-haiku-4-5-20251001-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-opus-4-20250514-v1:0 · amazon-bedrock"
+          - option "us.anthropic.claude-opus-4-20250514-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-opus-4-1-20250805-v1:0 · amazon-bedrock"
+          - option "us.anthropic.claude-opus-4-1-20250805-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-opus-4-5-20251101-v1:0 · amazon-bedrock"
+          - option "eu.anthropic.claude-opus-4-5-20251101-v1:0 · amazon-bedrock"
+          - option "global.anthropic.claude-opus-4-5-20251101-v1:0 · amazon-bedrock"
+          - option "us.anthropic.claude-opus-4-5-20251101-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-opus-4-6-v1 · amazon-bedrock"
+          - option "eu.anthropic.claude-opus-4-6-v1 · amazon-bedrock"
+          - option "global.anthropic.claude-opus-4-6-v1 · amazon-bedrock"
+          - option "us.anthropic.claude-opus-4-6-v1 · amazon-bedrock"
+          - option "anthropic.claude-3-5-sonnet-20240620-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-3-5-sonnet-20241022-v2:0 · amazon-bedrock"
+          - option "anthropic.claude-3-7-sonnet-20250219-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-sonnet-4-20250514-v1:0 · amazon-bedrock"
+          - option "eu.anthropic.claude-sonnet-4-20250514-v1:0 · amazon-bedrock"
+          - option "global.anthropic.claude-sonnet-4-20250514-v1:0 · amazon-bedrock"
+          - option "us.anthropic.claude-sonnet-4-20250514-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-sonnet-4-5-20250929-v1:0 · amazon-bedrock"
+          - option "eu.anthropic.claude-sonnet-4-5-20250929-v1:0 · amazon-bedrock"
+          - option "global.anthropic.claude-sonnet-4-5-20250929-v1:0 · amazon-bedrock"
+          - option "us.anthropic.claude-sonnet-4-5-20250929-v1:0 · amazon-bedrock"
+          - option "anthropic.claude-sonnet-4-6 · amazon-bedrock"
+          - option "eu.anthropic.claude-sonnet-4-6 · amazon-bedrock"
+          - option "global.anthropic.claude-sonnet-4-6 · amazon-bedrock"
+          - option "us.anthropic.claude-sonnet-4-6 · amazon-bedrock"
+          - option "deepseek.r1-v1:0 · amazon-bedrock"
+          - option "deepseek.v3-v1:0 · amazon-bedrock"
+          - option "deepseek.v3.2 · amazon-bedrock"
+          - option "mistral.devstral-2-123b · amazon-bedrock"
+          - option "google.gemma-3-4b-it · amazon-bedrock"
+          - option "zai.glm-4.7 · amazon-bedrock"
+          - option "zai.glm-4.7-flash · amazon-bedrock"
+          - option "google.gemma-3-27b-it · amazon-bedrock"
+          - option "openai.gpt-oss-safeguard-120b · amazon-bedrock"
+          - option "openai.gpt-oss-safeguard-20b · amazon-bedrock"
+          - option "openai.gpt-oss-120b-1:0 · amazon-bedrock"
+          - option "openai.gpt-oss-20b-1:0 · amazon-bedrock"
+          - option "moonshot.kimi-k2-thinking · amazon-bedrock"
+          - option "moonshotai.kimi-k2.5 · amazon-bedrock"
+          - option "meta.llama3-1-405b-instruct-v1:0 · amazon-bedrock"
+          - option "meta.llama3-1-70b-instruct-v1:0 · amazon-bedrock"
+          - option "meta.llama3-1-8b-instruct-v1:0 · amazon-bedrock"
+          - option "meta.llama3-2-11b-instruct-v1:0 · amazon-bedrock"
+          - option "meta.llama3-2-1b-instruct-v1:0 · amazon-bedrock"
+          - option "meta.llama3-2-3b-instruct-v1:0 · amazon-bedrock"
+          - option "meta.llama3-2-90b-instruct-v1:0 · amazon-bedrock"
+          - option "meta.llama3-3-70b-instruct-v1:0 · amazon-bedrock"
+          - option "meta.llama4-maverick-17b-instruct-v1:0 · amazon-bedrock"
+          - option "meta.llama4-scout-17b-instruct-v1:0 · amazon-bedrock"
+          - option "mistral.magistral-small-2509 · amazon-bedrock"
+          - option "minimax.minimax-m2 · amazon-bedrock"
+          - option "minimax.minimax-m2.1 · amazon-bedrock"
+          - option "mistral.ministral-3-14b-instruct · amazon-bedrock"
+          - option "mistral.ministral-3-3b-instruct · amazon-bedrock"
+          - option "mistral.ministral-3-8b-instruct · amazon-bedrock"
+          - option "mistral.mistral-large-3-675b-instruct · amazon-bedrock"
+          - option "amazon.nova-2-lite-v1:0 · amazon-bedrock"
+          - option "amazon.nova-lite-v1:0 · amazon-bedrock"
+          - option "amazon.nova-micro-v1:0 · amazon-bedrock"
+          - option "amazon.nova-premier-v1:0 · amazon-bedrock"
+          - option "amazon.nova-pro-v1:0 · amazon-bedrock"
+          - option "nvidia.nemotron-nano-12b-v2 · amazon-bedrock"
+          - option "nvidia.nemotron-nano-3-30b · amazon-bedrock"
+          - option "nvidia.nemotron-nano-9b-v2 · amazon-bedrock"
+          - option "writer.palmyra-x4-v1:0 · amazon-bedrock"
+          - option "writer.palmyra-x5-v1:0 · amazon-bedrock"
+          - option "mistral.pixtral-large-2502-v1:0 · amazon-bedrock"
+          - option "qwen.qwen3-next-80b-a3b · amazon-bedrock"
+          - option "qwen.qwen3-vl-235b-a22b · amazon-bedrock"
+          - option "qwen.qwen3-235b-a22b-2507-v1:0 · amazon-bedrock"
+          - option "qwen.qwen3-32b-v1:0 · amazon-bedrock"
+          - option "qwen.qwen3-coder-30b-a3b-v1:0 · amazon-bedrock"
+          - option "qwen.qwen3-coder-480b-a35b-v1:0 · amazon-bedrock"
+          - option "mistral.voxtral-mini-3b-2507 · amazon-bedrock"
+          - option "mistral.voxtral-small-24b-2507 · amazon-bedrock"
+          - option "claude-3-haiku-20240307 · anthropic"
+          - option "claude-3-5-haiku-20241022 · anthropic"
+          - option "claude-3-5-haiku-latest · anthropic"
+          - option "claude-haiku-4-5-20251001 · anthropic"
+          - option "claude-haiku-4-5 · anthropic"
+          - option "claude-3-opus-20240229 · anthropic"
+          - option "claude-opus-4-20250514 · anthropic"
+          - option "claude-opus-4-0 · anthropic"
+          - option "claude-opus-4-1-20250805 · anthropic"
+          - option "claude-opus-4-1 · anthropic"
+          - option "claude-opus-4-5-20251101 · anthropic"
+          - option "claude-opus-4-5 · anthropic"
+          - option "claude-opus-4-6 · anthropic"
+          - option "claude-3-sonnet-20240229 · anthropic"
+          - option "claude-3-5-sonnet-20240620 · anthropic"
+          - option "claude-3-5-sonnet-20241022 · anthropic"
+          - option "claude-3-7-sonnet-20250219 · anthropic"
+          - option "claude-3-7-sonnet-latest · anthropic"
+          - option "claude-sonnet-4-20250514 · anthropic"
+          - option "claude-sonnet-4-0 · anthropic"
+          - option "claude-sonnet-4-5-20250929 · anthropic"
+          - option "claude-sonnet-4-5 · anthropic"
+          - option "claude-sonnet-4-6 · anthropic"
+          - option "codex-mini-latest · azure-openai-responses"
+          - option "gpt-4 · azure-openai-responses"
+          - option "gpt-4-turbo · azure-openai-responses"
+          - option "gpt-4.1 · azure-openai-responses"
+          - option "gpt-4.1-mini · azure-openai-responses"
+          - option "gpt-4.1-nano · azure-openai-responses"
+          - option "gpt-4o · azure-openai-responses"
+          - option "gpt-4o-2024-05-13 · azure-openai-responses"
+          - option "gpt-4o-2024-08-06 · azure-openai-responses"
+          - option "gpt-4o-2024-11-20 · azure-openai-responses"
+          - option "gpt-4o-mini · azure-openai-responses"
+          - option "gpt-5 · azure-openai-responses"
+          - option "gpt-5-chat-latest · azure-openai-responses"
+          - option "gpt-5-mini · azure-openai-responses"
+          - option "gpt-5-nano · azure-openai-responses"
+          - option "gpt-5-pro · azure-openai-responses"
+          - option "gpt-5-codex · azure-openai-responses"
+          - option "gpt-5.1 · azure-openai-responses"
+          - option "gpt-5.1-chat-latest · azure-openai-responses"
+          - option "gpt-5.1-codex · azure-openai-responses"
+          - option "gpt-5.1-codex-max · azure-openai-responses"
+          - option "gpt-5.1-codex-mini · azure-openai-responses"
+          - option "gpt-5.2 · azure-openai-responses"
+          - option "gpt-5.2-chat-latest · azure-openai-responses"
+          - option "gpt-5.2-codex · azure-openai-responses"
+          - option "gpt-5.2-pro · azure-openai-responses"
+          - option "gpt-5.3-codex · azure-openai-responses"
+          - option "gpt-5.4 · azure-openai-responses"
+          - option "gpt-5.4-pro · azure-openai-responses"
+          - option "o1 · azure-openai-responses"
+          - option "o1-pro · azure-openai-responses"
+          - option "o3 · azure-openai-responses"
+          - option "o3-deep-research · azure-openai-responses"
+          - option "o3-mini · azure-openai-responses"
+          - option "o3-pro · azure-openai-responses"
+          - option "o4-mini · azure-openai-responses"
+          - option "o4-mini-deep-research · azure-openai-responses"
+          - option "gpt-oss-120b · cerebras"
+          - option "llama3.1-8b · cerebras"
+          - option "qwen-3-235b-a22b-instruct-2507 · cerebras"
+          - option "zai-glm-4.7 · cerebras"
+          - option "claude-haiku-4.5 · github-copilot"
+          - option "claude-opus-4.5 · github-copilot"
+          - option "claude-opus-4.6 · github-copilot"
+          - option "claude-sonnet-4 · github-copilot"
+          - option "claude-sonnet-4.5 · github-copilot"
+          - option "claude-sonnet-4.6 · github-copilot"
+          - option "gemini-2.5-pro · github-copilot"
+          - option "gemini-3-flash-preview · github-copilot"
+          - option "gemini-3-pro-preview · github-copilot"
+          - option "gemini-3.1-pro-preview · github-copilot"
+          - option "grok-code-fast-1 · github-copilot"
+          - option "gemini-1.5-flash · google"
+          - option "gemini-1.5-flash-8b · google"
+          - option "gemini-1.5-pro · google"
+          - option "gemini-2.0-flash · google"
+          - option "gemini-2.0-flash-lite · google"
+          - option "gemini-2.5-flash · google"
+          - option "gemini-2.5-flash-lite · google"
+          - option "gemini-2.5-flash-lite-preview-06-17 · google"
+          - option "gemini-2.5-flash-lite-preview-09-2025 · google"
+          - option "gemini-2.5-flash-preview-04-17 · google"
+          - option "gemini-2.5-flash-preview-05-20 · google"
+          - option "gemini-2.5-flash-preview-09-2025 · google"
+          - option "gemini-2.5-pro-preview-05-06 · google"
+          - option "gemini-2.5-pro-preview-06-05 · google"
+          - option "gemini-3.1-flash-lite-preview · google"
+          - option "gemini-3.1-pro-preview-customtools · google"
+          - option "gemini-flash-latest · google"
+          - option "gemini-flash-lite-latest · google"
+          - option "gemini-live-2.5-flash · google"
+          - option "gemini-live-2.5-flash-preview-native-audio · google"
+          - option "claude-opus-4-5-thinking · google-antigravity"
+          - option "claude-opus-4-6-thinking · google-antigravity"
+          - option "claude-sonnet-4-5-thinking · google-antigravity"
+          - option "gemini-3-flash · google-antigravity"
+          - option "gemini-3.1-pro-high · google-antigravity"
+          - option "gemini-3.1-pro-low · google-antigravity"
+          - option "gpt-oss-120b-medium · google-antigravity"
+          - option "deepseek-r1-distill-llama-70b · groq"
+          - option "gemma2-9b-it · groq"
+          - option "openai/gpt-oss-120b · groq"
+          - option "openai/gpt-oss-20b · groq"
+          - option "moonshotai/kimi-k2-instruct · groq"
+          - option "moonshotai/kimi-k2-instruct-0905 · groq"
+          - option "llama3-70b-8192 · groq"
+          - option "llama3-8b-8192 · groq"
+          - option "llama-3.1-8b-instant · groq"
+          - option "llama-3.3-70b-versatile · groq"
+          - option "meta-llama/llama-4-maverick-17b-128e-instruct · groq"
+          - option "meta-llama/llama-4-scout-17b-16e-instruct · groq"
+          - option "mistral-saba-24b · groq"
+          - option "qwen-qwq-32b · groq"
+          - option "qwen/qwen3-32b · groq"
+          - option "deepseek-ai/DeepSeek-R1-0528 · huggingface"
+          - option "deepseek-ai/DeepSeek-V3.2 · huggingface"
+          - option "zai-org/GLM-4.7 · huggingface"
+          - option "zai-org/GLM-4.7-Flash · huggingface"
+          - option "zai-org/GLM-5 · huggingface"
+          - option "moonshotai/Kimi-K2-Thinking · huggingface"
+          - option "moonshotai/Kimi-K2.5 · huggingface"
+          - option "XiaomiMiMo/MiMo-V2-Flash · huggingface"
+          - option "MiniMaxAI/MiniMax-M2.1 · huggingface"
+          - option "MiniMaxAI/MiniMax-M2.5 · huggingface"
+          - option "Qwen/Qwen3-235B-A22B-Thinking-2507 · huggingface"
+          - option "Qwen/Qwen3-Coder-480B-A35B-Instruct · huggingface"
+          - option "Qwen/Qwen3-Coder-Next · huggingface"
+          - option "Qwen/Qwen3-Next-80B-A3B-Instruct · huggingface"
+          - option "Qwen/Qwen3-Next-80B-A3B-Thinking · huggingface"
+          - option "Qwen/Qwen3.5-397B-A17B · huggingface"
+          - option "kimi-k2-thinking · kimi-coding"
+          - option "k2p5 · kimi-coding"
+          - option "MiniMax-M2 · minimax"
+          - option "MiniMax-M2.1 · minimax"
+          - option "MiniMax-M2.5 · minimax"
+          - option "MiniMax-M2.5-highspeed · minimax"
+          - option "codestral-latest · mistral"
+          - option "devstral-2512 · mistral"
+          - option "devstral-medium-latest · mistral"
+          - option "devstral-medium-2507 · mistral"
+          - option "devstral-small-2507 · mistral"
+          - option "labs-devstral-small-2512 · mistral"
+          - option "devstral-small-2505 · mistral"
+          - option "magistral-medium-latest · mistral"
+          - option "magistral-small · mistral"
+          - option "ministral-3b-latest · mistral"
+          - option "ministral-8b-latest · mistral"
+          - option "open-mistral-7b · mistral"
+          - option "mistral-large-latest · mistral"
+          - option "mistral-large-2411 · mistral"
+          - option "mistral-large-2512 · mistral"
+          - option "mistral-medium-latest · mistral"
+          - option "mistral-medium-2505 · mistral"
+          - option "mistral-medium-2508 · mistral"
+          - option "mistral-nemo · mistral"
+          - option "mistral-small-latest · mistral"
+          - option "mistral-small-2506 · mistral"
+          - option "open-mixtral-8x22b · mistral"
+          - option "open-mixtral-8x7b · mistral"
+          - option "pixtral-12b · mistral"
+          - option "pixtral-large-latest · mistral"
+          - option "gpt-5.3-codex-spark · openai-codex"
+          - option "big-pickle · opencode"
+          - option "claude-3-5-haiku · opencode"
+          - option "gemini-3-pro · opencode"
+          - option "gemini-3.1-pro · opencode"
+          - option "glm-4.6 · opencode"
+          - option "glm-4.7 · opencode"
+          - option "glm-5 · opencode"
+          - option "kimi-k2.5 · opencode"
+          - option "mimo-v2-flash-free · opencode"
+          - option "minimax-m2.5-free · opencode"
+          - option "nemotron-3-super-free · opencode"
+          - option "ai21/jamba-large-1.7 · openrouter"
+          - option "allenai/olmo-3.1-32b-instruct · openrouter"
+          - option "amazon/nova-2-lite-v1 · openrouter"
+          - option "amazon/nova-lite-v1 · openrouter"
+          - option "amazon/nova-micro-v1 · openrouter"
+          - option "amazon/nova-premier-v1 · openrouter"
+          - option "amazon/nova-pro-v1 · openrouter"
+          - option "anthropic/claude-3-haiku · openrouter"
+          - option "anthropic/claude-3.5-haiku · openrouter"
+          - option "anthropic/claude-3.5-sonnet · openrouter"
+          - option "anthropic/claude-3.7-sonnet · openrouter"
+          - option "anthropic/claude-3.7-sonnet:thinking · openrouter"
+          - option "anthropic/claude-haiku-4.5 · openrouter"
+          - option "anthropic/claude-opus-4 · openrouter"
+          - option "anthropic/claude-opus-4.1 · openrouter"
+          - option "anthropic/claude-opus-4.5 · openrouter"
+          - option "anthropic/claude-opus-4.6 · openrouter"
+          - option "anthropic/claude-sonnet-4 · openrouter"
+          - option "anthropic/claude-sonnet-4.5 · openrouter"
+          - option "anthropic/claude-sonnet-4.6 · openrouter"
+          - option "arcee-ai/trinity-large-preview:free · openrouter"
+          - option "arcee-ai/trinity-mini · openrouter"
+          - option "arcee-ai/trinity-mini:free · openrouter"
+          - option "arcee-ai/virtuoso-large · openrouter"
+          - option "auto · openrouter"
+          - option "openrouter/auto · openrouter"
+          - option "baidu/ernie-4.5-21b-a3b · openrouter"
+          - option "baidu/ernie-4.5-vl-28b-a3b · openrouter"
+          - option "bytedance-seed/seed-1.6 · openrouter"
+          - option "bytedance-seed/seed-1.6-flash · openrouter"
+          - option "bytedance-seed/seed-2.0-lite · openrouter"
+          - option "bytedance-seed/seed-2.0-mini · openrouter"
+          - option "cohere/command-r-08-2024 · openrouter"
+          - option "cohere/command-r-plus-08-2024 · openrouter"
+          - option "deepseek/deepseek-chat · openrouter"
+          - option "deepseek/deepseek-chat-v3-0324 · openrouter"
+          - option "deepseek/deepseek-chat-v3.1 · openrouter"
+          - option "deepseek/deepseek-v3.1-terminus · openrouter"
+          - option "deepseek/deepseek-v3.2 · openrouter"
+          - option "deepseek/deepseek-v3.2-exp · openrouter"
+          - option "deepseek/deepseek-r1 · openrouter"
+          - option "deepseek/deepseek-r1-0528 · openrouter"
+          - option "essentialai/rnj-1-instruct · openrouter"
+          - option "openrouter/free · openrouter"
+          - option "google/gemini-2.0-flash-001 · openrouter"
+          - option "google/gemini-2.0-flash-lite-001 · openrouter"
+          - option "google/gemini-2.5-flash · openrouter"
+          - option "google/gemini-2.5-flash-lite · openrouter"
+          - option "google/gemini-2.5-flash-lite-preview-09-2025 · openrouter"
+          - option "google/gemini-2.5-pro · openrouter"
+          - option "google/gemini-2.5-pro-preview-05-06 · openrouter"
+          - option "google/gemini-2.5-pro-preview · openrouter"
+          - option "google/gemini-3-flash-preview · openrouter"
+          - option "google/gemini-3-pro-preview · openrouter"
+          - option "google/gemini-3.1-flash-lite-preview · openrouter"
+          - option "google/gemini-3.1-pro-preview · openrouter"
+          - option "google/gemini-3.1-pro-preview-customtools · openrouter"
+          - option "google/gemma-3-27b-it · openrouter"
+          - option "google/gemma-3-27b-it:free · openrouter"
+          - option "openrouter/healer-alpha · openrouter"
+          - option "openrouter/hunter-alpha · openrouter"
+          - option "inception/mercury · openrouter"
+          - option "inception/mercury-2 · openrouter"
+          - option "inception/mercury-coder · openrouter"
+          - option "kwaipilot/kat-coder-pro · openrouter"
+          - option "meituan/longcat-flash-chat · openrouter"
+          - option "meta-llama/llama-3-8b-instruct · openrouter"
+          - option "meta-llama/llama-3.1-70b-instruct · openrouter"
+          - option "meta-llama/llama-3.1-8b-instruct · openrouter"
+          - option "meta-llama/llama-3.3-70b-instruct · openrouter"
+          - option "meta-llama/llama-3.3-70b-instruct:free · openrouter"
+          - option "meta-llama/llama-4-maverick · openrouter"
+          - option "meta-llama/llama-4-scout · openrouter"
+          - option "minimax/minimax-m1 · openrouter"
+          - option "minimax/minimax-m2 · openrouter"
+          - option "minimax/minimax-m2.1 · openrouter"
+          - option "minimax/minimax-m2.5 · openrouter"
+          - option "mistralai/mistral-large · openrouter"
+          - option "mistralai/mistral-large-2407 · openrouter"
+          - option "mistralai/mistral-large-2411 · openrouter"
+          - option "mistralai/codestral-2508 · openrouter"
+          - option "mistralai/devstral-2512 · openrouter"
+          - option "mistralai/devstral-medium · openrouter"
+          - option "mistralai/devstral-small · openrouter"
+          - option "mistralai/ministral-14b-2512 · openrouter"
+          - option "mistralai/ministral-3b-2512 · openrouter"
+          - option "mistralai/ministral-8b-2512 · openrouter"
+          - option "mistralai/mistral-large-2512 · openrouter"
+          - option "mistralai/mistral-medium-3 · openrouter"
+          - option "mistralai/mistral-medium-3.1 · openrouter"
+          - option "mistralai/mistral-nemo · openrouter"
+          - option "mistralai/mistral-small-24b-instruct-2501 · openrouter"
+          - option "mistralai/mistral-small-3.1-24b-instruct:free · openrouter"
+          - option "mistralai/mistral-small-3.2-24b-instruct · openrouter"
+          - option "mistralai/mistral-small-creative · openrouter"
+          - option "mistralai/mixtral-8x22b-instruct · openrouter"
+          - option "mistralai/mixtral-8x7b-instruct · openrouter"
+          - option "mistralai/pixtral-large-2411 · openrouter"
+          - option "mistralai/mistral-saba · openrouter"
+          - option "mistralai/voxtral-small-24b-2507 · openrouter"
+          - option "moonshotai/kimi-k2 · openrouter"
+          - option "moonshotai/kimi-k2-0905 · openrouter"
+          - option "nex-agi/deepseek-v3.1-nex-n1 · openrouter"
+          - option "nvidia/llama-3.1-nemotron-70b-instruct · openrouter"
+          - option "nvidia/llama-3.3-nemotron-super-49b-v1.5 · openrouter"
+          - option "nvidia/nemotron-3-nano-30b-a3b · openrouter"
+          - option "nvidia/nemotron-3-nano-30b-a3b:free · openrouter"
+          - option "nvidia/nemotron-3-super-120b-a12b:free · openrouter"
+          - option "nvidia/nemotron-nano-12b-v2-vl:free · openrouter"
+          - option "nvidia/nemotron-nano-9b-v2 · openrouter"
+          - option "nvidia/nemotron-nano-9b-v2:free · openrouter"
+          - option "openai/gpt-3.5-turbo · openrouter"
+          - option "openai/gpt-3.5-turbo-0613 · openrouter"
+          - option "openai/gpt-3.5-turbo-16k · openrouter"
+          - option "openai/gpt-4 · openrouter"
+          - option "openai/gpt-4-0314 · openrouter"
+          - option "openai/gpt-4-turbo · openrouter"
+          - option "openai/gpt-4-1106-preview · openrouter"
+          - option "openai/gpt-4-turbo-preview · openrouter"
+          - option "openai/gpt-4.1 · openrouter"
+          - option "openai/gpt-4.1-mini · openrouter"
+          - option "openai/gpt-4.1-nano · openrouter"
+          - option "openai/gpt-4o · openrouter"
+          - option "openai/gpt-4o-2024-05-13 · openrouter"
+          - option "openai/gpt-4o-2024-08-06 · openrouter"
+          - option "openai/gpt-4o-2024-11-20 · openrouter"
+          - option "openai/gpt-4o:extended · openrouter"
+          - option "openai/gpt-4o-audio-preview · openrouter"
+          - option "openai/gpt-4o-mini · openrouter"
+          - option "openai/gpt-4o-mini-2024-07-18 · openrouter"
+          - option "openai/gpt-5 · openrouter"
+          - option "openai/gpt-5-codex · openrouter"
+          - option "openai/gpt-5-image · openrouter"
+          - option "openai/gpt-5-image-mini · openrouter"
+          - option "openai/gpt-5-mini · openrouter"
+          - option "openai/gpt-5-nano · openrouter"
+          - option "openai/gpt-5-pro · openrouter"
+          - option "openai/gpt-5.1 · openrouter"
+          - option "openai/gpt-5.1-chat · openrouter"
+          - option "openai/gpt-5.1-codex · openrouter"
+          - option "openai/gpt-5.1-codex-max · openrouter"
+          - option "openai/gpt-5.1-codex-mini · openrouter"
+          - option "openai/gpt-5.2 · openrouter"
+          - option "openai/gpt-5.2-chat · openrouter"
+          - option "openai/gpt-5.2-pro · openrouter"
+          - option "openai/gpt-5.2-codex · openrouter"
+          - option "openai/gpt-5.3-chat · openrouter"
+          - option "openai/gpt-5.3-codex · openrouter"
+          - option "openai/gpt-5.4 · openrouter"
+          - option "openai/gpt-5.4-pro · openrouter"
+          - option "openai/gpt-oss-120b:free · openrouter"
+          - option "openai/gpt-oss-20b:free · openrouter"
+          - option "openai/gpt-oss-safeguard-20b · openrouter"
+          - option "openai/o1 · openrouter"
+          - option "openai/o3 · openrouter"
+          - option "openai/o3-deep-research · openrouter"
+          - option "openai/o3-mini · openrouter"
+          - option "openai/o3-mini-high · openrouter"
+          - option "openai/o3-pro · openrouter"
+          - option "openai/o4-mini · openrouter"
+          - option "openai/o4-mini-deep-research · openrouter"
+          - option "openai/o4-mini-high · openrouter"
+          - option "prime-intellect/intellect-3 · openrouter"
+          - option "qwen/qwen-plus-2025-07-28 · openrouter"
+          - option "qwen/qwen-plus-2025-07-28:thinking · openrouter"
+          - option "qwen/qwen-vl-max · openrouter"
+          - option "qwen/qwen-max · openrouter"
+          - option "qwen/qwen-plus · openrouter"
+          - option "qwen/qwen-turbo · openrouter"
+          - option "qwen/qwen-2.5-7b-instruct · openrouter"
+          - option "qwen/qwen3-14b · openrouter"
+          - option "qwen/qwen3-235b-a22b · openrouter"
+          - option "qwen/qwen3-235b-a22b-2507 · openrouter"
+          - option "qwen/qwen3-30b-a3b · openrouter"
+          - option "qwen/qwen3-30b-a3b-instruct-2507 · openrouter"
+          - option "qwen/qwen3-30b-a3b-thinking-2507 · openrouter"
+          - option "qwen/qwen3-4b:free · openrouter"
+          - option "qwen/qwen3-8b · openrouter"
+          - option "qwen/qwen3-coder-30b-a3b-instruct · openrouter"
+          - option "qwen/qwen3-coder · openrouter"
+          - option "qwen/qwen3-coder:free · openrouter"
+          - option "qwen/qwen3-coder-flash · openrouter"
+          - option "qwen/qwen3-coder-plus · openrouter"
+          - option "qwen/qwen3-max · openrouter"
+          - option "qwen/qwen3-max-thinking · openrouter"
+          - option "qwen/qwen3-next-80b-a3b-instruct:free · openrouter"
+          - option "qwen/qwen3-vl-235b-a22b-instruct · openrouter"
+          - option "qwen/qwen3-vl-235b-a22b-thinking · openrouter"
+          - option "qwen/qwen3-vl-30b-a3b-instruct · openrouter"
+          - option "qwen/qwen3-vl-30b-a3b-thinking · openrouter"
+          - option "qwen/qwen3-vl-32b-instruct · openrouter"
+          - option "qwen/qwen3-vl-8b-instruct · openrouter"
+          - option "qwen/qwen3-vl-8b-thinking · openrouter"
+          - option "qwen/qwen3.5-plus-02-15 · openrouter"
+          - option "qwen/qwen3.5-122b-a10b · openrouter"
+          - option "qwen/qwen3.5-27b · openrouter"
+          - option "qwen/qwen3.5-35b-a3b · openrouter"
+          - option "qwen/qwen3.5-9b · openrouter"
+          - option "qwen/qwen3.5-flash-02-23 · openrouter"
+          - option "qwen/qwq-32b · openrouter"
+          - option "qwen/qwen-2.5-72b-instruct · openrouter"
+          - option "relace/relace-search · openrouter"
+          - option "sao10k/l3-euryale-70b · openrouter"
+          - option "sao10k/l3.1-euryale-70b · openrouter"
+          - option "stepfun/step-3.5-flash · openrouter"
+          - option "stepfun/step-3.5-flash:free · openrouter"
+          - option "thedrummer/rocinante-12b · openrouter"
+          - option "thedrummer/unslopnemo-12b · openrouter"
+          - option "tngtech/deepseek-r1t2-chimera · openrouter"
+          - option "alibaba/tongyi-deepresearch-30b-a3b · openrouter"
+          - option "upstage/solar-pro-3 · openrouter"
+          - option "x-ai/grok-3 · openrouter"
+          - option "x-ai/grok-3-beta · openrouter"
+          - option "x-ai/grok-3-mini · openrouter"
+          - option "x-ai/grok-3-mini-beta · openrouter"
+          - option "x-ai/grok-4 · openrouter"
+          - option "x-ai/grok-4-fast · openrouter"
+          - option "x-ai/grok-4.1-fast · openrouter"
+          - option "x-ai/grok-4.20-beta · openrouter"
+          - option "x-ai/grok-code-fast-1 · openrouter"
+          - option "xiaomi/mimo-v2-flash · openrouter"
+          - option "z-ai/glm-4-32b · openrouter"
+          - option "z-ai/glm-4.5 · openrouter"
+          - option "z-ai/glm-4.5-air · openrouter"
+          - option "z-ai/glm-4.5-air:free · openrouter"
+          - option "z-ai/glm-4.5v · openrouter"
+          - option "z-ai/glm-4.6 · openrouter"
+          - option "z-ai/glm-4.6v · openrouter"
+          - option "z-ai/glm-4.7 · openrouter"
+          - option "z-ai/glm-4.7-flash · openrouter"
+          - option "z-ai/glm-5 · openrouter"
+          - option "anthropic/claude-3.5-sonnet-20240620 · vercel-ai-gateway"
+          - option "cohere/command-a · vercel-ai-gateway"
+          - option "deepseek/deepseek-v3 · vercel-ai-gateway"
+          - option "deepseek/deepseek-v3.2-thinking · vercel-ai-gateway"
+          - option "deepseek/deepseek-v3.1 · vercel-ai-gateway"
+          - option "mistral/devstral-2 · vercel-ai-gateway"
+          - option "mistral/devstral-small · vercel-ai-gateway"
+          - option "mistral/devstral-small-2 · vercel-ai-gateway"
+          - option "google/gemini-2.0-flash · vercel-ai-gateway"
+          - option "google/gemini-2.0-flash-lite · vercel-ai-gateway"
+          - option "google/gemini-2.5-flash-preview-09-2025 · vercel-ai-gateway"
+          - option "google/gemini-3-flash · vercel-ai-gateway"
+          - option "zai/glm-4.5-air · vercel-ai-gateway"
+          - option "zai/glm-4.5v · vercel-ai-gateway"
+          - option "zai/glm-4.6 · vercel-ai-gateway"
+          - option "zai/glm-4.7 · vercel-ai-gateway"
+          - option "zai/glm-4.7-flash · vercel-ai-gateway"
+          - option "zai/glm-4.7-flashx · vercel-ai-gateway"
+          - option "zai/glm-5 · vercel-ai-gateway"
+          - option "zai/glm-4.5 · vercel-ai-gateway"
+          - option "zai/glm-4.6v · vercel-ai-gateway"
+          - option "zai/glm-4.6v-flash · vercel-ai-gateway"
+          - option "openai/gpt-5-chat · vercel-ai-gateway"
+          - option "openai/gpt-5.1-thinking · vercel-ai-gateway"
+          - option "openai/gpt-5.1-instant · vercel-ai-gateway"
+          - option "xai/grok-2-vision · vercel-ai-gateway"
+          - option "xai/grok-3 · vercel-ai-gateway"
+          - option "xai/grok-3-fast · vercel-ai-gateway"
+          - option "xai/grok-3-mini · vercel-ai-gateway"
+          - option "xai/grok-3-mini-fast · vercel-ai-gateway"
+          - option "xai/grok-4 · vercel-ai-gateway"
+          - option "xai/grok-4-fast-non-reasoning · vercel-ai-gateway"
+          - option "xai/grok-4-fast-reasoning · vercel-ai-gateway"
+          - option "xai/grok-4.1-fast-non-reasoning · vercel-ai-gateway"
+          - option "xai/grok-4.1-fast-reasoning · vercel-ai-gateway"
+          - option "xai/grok-4.20-non-reasoning-beta · vercel-ai-gateway"
+          - option "xai/grok-4.20-reasoning-beta · vercel-ai-gateway"
+          - option "xai/grok-4.20-multi-agent-beta · vercel-ai-gateway"
+          - option "xai/grok-code-fast-1 · vercel-ai-gateway"
+          - option "moonshotai/kimi-k2-thinking-turbo · vercel-ai-gateway"
+          - option "moonshotai/kimi-k2-turbo · vercel-ai-gateway"
+          - option "meta/llama-3.1-70b · vercel-ai-gateway"
+          - option "meta/llama-3.1-8b · vercel-ai-gateway"
+          - option "meta/llama-3.2-11b · vercel-ai-gateway"
+          - option "meta/llama-3.2-90b · vercel-ai-gateway"
+          - option "meta/llama-3.3-70b · vercel-ai-gateway"
+          - option "meta/llama-4-maverick · vercel-ai-gateway"
+          - option "meta/llama-4-scout · vercel-ai-gateway"
+          - option "meituan/longcat-flash-thinking · vercel-ai-gateway"
+          - option "inception/mercury-coder-small · vercel-ai-gateway"
+          - option "minimax/minimax-m2.1-lightning · vercel-ai-gateway"
+          - option "minimax/minimax-m2.5-highspeed · vercel-ai-gateway"
+          - option "mistral/ministral-3b · vercel-ai-gateway"
+          - option "mistral/ministral-8b · vercel-ai-gateway"
+          - option "mistral/codestral · vercel-ai-gateway"
+          - option "mistral/mistral-medium · vercel-ai-gateway"
+          - option "mistral/mistral-small · vercel-ai-gateway"
+          - option "nvidia/nemotron-nano-12b-v2-vl · vercel-ai-gateway"
+          - option "mistral/pixtral-12b · vercel-ai-gateway"
+          - option "mistral/pixtral-large · vercel-ai-gateway"
+          - option "alibaba/qwen-3-32b · vercel-ai-gateway"
+          - option "alibaba/qwen3-coder-30b-a3b · vercel-ai-gateway"
+          - option "alibaba/qwen3-max-thinking · vercel-ai-gateway"
+          - option "alibaba/qwen3.5-flash · vercel-ai-gateway"
+          - option "alibaba/qwen3.5-plus · vercel-ai-gateway"
+          - option "alibaba/qwen3-235b-a22b-thinking · vercel-ai-gateway"
+          - option "alibaba/qwen3-coder · vercel-ai-gateway"
+          - option "alibaba/qwen3-coder-next · vercel-ai-gateway"
+          - option "alibaba/qwen3-coder-plus · vercel-ai-gateway"
+          - option "alibaba/qwen3-max · vercel-ai-gateway"
+          - option "alibaba/qwen3-max-preview · vercel-ai-gateway"
+          - option "alibaba/qwen3-vl-thinking · vercel-ai-gateway"
+          - option "alibaba/qwen-3-14b · vercel-ai-gateway"
+          - option "alibaba/qwen-3-235b · vercel-ai-gateway"
+          - option "alibaba/qwen-3-30b · vercel-ai-gateway"
+          - option "bytedance/seed-1.6 · vercel-ai-gateway"
+          - option "perplexity/sonar · vercel-ai-gateway"
+          - option "perplexity/sonar-pro · vercel-ai-gateway"
+          - option "arcee-ai/trinity-large-preview · vercel-ai-gateway"
+          - option "vercel/v0-1.0-md · vercel-ai-gateway"
+          - option "vercel/v0-1.5-md · vercel-ai-gateway"
+          - option "grok-2 · xai"
+          - option "grok-2-1212 · xai"
+          - option "grok-2-latest · xai"
+          - option "grok-2-vision · xai"
+          - option "grok-2-vision-1212 · xai"
+          - option "grok-2-vision-latest · xai"
+          - option "grok-3 · xai"
+          - option "grok-3-fast · xai"
+          - option "grok-3-fast-latest · xai"
+          - option "grok-3-latest · xai"
+          - option "grok-3-mini · xai"
+          - option "grok-3-mini-fast · xai"
+          - option "grok-3-mini-fast-latest · xai"
+          - option "grok-3-mini-latest · xai"
+          - option "grok-4 · xai"
+          - option "grok-4-fast · xai"
+          - option "grok-4-fast-non-reasoning · xai"
+          - option "grok-4-1-fast · xai"
+          - option "grok-4-1-fast-non-reasoning · xai"
+          - option "grok-4.20-beta-latest-non-reasoning · xai"
+          - option "grok-4.20-beta-latest-reasoning · xai"
+          - option "grok-4.20-multi-agent-beta-latest · xai"
+          - option "grok-beta · xai"
+          - option "grok-vision-beta · xai"
+          - option "glm-4.5 · zai"
+          - option "glm-4.5-air · zai"
+          - option "glm-4.5-flash · zai"
+          - option "glm-4.5v · zai"
+          - option "glm-4.6v · zai"
+          - option "glm-4.7-flash · zai"
+      - generic [ref=e257]:
+        - button "刷新聊天数据" [ref=e258] [cursor=pointer]:
+          - img [ref=e259]
+        - generic [ref=e262]: "|"
+        - button "切换助手思考/工作输出" [pressed] [ref=e263] [cursor=pointer]:
+          - img [ref=e264]
+        - button "切换专注模式 (隐藏侧边栏 + 页面页眉)" [ref=e274] [cursor=pointer]:
+          - img [ref=e275]
+        - button "显示定时任务会话" [pressed] [ref=e281] [cursor=pointer]:
+          - img [ref=e283]
+    - generic [ref=e286]:
+      - log [ref=e289]:
+        - generic [ref=e291]:
+          - img "OpenClaw" [ref=e293]
+          - heading "Assistant" [level=2] [ref=e294]
+          - generic [ref=e296]: Ready to chat
+          - paragraph [ref=e297]:
+            - text: Type a message below ·
+            - generic [ref=e298]: /
+            - text: for commands
+          - generic [ref=e299]:
+            - button "What can you do?" [ref=e300] [cursor=pointer]
+            - button "Summarize my recent sessions" [ref=e301] [cursor=pointer]
+            - button "Help me configure a channel" [ref=e302] [cursor=pointer]
+            - button "Check system health" [ref=e303] [cursor=pointer]
+      - generic [ref=e304]:
+        - textbox "Message Assistant (Enter to send)" [ref=e305]
+        - generic [ref=e306]:
+          - generic [ref=e307]:
+            - button "Attach file" [ref=e308] [cursor=pointer]:
+              - img [ref=e309]
+            - button "Voice input" [ref=e311] [cursor=pointer]:
+              - img [ref=e312]
+          - generic [ref=e315]:
+            - button "New session" [ref=e316] [cursor=pointer]:
+              - img [ref=e317]
+            - button "Export" [disabled] [ref=e318]:
+              - img [ref=e319]
+            - button "Send" [ref=e322] [cursor=pointer]:
+              - img [ref=e323]

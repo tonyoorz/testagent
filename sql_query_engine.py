@@ -179,6 +179,7 @@ class FewShotExamples:
     """Few-shot 示例管理"""
     
     EXAMPLES = [
+        # ========== 基础统计查询 (4个) ==========
         {
             "question": "统计所有缺陷的数量",
             "sql": "SELECT COUNT(*) as total_defects FROM defects"
@@ -195,22 +196,194 @@ class FewShotExamples:
             "question": "测试通过率是多少",
             "sql": "SELECT ROUND(100.0 * SUM(CASE WHEN status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate FROM test_runs"
         },
+
+        # ========== 时间过滤查询 (4个) ==========
         {
             "question": "最近7天的测试通过率",
             "sql": "SELECT ROUND(100.0 * SUM(CASE WHEN status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate FROM test_runs WHERE start_time >= date('now', '-7 days')"
         },
         {
-            "question": "各项目的测试数量统计",
-            "sql": "SELECT project, COUNT(*) as test_count FROM test_runs GROUP BY project ORDER BY test_count DESC"
+            "question": "本周新增的缺陷数量",
+            "sql": "SELECT COUNT(*) as new_defects_this_week FROM defects WHERE creation_time >= date('now', 'weekday 0', '-7 days', 'start of day')"
         },
         {
-            "question": "最近创建的 10 个缺陷",
-            "sql": "SELECT * FROM defects ORDER BY creation_time DESC LIMIT 10"
+            "question": "最近30天创建的 Critical 缺陷",
+            "sql": "SELECT * FROM defects WHERE severity = 'Critical' AND creation_time >= date('now', '-30 days') ORDER BY creation_time DESC"
         },
         {
-            "question": "本周的测试覆盖率",
+            "question": "本月测试执行次数",
+            "sql": "SELECT COUNT(*) as test_count FROM test_runs WHERE start_time >= date('now', 'start of month')"
+        },
+
+        # ========== 多表 JOIN 查询 (12个) ==========
+        {
+            "question": "每个缺陷对应的测试执行情况",
+            "sql": "SELECT d.id, d.severity, d.status as defect_status, tr.test_name, tr.result as test_result FROM defects d LEFT JOIN test_runs tr ON d.build_number = tr.build_number WHERE d.id IS NOT NULL LIMIT 20"
+        },
+        {
+            "question": "测试覆盖率与缺陷数量的关系",
+            "sql": "SELECT tc.module, tc.component, tc.coverage_percent, COUNT(d.id) as defect_count FROM test_coverage tc LEFT JOIN defects d ON tc.module = d.module AND tc.component = d.component WHERE tc.test_week = (SELECT MAX(test_week) FROM test_coverage) GROUP BY tc.module, tc.component ORDER BY tc.coverage_percent ASC"
+        },
+        {
+            "question": "各项目在不同严重度上的缺陷分布",
+            "sql": "SELECT d.project, d.severity, COUNT(*) as defect_count, ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM defects WHERE project = d.project), 2) as percentage FROM defects d GROUP BY d.project, d.severity ORDER BY d.project, COUNT(*) DESC"
+        },
+        {
+            "question": "测试失败的用例对应的缺陷",
+            "sql": "SELECT tr.test_name, tr.project, tr.module, d.id as defect_id, d.severity, d.status as defect_status FROM test_runs tr INNER JOIN defects d ON tr.build_number = d.build_number WHERE tr.result = 'Failed' ORDER BY tr.start_time DESC LIMIT 15"
+        },
+        {
+            "question": "模块的测试通过率与缺陷数量的对比",
+            "sql": "SELECT tr.module, ROUND(100.0 * SUM(CASE WHEN tr.status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate, COUNT(DISTINCT d.id) as defect_count FROM test_runs tr LEFT JOIN defects d ON tr.build_number = d.build_number GROUP BY tr.module ORDER BY defect_count DESC"
+        },
+        {
+            "question": "查找关联同一构建号的测试和缺陷",
+            "sql": "SELECT tr.test_name, tr.status as test_status, d.id as defect_id, d.severity, d.status as defect_status FROM test_runs tr INNER JOIN defects d ON tr.build_number = d.build_number WHERE tr.build_number = '2025-WW10-Build123' ORDER BY tr.start_time DESC"
+        },
+        {
+            "question": "每个组件的覆盖率和缺陷密度分析",
+            "sql": "SELECT tc.module, tc.component, tc.coverage_percent, COUNT(d.id) as defect_count, ROUND(COUNT(d.id) * 100.0 / NULLIF(tc.coverage_percent, 0), 2) as defect_density FROM test_coverage tc LEFT JOIN defects d ON tc.module = d.module AND tc.component = d.component WHERE tc.test_week = (SELECT MAX(test_week) FROM test_coverage) GROUP BY tc.module, tc.component ORDER BY defect_density DESC"
+        },
+        {
+            "question": "测试覆盖率低的模块的缺陷情况",
+            "sql": "SELECT tc.module, tc.component, tc.coverage_percent, d.id as defect_id, d.severity, d.status FROM test_coverage tc INNER JOIN defects d ON tc.module = d.module AND tc.component = d.component WHERE tc.test_week = (SELECT MAX(test_week) FROM test_coverage) AND tc.coverage_percent < 70 ORDER BY tc.coverage_percent ASC, d.severity DESC LIMIT 20"
+        },
+        {
+            "question": "多维度分析：项目-模块-组件的测试和缺陷数据",
+            "sql": "SELECT tr.project, tr.module, tr.component, COUNT(DISTINCT tr.id) as test_count, ROUND(100.0 * SUM(CASE WHEN tr.status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate, COUNT(DISTINCT d.id) as defect_count FROM test_runs tr LEFT JOIN defects d ON tr.build_number = d.build_number GROUP BY tr.project, tr.module, tr.component ORDER BY defect_count DESC LIMIT 30"
+        },
+        {
+            "question": "查找测试失败但没有关联缺陷的用例",
+            "sql": "SELECT tr.id, tr.test_name, tr.project, tr.module, tr.start_time, tr.result FROM test_runs tr LEFT JOIN defects d ON tr.build_number = d.build_number WHERE tr.result = 'Failed' AND d.id IS NULL ORDER BY tr.start_time DESC LIMIT 10"
+        },
+        {
+            "question": "各项目测试执行次数与缺陷数量的比例",
+            "sql": "SELECT tr.project, COUNT(DISTINCT tr.id) as total_tests, COUNT(DISTINCT d.id) as total_defects, ROUND(COUNT(DISTINCT d.id) * 100.0 / NULLIF(COUNT(DISTINCT tr.id), 0), 2) as defect_rate FROM test_runs tr LEFT JOIN defects d ON tr.build_number = d.build_number GROUP BY tr.project ORDER BY defect_rate DESC"
+        },
+        {
+            "question": "跨表查找最近一周的高风险组合",
+            "sql": "SELECT d.project, d.module, d.severity, d.pingpong, tc.coverage_percent, COUNT(*) as risk_count FROM defects d JOIN test_coverage tc ON d.module = tc.module AND d.component = tc.component WHERE d.creation_time >= date('now', '-7 days') AND tc.test_week = (SELECT MAX(test_week) FROM test_coverage) GROUP BY d.project, d.module, d.severity, d.pingpong, tc.coverage_percent ORDER BY risk_count DESC LIMIT 10"
+        },
+
+        # ========== 子查询示例 (12个) ==========
+        {
+            "question": "缺陷数量超过平均值的模块",
+            "sql": "SELECT module, COUNT(*) as defect_count FROM defects GROUP BY module HAVING COUNT(*) > (SELECT AVG(defect_count) FROM (SELECT module, COUNT(*) as defect_count FROM defects GROUP BY subq.module) as subq) ORDER BY defect_count DESC"
+        },
+        {
+            "question": "测试通过率低于项目平均水平的模块",
+            "sql": "SELECT module, ROUND(100.0 * SUM(CASE WHEN status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate FROM test_runs GROUP BY module HAVING pass_rate < (SELECT ROUND(AVG(pass_rate), 2) FROM (SELECT module, ROUND(100.0 * SUM(CASE WHEN status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate FROM test_runs GROUP BY module) as avg_rates) ORDER BY pass_rate ASC"
+        },
+        {
+            "question": "本周的测试覆盖率（使用子查询获取最新周）",
             "sql": "SELECT module, component, coverage_percent FROM test_coverage WHERE test_week = (SELECT MAX(test_week) FROM test_coverage)"
         },
+        {
+            "question": "找出重开次数最多的前 5 个缺陷",
+            "sql": "SELECT * FROM defects WHERE pingpong = (SELECT MAX(pingpong) FROM defects) UNION SELECT * FROM defects WHERE pingpong = (SELECT MAX(pingpong) FROM defects WHERE pingpong < (SELECT MAX(pingpong) FROM defects)) ORDER BY pingpong DESC LIMIT 5"
+        },
+        {
+            "question": "各项目的测试数量，对比项目平均值",
+            "sql": "SELECT project, COUNT(*) as test_count, (SELECT AVG(test_count) FROM (SELECT project, COUNT(*) as test_count FROM test_runs GROUP BY project) as avg_counts) as avg_test_count FROM test_runs GROUP BY project ORDER BY test_count DESC"
+        },
+        {
+            "question": "最近一周内的 Critical 缺陷占总 Critical 缺陷的比例",
+            "sql": "SELECT ROUND(100.0 * (SELECT COUNT(*) FROM defects WHERE severity = 'Critical' AND creation_time >= date('now', '-7 days')) / NULLIF((SELECT COUNT(*) FROM defects WHERE severity = 'Critical'), 0), 2) as critical_percentage_recent_week"
+        },
+        {
+            "question": "查找缺陷密度最高的模块（缺陷数/测试数）",
+            "sql": "SELECT d.module, COUNT(d.id) as defect_count, (SELECT COUNT(*) FROM test_runs WHERE module = d.module) as test_count, ROUND(COUNT(d.id) * 100.0 / NULLIF((SELECT COUNT(*) FROM test_runs WHERE module = d.module), 0), 2) as defect_density FROM defects d GROUP BY d.module HAVING test_count > 0 ORDER BY defect_density DESC LIMIT 10"
+        },
+        {
+            "question": "测试覆盖率超过 80% 且缺陷数量低于平均的模块",
+            "sql": "SELECT tc.module, tc.coverage_percent, COUNT(d.id) as defect_count FROM test_coverage tc LEFT JOIN defects d ON tc.module = d.module WHERE tc.test_week = (SELECT MAX(test_week) FROM test_coverage) AND tc.coverage_percent > 80 GROUP BY tc.module, tc.coverage_percent HAVING COUNT(d.id) < (SELECT AVG(defect_count) FROM (SELECT module, COUNT(*) as defect_count FROM defects GROUP BY module) as avg_counts) ORDER BY tc.coverage_percent DESC"
+        },
+        {
+            "question": "查找缺陷修复时间最长的 10 个（已关闭的缺陷）",
+            "sql": "SELECT * FROM defects WHERE status = 'Closed' AND (julianday('now') - julianday(creation_time)) > (SELECT AVG(julianday(CASE WHEN status = 'Closed' THEN 'now' ELSE creation_time END) - julianday(creation_time)) FROM defects WHERE status = 'Closed') ORDER BY creation_time ASC LIMIT 10"
+        },
+        {
+            "question": "每个严重度级别中重开次数最多的缺陷",
+            "sql": "SELECT * FROM defects WHERE (severity, pingpong) IN (SELECT severity, MAX(pingpong) FROM defects GROUP BY severity) ORDER BY CASE severity WHEN 'Critical' THEN 1 WHEN 'Major' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END"
+        },
+        {
+            "question": "测试通过率提升最快的模块（对比上周）",
+            "sql": "SELECT current_week.module, ROUND(100.0 * SUM(CASE WHEN current_week.status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as current_pass_rate, ROUND(100.0 * SUM(CASE WHEN last_week.status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as last_pass_rate FROM test_runs current_week INNER JOIN test_runs last_week ON current_week.module = last_week.module WHERE current_week.start_time >= date('now', 'weekday 0', '-7 days') AND last_week.start_time >= date('now', 'weekday 0', '-14 days') AND last_week.start_time < date('now', 'weekday 0', '-7 days') GROUP BY current_week.module HAVING current_pass_rate > last_pass_rate ORDER BY (current_pass_rate - last_pass_rate) DESC"
+        },
+        {
+            "question": "找出没有测试执行的缺陷",
+            "sql": "SELECT d.* FROM defects d WHERE NOT EXISTS (SELECT 1 FROM test_runs tr WHERE tr.build_number = d.build_number) ORDER BY d.creation_time DESC LIMIT 20"
+        },
+
+        # ========== 窗口函数示例 (8个) ==========
+        {
+            "question": "按创建时间排序并给每个缺陷编号",
+            "sql": "SELECT id, severity, status, creation_time, ROW_NUMBER() OVER (ORDER BY creation_time DESC) as row_num FROM defects LIMIT 20"
+        },
+        {
+            "question": "每个模块内缺陷数量排名",
+            "sql": "SELECT module, id, severity, creation_time, ROW_NUMBER() OVER (PARTITION BY module ORDER BY creation_time DESC) as rank_in_module FROM defects WHERE module IS NOT NULL"
+        },
+        {
+            "question": "查找各模块最新的缺陷",
+            "sql": "SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY module ORDER BY creation_time DESC) as rn FROM defects) ranked WHERE rn = 1 ORDER BY creation_time DESC"
+        },
+        {
+            "question": "缺陷密度排名（按项目分组）",
+            "sql": "SELECT project, module, defect_count, RANK() OVER (PARTITION BY project ORDER BY defect_count DESC) as density_rank FROM (SELECT project, module, COUNT(*) as defect_count FROM defects GROUP BY project, module) defect_counts"
+        },
+        {
+            "question": "计算每个缺陷与上一个缺陷的时间间隔",
+            "sql": "SELECT id, severity, creation_time, LAG(creation_time) OVER (ORDER BY creation_time) as prev_defect_time, julianday(creation_time) - julianday(LAG(creation_time) OVER (ORDER BY creation_time)) as days_since_prev FROM defects WHERE creation_time IS NOT NULL LIMIT 30"
+        },
+        {
+            "question": "各模块缺陷总数的累计百分比",
+            "sql": "SELECT module, defect_count, SUM(defect_count) OVER (ORDER BY defect_count DESC) as running_total, ROUND(100.0 * SUM(defect_count) OVER (ORDER BY defect_count DESC) / (SELECT SUM(defect_count) FROM (SELECT module, COUNT(*) as defect_count FROM defects GROUP BY module) as total), 2) as cumulative_percent FROM (SELECT module, COUNT(*) as defect_count FROM defects GROUP BY module ORDER BY defect_count DESC)"
+        },
+        {
+            "question": "查找每个严重度级别的前 5 个最新缺陷",
+            "sql": "SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY severity ORDER BY creation_time DESC) as rn FROM defects) ranked WHERE rn <= 5 ORDER BY CASE severity WHEN 'Critical' THEN 1 WHEN 'Major' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END, rn"
+        },
+        {
+            "question": "移动平均：每周缺陷数量的 3 周移动平均",
+            "sql": "SELECT week, defect_count, AVG(defect_count) OVER (ORDER BY week ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) as moving_avg_3weeks FROM (SELECT strftime('%Y-W%W', creation_time) as week, COUNT(*) as defect_count FROM defects WHERE creation_time >= date('now', '-90 days') GROUP BY week ORDER BY week) weekly_data"
+        },
+
+        # ========== 时间序列分析示例 (8个) ==========
+        {
+            "question": "缺陷趋势分析（按月）",
+            "sql": "SELECT strftime('%Y-%m', creation_time) as month, COUNT(*) as total_defects, SUM(CASE WHEN severity = 'Critical' THEN 1 ELSE 0 END) as critical_count FROM defects WHERE creation_time IS NOT NULL GROUP BY strftime('%Y-%m', creation_time) ORDER BY month DESC LIMIT 12"
+        },
+        {
+            "question": "每周缺陷数量统计",
+            "sql": "SELECT strftime('%Y-W%W', creation_time) as week, COUNT(*) as defect_count, SUM(CASE WHEN severity = 'Critical' THEN 1 ELSE 0 END) as critical_count, SUM(CASE WHEN severity = 'Major' THEN 1 ELSE 0 END) as major_count FROM defects WHERE creation_time >= date('now', '-90 days') GROUP BY week ORDER BY week DESC LIMIT 12"
+        },
+        {
+            "question": "每日测试执行趋势",
+            "sql": "SELECT DATE(start_time) as date, COUNT(*) as test_count, ROUND(100.0 * SUM(CASE WHEN status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate FROM test_runs WHERE start_time >= date('now', '-30 days') GROUP BY date ORDER BY date DESC"
+        },
+        {
+            "question": "缺陷修复时间分布（按天数分组）",
+            "sql": "SELECT CASE WHEN julianday(CASE WHEN status = 'Closed' THEN 'now' ELSE creation_time END) - julianday(creation_time) < 1 THEN '< 1 day' WHEN julianday(CASE WHEN status = 'Closed' THEN 'now' ELSE creation_time END) - julianday(creation_time) < 7 THEN '1-7 days' WHEN julianday(CASE WHEN status = 'Closed' THEN 'now' ELSE creation_time END) - julianday(creation_time) < 30 THEN '7-30 days' ELSE '> 30 days' END as fix_time_range, COUNT(*) as defect_count FROM defects WHERE status IN ('Closed', 'Open', 'In Progress') GROUP BY fix_time_range ORDER BY fix_time_range"
+        },
+        {
+            "question": "季度测试执行和缺陷统计",
+            "sql": "SELECT strftime('%Y-Q', (strftime('%m', start_time) - 1) / 3 + 1) as quarter, COUNT(DISTINCT tr.id) as test_count, ROUND(100.0 * SUM(CASE WHEN tr.status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate, COUNT(DISTINCT d.id) as defect_count FROM test_runs tr LEFT JOIN defects d ON tr.build_number = d.build_number WHERE tr.start_time >= date('now', '-12 months') GROUP BY quarter ORDER BY quarter DESC"
+        },
+        {
+            "question": "工作日 vs 周末的缺陷创建对比",
+            "sql": "SELECT CASE WHEN strftime('%w', creation_time) IN ('0', '6') THEN 'Weekend' ELSE 'Weekday' END as day_type, COUNT(*) as defect_count, ROUND(100.0 * COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0), 2) as percentage FROM defects WHERE creation_time >= date('now', '-90 days') GROUP BY day_type"
+        },
+        {
+            "question": "缺陷生命周期时间分析（创建到关闭）",
+            "sql": "SELECT d.id, d.severity, d.status, d.creation_time, julianday(CASE WHEN d.status = 'Closed' THEN 'now' ELSE creation_time END) - julianday(d.creation_time) as lifecycle_days FROM defects d WHERE d.creation_time >= date('now', '-60 days') ORDER BY lifecycle_days DESC LIMIT 20"
+        },
+        {
+            "question": "测试覆盖率的时间变化趋势",
+            "sql": "SELECT test_week, ROUND(AVG(coverage_percent), 2) as avg_coverage, ROUND(MIN(coverage_percent), 2) as min_coverage, ROUND(MAX(coverage_percent), 2) as max_coverage FROM test_coverage WHERE test_week >= '26-CW01' GROUP BY test_week ORDER BY test_week DESC LIMIT 12"
+        },
+
+        # ========== 复杂条件组合示例 (8个) ==========
         {
             "question": "高风险缺陷（Critical + 重开 > 3 次）",
             "sql": "SELECT * FROM defects WHERE severity = 'Critical' AND pingpong > 3"
@@ -224,8 +397,42 @@ class FewShotExamples:
             "sql": "SELECT tr.test_name, tr.project, tr.module, tr.result, tr.start_time FROM test_runs tr WHERE tr.result = 'Failed' ORDER BY tr.start_time DESC LIMIT 10"
         },
         {
-            "question": "缺陷趋势分析（按月）",
-            "sql": "SELECT strftime('%Y-%m', creation_time) as month, COUNT(*) as total_defects, SUM(CASE WHEN severity = 'Critical' THEN 1 ELSE 0 END) as critical_count FROM defects WHERE creation_time IS NOT NULL GROUP BY strftime('%Y-%m', creation_time) ORDER BY month DESC LIMIT 12"
+            "question": "多条件筛选：Critical 或 Major 状态为 Open 且创建时间超过 30 天",
+            "sql": "SELECT * FROM defects WHERE severity IN ('Critical', 'Major') AND status = 'Open' AND creation_time <= date('now', '-30 days') ORDER BY severity DESC, creation_time ASC"
+        },
+        {
+            "question": "复杂条件：测试失败率高（<70%）且缺陷多（>10个）的模块",
+            "sql": "SELECT tr.module, ROUND(100.0 * SUM(CASE WHEN tr.status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate, COUNT(DISTINCT d.id) as defect_count FROM test_runs tr LEFT JOIN defects d ON tr.build_number = d.build_number GROUP BY tr.module HAVING pass_rate < 70 AND defect_count > 10 ORDER BY pass_rate ASC"
+        },
+        {
+            "question": "查找特定组合：AIDA 项目中 Critical 或 Major 状态为 New 或 Open 的缺陷",
+            "sql": "SELECT * FROM defects WHERE project = 'AIDA' AND severity IN ('Critical', 'Major') AND status IN ('New', 'Open') ORDER BY severity DESC, creation_time DESC"
+        },
+        {
+            "question": "时间范围 + 多条件：过去14天内创建的 Critical 缺陷，且未被修复",
+            "sql": "SELECT * FROM defects WHERE severity = 'Critical' AND creation_time >= date('now', '-14 days') AND status NOT IN ('Fixed', 'Closed') ORDER BY creation_time DESC"
+        },
+        {
+            "question": "综合分析：各模块在多个维度上的表现",
+            "sql": "SELECT tr.module, ROUND(100.0 * SUM(CASE WHEN tr.status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate, COUNT(DISTINCT d.id) as defect_count, ROUND(AVG(CASE WHEN d.severity = 'Critical' THEN 10 WHEN d.severity = 'Major' THEN 7 WHEN d.severity = 'Medium' THEN 4 ELSE 1 END), 2) as avg_severity_score FROM test_runs tr LEFT JOIN defects d ON tr.build_number = d.build_number GROUP BY tr.module ORDER BY pass_rate DESC, defect_count ASC"
+        },
+
+        # ========== 聚合函数进阶示例 (4个) ==========
+        {
+            "question": "各项目的测试数量统计",
+            "sql": "SELECT project, COUNT(*) as test_count FROM test_runs GROUP BY project ORDER BY test_count DESC"
+        },
+        {
+            "question": "最近创建的 10 个缺陷",
+            "sql": "SELECT * FROM defects ORDER BY creation_time DESC LIMIT 10"
+        },
+        {
+            "question": "缺陷平均修复时间（按严重度分组）",
+            "sql": "SELECT severity, ROUND(AVG(julianday(CASE WHEN status = 'Closed' THEN 'now' ELSE creation_time END) - julianday(creation_time)), 2) as avg_fix_days FROM defects WHERE status = 'Closed' GROUP BY severity ORDER BY CASE severity WHEN 'Critical' THEN 1 WHEN 'Major' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END"
+        },
+        {
+            "question": "测试通过率的中位数（使用分组统计）",
+            "sql": "SELECT project, ROUND(AVG(pass_rate), 2) as avg_pass_rate FROM (SELECT project, ROUND(100.0 * SUM(CASE WHEN status = 'Passed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as pass_rate FROM test_runs GROUP BY project, build_number) project_pass_rates GROUP BY project ORDER BY avg_pass_rate DESC"
         }
     ]
     

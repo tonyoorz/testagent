@@ -1,0 +1,181 @@
+- generic [ref=e49]:
+  - banner [ref=e50]:
+    - generic [ref=e51]:
+      - generic [ref=e55]:
+        - generic [ref=e56]: OpenClaw
+        - generic [ref=e57]: ›
+        - generic [ref=e58]: 代理
+      - generic [ref=e59]:
+        - button "Open command palette" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: 搜索
+          - generic [ref=e62]: ⌘K
+        - group "Color mode" [ref=e64]:
+          - 'button "Color mode: System" [pressed] [ref=e65] [cursor=pointer]':
+            - img [ref=e66]
+          - 'button "Color mode: Light" [ref=e68] [cursor=pointer]':
+            - img [ref=e69]
+          - 'button "Color mode: Dark" [ref=e75] [cursor=pointer]':
+            - img [ref=e76]
+  - complementary [ref=e79]:
+    - generic [ref=e80]:
+      - generic [ref=e81]:
+        - generic [ref=e82]:
+          - img "OpenClaw" [ref=e83]
+          - generic [ref=e84]:
+            - generic [ref=e85]: 控制
+            - generic [ref=e86]: OpenClaw
+        - button "折叠侧边栏" [ref=e87] [cursor=pointer]:
+          - img [ref=e89]
+      - navigation [ref=e91]:
+        - generic [ref=e92]:
+          - button "聊天" [expanded] [ref=e93] [cursor=pointer]:
+            - generic [ref=e94]: 聊天
+            - img [ref=e96]
+          - link "聊天" [ref=e99] [cursor=pointer]:
+            - /url: /chat
+            - img [ref=e101]
+            - generic [ref=e103]: 聊天
+        - generic [ref=e104]:
+          - button "控制" [expanded] [ref=e105] [cursor=pointer]:
+            - generic [ref=e106]: 控制
+            - img [ref=e108]
+          - generic [ref=e110]:
+            - link "概览" [ref=e111] [cursor=pointer]:
+              - /url: /overview
+              - img [ref=e113]
+              - generic [ref=e114]: 概览
+            - link "频道" [ref=e115] [cursor=pointer]:
+              - /url: /channels
+              - img [ref=e117]
+              - generic [ref=e120]: 频道
+            - link "实例" [ref=e121] [cursor=pointer]:
+              - /url: /instances
+              - img [ref=e123]
+              - generic [ref=e126]: 实例
+            - link "会话" [ref=e127] [cursor=pointer]:
+              - /url: /sessions
+              - img [ref=e129]
+              - generic [ref=e132]: 会话
+            - link "使用情况" [ref=e133] [cursor=pointer]:
+              - /url: /usage
+              - img [ref=e135]
+              - generic [ref=e136]: 使用情况
+            - link "定时任务" [ref=e137] [cursor=pointer]:
+              - /url: /cron
+              - img [ref=e139]
+              - generic [ref=e144]: 定时任务
+        - generic [ref=e145]:
+          - button "代理" [expanded] [ref=e146] [cursor=pointer]:
+            - generic [ref=e147]: 代理
+            - img [ref=e149]
+          - generic [ref=e151]:
+            - link "代理" [ref=e152] [cursor=pointer]:
+              - /url: /agents
+              - img [ref=e154]
+              - generic [ref=e156]: 代理
+            - link "技能" [ref=e157] [cursor=pointer]:
+              - /url: /skills
+              - img [ref=e159]
+              - generic [ref=e161]: 技能
+            - link "节点" [ref=e162] [cursor=pointer]:
+              - /url: /nodes
+              - img [ref=e164]
+              - generic [ref=e166]: 节点
+        - generic [ref=e167]:
+          - button "设置" [expanded] [ref=e168] [cursor=pointer]:
+            - generic [ref=e169]: 设置
+            - img [ref=e171]
+          - generic [ref=e173]:
+            - link "配置" [ref=e174] [cursor=pointer]:
+              - /url: /config
+              - img [ref=e176]
+              - generic [ref=e179]: 配置
+            - link "通信" [ref=e180] [cursor=pointer]:
+              - /url: /communications
+              - img [ref=e182]
+              - generic [ref=e185]: 通信
+            - link "外观与设置" [ref=e186] [cursor=pointer]:
+              - /url: /appearance
+              - img [ref=e188]
+              - generic [ref=e190]: 外观与设置
+            - link "自动化" [ref=e191] [cursor=pointer]:
+              - /url: /automation
+              - img [ref=e193]
+              - generic [ref=e195]: 自动化
+            - link "基础设施" [ref=e196] [cursor=pointer]:
+              - /url: /infrastructure
+              - img [ref=e198]
+              - generic [ref=e201]: 基础设施
+            - link "AI 与代理" [ref=e202] [cursor=pointer]:
+              - /url: /ai-agents
+              - img [ref=e204]
+              - generic [ref=e214]: AI 与代理
+            - link "调试" [ref=e215] [cursor=pointer]:
+              - /url: /debug
+              - img [ref=e217]
+              - generic [ref=e226]: 调试
+            - link "日志" [ref=e227] [cursor=pointer]:
+              - /url: /logs
+              - img [ref=e229]
+              - generic [ref=e232]: 日志
+      - generic [ref=e234]:
+        - link "文档" [ref=e235] [cursor=pointer]:
+          - /url: https://docs.openclaw.ai
+          - img [ref=e237]
+          - generic [ref=e239]: 文档
+          - img [ref=e241]
+        - generic "v2026.3.13" [ref=e244]:
+          - generic [ref=e245]: 版本
+          - generic [ref=e246]: v2026.3.13
+          - 'img "Gateway status: 在线" [ref=e247]'
+  - main [ref=e248]:
+    - generic [ref=e250]:
+      - generic [ref=e326]: 代理
+      - generic [ref=e327]: 工作区、工具、身份。
+    - generic [ref=e328]:
+      - generic [ref=e330]:
+        - generic [ref=e331]: Agent
+        - generic [ref=e332]:
+          - combobox [active] [ref=e334] [cursor=pointer]:
+            - option "main (default)" [selected]
+            - option "coordinator"
+            - option "dev-agent"
+            - option "pm-agent"
+            - option "qa-agent"
+          - generic [ref=e335]:
+            - button "⋯" [ref=e337] [cursor=pointer]
+            - button "Refresh" [ref=e338] [cursor=pointer]
+      - generic [ref=e339]:
+        - generic [ref=e340]:
+          - button "Overview" [ref=e341] [cursor=pointer]
+          - button "Files" [ref=e342] [cursor=pointer]
+          - button "Tools" [ref=e343] [cursor=pointer]
+          - button "Skills" [ref=e344] [cursor=pointer]
+          - button "Channels" [ref=e345] [cursor=pointer]
+          - button "Cron Jobs" [ref=e346] [cursor=pointer]
+        - generic [ref=e347]:
+          - generic [ref=e348]: Overview
+          - generic [ref=e349]: Workspace paths and identity metadata.
+          - generic [ref=e350]:
+            - generic [ref=e351]:
+              - generic [ref=e352]: Workspace
+              - button "/Users/kangyongge/.openclaw/workspace" [ref=e354] [cursor=pointer]
+            - generic [ref=e355]:
+              - generic [ref=e356]: Primary Model
+              - generic [ref=e357]: "-"
+            - generic [ref=e358]:
+              - generic [ref=e359]: Skills Filter
+              - generic [ref=e360]: all skills
+          - generic [ref=e361]:
+            - generic [ref=e362]: Model Selection
+            - generic [ref=e363]:
+              - generic [ref=e364]:
+                - generic [ref=e365]: Primary model (default)
+                - combobox "Primary model (default)" [ref=e366] [cursor=pointer]:
+                  - option "No configured models" [disabled]
+              - generic [ref=e367]:
+                - generic [ref=e368]: Fallbacks
+                - textbox "provider/model" [ref=e370]
+            - generic [ref=e371]:
+              - button "Reload Config" [ref=e372] [cursor=pointer]
+              - button "Save" [disabled] [ref=e373]

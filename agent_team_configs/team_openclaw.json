@@ -1,0 +1,145 @@
+{
+  "version": "2.0",
+  "description": "AI Agent 优化团队 - PM/DEV/QA 协作配置",
+  
+  "bindings": [
+    {
+      "agentId": "team-coordinator",
+      "match": {
+        "channel": "telegram",
+        "keywords": ["优化", "改进", "设计", "团队", "协作", "完整", "全面"]
+      }
+    },
+    {
+      "agentId": "pm-agent",
+      "match": {
+        "channel": "telegram",
+        "keywords": ["需求", "用户", "功能", "产品", "优先级", "用户故事"]
+      }
+    },
+    {
+      "agentId": "dev-agent",
+      "match": {
+        "channel": "telegram",
+        "keywords": ["架构", "实现", "代码", "技术", "开发", "性能", "API"]
+      }
+    },
+    {
+      "agentId": "qa-agent",
+      "match": {
+        "channel": "telegram",
+        "keywords": ["测试", "质量", "风险", "验证", "用例", "Bug", "缺陷"]
+      }
+    }
+  ],
+
+  "tools": {
+    "agentToAgent": {
+      "enabled": true,
+      "allow": ["team-coordinator", "pm-agent", "dev-agent", "qa-agent"]
+    },
+    "codeInterpreter": {
+      "enabled": true,
+      "timeout": 120000
+    },
+    "webSearch": {
+      "enabled": true,
+      "provider": "tavily"
+    }
+  },
+
+  "agents": {
+    "team-coordinator": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "maxConcurrency": 5,
+      "timeout": 180000,
+      "priority": "high",
+      "description": "团队协调者，管理 PM/DEV/QA 协作流程",
+      "role": "coordinator"
+    },
+    "pm-agent": {
+      "model": "openai/gpt-4o",
+      "maxConcurrency": 3,
+      "timeout": 60000,
+      "priority": "high",
+      "description": "产品经理，负责需求分析和用户价值",
+      "role": "product"
+    },
+    "dev-agent": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "maxConcurrency": 3,
+      "timeout": 90000,
+      "priority": "high",
+      "description": "开发工程师，负责技术实现和架构设计",
+      "role": "development"
+    },
+    "qa-agent": {
+      "model": "openai/gpt-4o",
+      "maxConcurrency": 3,
+      "timeout": 60000,
+      "priority": "high",
+      "description": "测试工程师，负责质量保证和风险评估",
+      "role": "quality"
+    }
+  },
+
+  "workflows": {
+    "optimization_flow": {
+      "description": "AI Agent 优化协作流程",
+      "steps": [
+        {
+          "step": 1,
+          "agent": "pm-agent",
+          "action": "需求分析",
+          "output": "需求文档和用户故事"
+        },
+        {
+          "step": 2,
+          "agent": "dev-agent",
+          "action": "技术方案",
+          "output": "架构设计和实现方案",
+          "depends_on": [1]
+        },
+        {
+          "step": 3,
+          "agent": "qa-agent",
+          "action": "测试设计",
+          "output": "测试计划和风险评估",
+          "depends_on": [1, 2]
+        },
+        {
+          "step": 4,
+          "agent": "team-coordinator",
+          "action": "结果整合",
+          "output": "完整优化方案",
+          "depends_on": [1, 2, 3]
+        }
+      ]
+    },
+    "parallel_review": {
+      "description": "并行评审流程",
+      "mode": "parallel",
+      "agents": ["pm-agent", "dev-agent", "qa-agent"],
+      "merge_by": "team-coordinator"
+    }
+  },
+
+  "cache": {
+    "enabled": true,
+    "ttl": 3600,
+    "maxSize": 500,
+    "perAgent": true
+  },
+
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "file": "~/.openclaw/logs/team.log"
+  },
+
+  "monitoring": {
+    "enabled": true,
+    "metrics": ["latency", "tokens", "success_rate", "collaboration_time"],
+    "interval": 60
+  }
+}

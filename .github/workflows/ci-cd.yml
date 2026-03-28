@@ -1,0 +1,221 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # ========== 单元测试 ==========
+  unit-tests:
+    name: 单元测试
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 缓存依赖
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-cov
+
+      - name: 运行单元测试
+        run: |
+          python3 run_unit_tests.py
+
+      - name: 生成测试覆盖率报告
+        run: |
+          pytest tests/ --cov=. --cov-report=xml --cov-report=html
+
+      - name: 上传覆盖率报告到 Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  # ========== 代码质量检查 ==========
+  lint:
+    name: 代码质量检查
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort mypy
+
+      - name: 运行 Black 格式检查
+        run: |
+          black --check .
+        continue-on-error: true
+
+      - name: 运行 isort 导入排序检查
+        run: |
+          isort --check-only .
+        continue-on-error: true
+
+      - name: 运行 Flake8 代码检查
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: 运行 MyPy 类型检查
+        run: |
+          mypy sql_query_engine.py --ignore-missing-imports
+        continue-on-error: true
+
+  # ========== 安全扫描 ==========
+  security-scan:
+    name: 安全扫描
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety
+
+      - name: 运行 Bandit 安全扫描
+        run: |
+          bandit -r . -f json -o bandit-report.json || true
+        continue-on-error: true
+
+      - name: 检查已知安全漏洞
+        run: |
+          if [ -f requirements.txt ]; then
+            safety check --json > safety-report.json || true
+          fi
+
+  # ========== 性能测试 ==========
+  performance-tests:
+    name: 性能测试
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest-benchmark
+
+      - name: 运行性能测试
+        run: |
+          python3 benchmark_sql_engine.py || true
+        continue-on-error: true
+
+  # ========== 集成测试 ==========
+  integration-tests:
+    name: 集成测试
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: 运行集成测试
+        run: |
+          python3 test_fewshot_expansion.py
+
+      - name: 运行增强 SQL 聊天测试
+        run: |
+          python3 test_enhanced_sql_chat.py || true
+        continue-on-error: true
+
+  # ========== 文档构建 ==========
+  docs-build:
+    name: 文档构建
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs mkdocs-material
+
+      - name: 构建文档
+        run: |
+          mkdocs build || true
+        continue-on-error: true
+
+  # ========== 发布通知 ==========
+  notify:
+    name: 发布通知
+    runs-on: ubuntu-latest
+    needs: [unit-tests, lint, integration-tests]
+    if: always()
+
+    steps:
+      - name: 检查任务状态
+        run: |
+          if [ "${{ needs.unit-tests.result }}" == "success" ] && \
+             [ "${{ needs.lint.result }}" == "success" ] && \
+             [ "${{ needs.integration-tests.result }}" == "success" ]; then
+            echo "✅ 所有任务成功"
+          else
+            echo "❌ 有任务失败"
+            exit 1
+          fi

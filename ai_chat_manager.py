@@ -57,34 +57,27 @@ _DEFAULT_INTERNAL_MODEL = "deepseek-v3.2"
 _DEFAULT_PUBLIC_BASE = "https://api.deepseek.com/v1"
 _DEFAULT_PUBLIC_MODEL = "deepseek-reasoner"
 
-HARDCODED_DEEPSEEK_ACCESS_CODE = "7FD25E1BD6124A1C8BF29030C8BFC43E"
-HARDCODED_DEEPSEEK_API_KEY = ""
-HARDCODED_DEEPSEEK_API_BASE = "https://aistudio.bmwbrill.cn/api/service/160/{access_code}/llama4/v2/chat/completions"
-HARDCODED_DEEPSEEK_MODEL = "deepseek-v3.2"
-HARDCODED_DEEPSEEK_API_KEY_BACKUP = "sk-e1a77ca98a30498ca33acc7f803f0d41"
-HARDCODED_DEEPSEEK_API_BASE_BACKUP = ""
+# 优先从 config_center 读取配置（config_center 内部已处理 .env 和环境变量优先级）
+try:
+    from config_center import cfg as _cfg
+    ACCESS_CODE = _cfg.DEEPSEEK_ACCESS_CODE
+    DEEPSEEK_API_KEY = _cfg.DEEPSEEK_API_KEY
+    DEEPSEEK_API_BASE = _cfg.DEEPSEEK_API_BASE
+    DEEPSEEK_MODEL = _cfg.DEEPSEEK_MODEL
+    DEEPSEEK_API_KEY_BACKUP = _cfg.DEEPSEEK_API_KEY_BACKUP
+    DEEPSEEK_API_BASE_BACKUP = _cfg.DEEPSEEK_API_BASE_BACKUP
+except ImportError:
+    # config_center 不可用时，从环境变量读取（不再硬编码任何凭证）
+    ACCESS_CODE = os.environ.get("DEEPSEEK_ACCESS_CODE", "")
+    DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY") or (f"ACCESSCODE {ACCESS_CODE}" if ACCESS_CODE else "")
 
-ACCESS_CODE = os.environ.get("DEEPSEEK_ACCESS_CODE", "") or HARDCODED_DEEPSEEK_ACCESS_CODE
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY") or (f"ACCESSCODE {ACCESS_CODE}" if ACCESS_CODE else "") or HARDCODED_DEEPSEEK_API_KEY
+    _env_base = os.environ.get("DEEPSEEK_API_BASE")
+    _env_model = os.environ.get("DEEPSEEK_MODEL")
+    DEEPSEEK_API_BASE = _env_base or (_DEFAULT_INTERNAL_BASE if ACCESS_CODE else _DEFAULT_PUBLIC_BASE)
+    DEEPSEEK_MODEL = _env_model or (_DEFAULT_INTERNAL_MODEL if ACCESS_CODE else _DEFAULT_PUBLIC_MODEL)
 
-_env_base = os.environ.get("DEEPSEEK_API_BASE")
-_env_model = os.environ.get("DEEPSEEK_MODEL")
-if _env_base:
-    DEEPSEEK_API_BASE = _env_base
-elif HARDCODED_DEEPSEEK_API_BASE:
-    DEEPSEEK_API_BASE = HARDCODED_DEEPSEEK_API_BASE
-else:
-    DEEPSEEK_API_BASE = _DEFAULT_PUBLIC_BASE if (DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.startswith("sk-")) else _DEFAULT_INTERNAL_BASE
-
-if _env_model:
-    DEEPSEEK_MODEL = _env_model
-elif HARDCODED_DEEPSEEK_MODEL:
-    DEEPSEEK_MODEL = HARDCODED_DEEPSEEK_MODEL
-else:
-    DEEPSEEK_MODEL = _DEFAULT_PUBLIC_MODEL if (DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.startswith("sk-")) else _DEFAULT_INTERNAL_MODEL
-
-DEEPSEEK_API_BASE_BACKUP = os.environ.get("DEEPSEEK_API_BASE_BACKUP") or HARDCODED_DEEPSEEK_API_BASE_BACKUP or _DEFAULT_PUBLIC_BASE
-DEEPSEEK_API_KEY_BACKUP = os.environ.get("DEEPSEEK_API_KEY_BACKUP") or HARDCODED_DEEPSEEK_API_KEY_BACKUP
+    DEEPSEEK_API_KEY_BACKUP = os.environ.get("DEEPSEEK_API_KEY_BACKUP", "")
+    DEEPSEEK_API_BASE_BACKUP = os.environ.get("DEEPSEEK_API_BASE_BACKUP", _DEFAULT_PUBLIC_BASE)
 
 # Chat Configuration
 DEFAULT_TEMPERATURE = 0.7
@@ -820,23 +813,34 @@ class AIChatManager:
         # 检查是否有可用的chatbot
         if self.chatbot and self.chatbot.validate_api_key():
             try:
-                # 根据看板类型定制系统消息
-                system_prompts = {
-                    'defect': "You are a helpful assistant for defect analysis. Help users understand and analyze defect data from a software testing dashboard.",
-                    'test': "You are a helpful assistant for test coverage analysis. Help users understand and analyze test coverage data.",
-                    'trend': "You are a helpful assistant for trend analysis. Help users understand data trends and patterns.",
-                    'general': "You are a helpful assistant for data analysis. Help users understand and analyze their data."
-                }
-                
-                system_message = system_prompts.get(dashboard_type, system_prompts['general'])
-                system_message += f"""
-                Always respond in Chinese (中文).
-                
-                Current data context: {data_context}
-                
-                User question: {user_message}
-                
-                Please provide helpful insights based on the data."""
+                # 根据看板类型定制系统消息 - 从统一提示词模块读取
+                try:
+                    from prompts import AI_CHAT_SYSTEM_PROMPTS, AI_CHAT_PROMPT_TEMPLATE, CHART_PROMPT
+                    base_prompt = AI_CHAT_SYSTEM_PROMPTS.get(dashboard_type, AI_CHAT_SYSTEM_PROMPTS['general'])
+                    # 添加图表输出提示
+                    system_message = base_prompt + "\n\n" + CHART_PROMPT + f"""
+
+当前数据上下文：{data_context}
+
+用户问题：{user_message}
+
+请根据数据提供有价值的分析见解。"""
+                except ImportError:
+                    # prompts 模块不可用时的回退
+                    system_prompts = {
+                        'defect': "你是缺陷数据分析助手，帮助用户理解和分析软件测试中的缺陷数据。",
+                        'test': "你是测试覆盖率分析助手，帮助用户理解和分析测试覆盖率数据。",
+                        'trend': "你是趋势分析助手，帮助用户理解数据趋势和模式。",
+                        'general': "你是数据分析助手，帮助用户理解和分析数据。"
+                    }
+                    system_message = system_prompts.get(dashboard_type, system_prompts['general'])
+                    system_message += f"""
+
+当前数据上下文：{data_context}
+
+用户问题：{user_message}
+
+请根据数据提供有价值的分析见解。"""
                 
                 messages = [
                     {"role": "system", "content": system_message},
@@ -1260,8 +1264,14 @@ class AIChatManager:
             
             # 初始化聊天消息
             if not chat_messages:
+                # 从统一提示词模块读取
+                try:
+                    from prompts import AI_CHAT_SYSTEM_PROMPTS
+                    system_content = AI_CHAT_SYSTEM_PROMPTS.get(dashboard_type, AI_CHAT_SYSTEM_PROMPTS['general'])
+                except ImportError:
+                    system_content = f"你是{dashboard_type}数据分析助手。"
                 chat_messages = [
-                    {"role": "system", "content": f"You are a helpful assistant for {dashboard_type} analysis."},
+                    {"role": "system", "content": system_content},
                     {"role": "assistant", "content": "您好！我是AI助手，可以帮助您分析数据。请问有什么可以帮助您的吗？"}
                 ]
             
@@ -1451,6 +1461,13 @@ class AIChatManager:
                 new_streaming_state = streaming_state
             
             # 生成聊天历史HTML
+            # 导入图表渲染组件（延迟导入避免启动时依赖问题）
+            try:
+                from chat_components import render_ai_response
+                HAS_CHART_COMPONENTS = True
+            except ImportError:
+                HAS_CHART_COMPONENTS = False
+
             chat_history_children = []
             for i, msg in enumerate(chat_messages):
                 if msg["role"] == "user":
@@ -1471,22 +1488,64 @@ class AIChatManager:
                 elif msg["role"] == "assistant":
                     icon_class = "fas fa-brain" if "思考" in msg["content"] else "fas fa-robot"
                     icon_color = "#f39c12" if "思考" in msg["content"] else "#3498db"
-                    
-                    chat_history_children.append(
-                        html.Div([
-                            html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
-                            html.Span(msg["content"], style={'whiteSpace': 'pre-line'})
-                        ], style={
-                            'padding': '12px',
-                            'backgroundColor': '#f8f9fa',
-                            'borderRadius': '8px',
-                            'margin': '8px 0',
-                            'textAlign': 'left',
-                            'border': '1px solid #e9ecef',
-                            'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
-                            'marginRight': '20px'
-                        })
-                    )
+
+                    # 检查是否包含图表 JSON，尝试渲染
+                    if HAS_CHART_COMPONENTS and "{" in msg["content"] and "chart" in msg["content"]:
+                        try:
+                            # 渲染包含图表的响应
+                            rendered_components = render_ai_response(msg["content"])
+                            chat_history_children.append(
+                                html.Div([
+                                    html.Div([
+                                        html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
+                                        html.Span("AI 分析结果", style={'fontWeight': 'bold'})
+                                    ], style={'marginBottom': '10px'}),
+                                    *rendered_components
+                                ], style={
+                                    'padding': '12px',
+                                    'backgroundColor': '#f8f9fa',
+                                    'borderRadius': '8px',
+                                    'margin': '8px 0',
+                                    'textAlign': 'left',
+                                    'border': '1px solid #e9ecef',
+                                    'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
+                                    'marginRight': '20px'
+                                })
+                            )
+                        except Exception as e:
+                            # 渲染失败，回退到普通文本
+                            chat_history_children.append(
+                                html.Div([
+                                    html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
+                                    html.Span(msg["content"], style={'whiteSpace': 'pre-line'})
+                                ], style={
+                                    'padding': '12px',
+                                    'backgroundColor': '#f8f9fa',
+                                    'borderRadius': '8px',
+                                    'margin': '8px 0',
+                                    'textAlign': 'left',
+                                    'border': '1px solid #e9ecef',
+                                    'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
+                                    'marginRight': '20px'
+                                })
+                            )
+                    else:
+                        # 普通文本消息
+                        chat_history_children.append(
+                            html.Div([
+                                html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
+                                html.Span(msg["content"], style={'whiteSpace': 'pre-line'})
+                            ], style={
+                                'padding': '12px',
+                                'backgroundColor': '#f8f9fa',
+                                'borderRadius': '8px',
+                                'margin': '8px 0',
+                                'textAlign': 'left',
+                                'border': '1px solid #e9ecef',
+                                'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
+                                'marginRight': '20px'
+                            })
+                        )
             
             # 设置状态显示
             status_display = ""
@@ -1907,9 +1966,14 @@ class AITestSuite:
             
             AITestSuite._console_print("✓ API密钥验证通过")
             
-            # 测试简单的API调用
+            # 测试简单的API调用 - 从统一提示词模块读取
+            try:
+                from prompts import BASIC_ASSISTANT_PROMPT
+                system_content = BASIC_ASSISTANT_PROMPT
+            except ImportError:
+                system_content = "你是一个有帮助的助手。请用中文回答。"
             test_messages = [
-                {"role": "system", "content": "You are a helpful assistant. Answer in Chinese."},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": "请回复'测试成功'"}
             ]
             
@@ -1939,12 +2003,19 @@ class AITestSuite:
         """测试流式响应"""
         AITestSuite._console_print("\n" + "=" * 50)
         AITestSuite._console_print("测试流式响应...")
-        
+
         try:
             chat = DeepSeekStreamingChat()
-            
+
+            # 从统一提示词模块读取
+            try:
+                from prompts import BASIC_ASSISTANT_PROMPT
+                system_content = BASIC_ASSISTANT_PROMPT
+            except ImportError:
+                system_content = "你是一个有帮助的助手。请用中文回答。"
+
             test_messages = [
-                {"role": "system", "content": "You are a helpful assistant. Answer in Chinese."},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": "请简单介绍一下人工智能，大约50字"}
             ]
             

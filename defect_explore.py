@@ -473,19 +473,21 @@ else:
     analyze_ticket_phases = get_all_ticket_ids = None
     calculate_phase_duration = extract_phase_changes = None
 
-# 导入AI聊天管理器 - 条件导入
+# 导入AI聊天管理器 - 条件导入（优先使用 SQL 查询版）
 if not IS_RELOADER:
     try:
-        # 优先导入增强版AI聊天管理器（支持智能Agent）
-        from enhanced_ai_chat_manager import create_enhanced_chat_manager
+        # 优先导入增强版AI聊天管理器（支持智能Agent + SQL查询）
+        from enhanced_ai_chat_with_sql import create_enhanced_chat_manager_with_sql
         AI_CHAT_AVAILABLE = True
         AI_CHAT_ENHANCED = True
-        ai_chat_manager = create_enhanced_chat_manager(
+        AI_CHAT_SQL_ENABLED = True
+        ai_chat_manager = create_enhanced_chat_manager_with_sql(
             dashboard_type='defect_explore',
             use_agent=True,
+            enable_sql=True,  # 启用 SQL 查询
             assistant_name='SiSi'
         )
-        print("✅ 增强版AI聊天管理器已加载（智能Agent已启用）")
+        print("✅ 增强版AI聊天管理器已加载（智能Agent + SQL查询已启用）")
 
         # 尝试从基础版导入CSS样式函数
         try:
@@ -496,20 +498,41 @@ if not IS_RELOADER:
                 return ""
     except ImportError:
         try:
-            # 降级到基础版AI聊天管理器
-            from ai_chat_manager import ai_chat_manager, get_chat_css_styles
+            # 降级到增强版AI聊天管理器（仅支持Agent，无SQL）
+            from enhanced_ai_chat_manager import create_enhanced_chat_manager
             AI_CHAT_AVAILABLE = True
-            AI_CHAT_ENHANCED = False
-            print("⚠️  使用基础版AI聊天管理器（智能Agent不可用）")
+            AI_CHAT_ENHANCED = True
+            AI_CHAT_SQL_ENABLED = False
+            ai_chat_manager = create_enhanced_chat_manager(
+                dashboard_type='defect_explore',
+                use_agent=True,
+                assistant_name='SiSi'
+            )
+            print("✅ 增强版AI聊天管理器已加载（智能Agent已启用，SQL查询不可用）")
+            try:
+                from ai_chat_manager import get_chat_css_styles
+            except ImportError:
+                def get_chat_css_styles():
+                    return ""
         except ImportError:
-            print("❌ 警告：无法导入AI聊天管理器")
-            AI_CHAT_AVAILABLE = False
-            AI_CHAT_ENHANCED = False
-            ai_chat_manager = None
-            get_chat_css_styles = None
+            try:
+                # 降级到基础版AI聊天管理器
+                from ai_chat_manager import ai_chat_manager, get_chat_css_styles
+                AI_CHAT_AVAILABLE = True
+                AI_CHAT_ENHANCED = False
+                AI_CHAT_SQL_ENABLED = False
+                print("⚠️  使用基础版AI聊天管理器（智能Agent和SQL查询不可用）")
+            except ImportError:
+                print("❌ 警告：无法导入AI聊天管理器")
+                AI_CHAT_AVAILABLE = False
+                AI_CHAT_ENHANCED = False
+                AI_CHAT_SQL_ENABLED = False
+                ai_chat_manager = None
+                get_chat_css_styles = None
 else:
     AI_CHAT_AVAILABLE = False
     AI_CHAT_ENHANCED = False
+    AI_CHAT_SQL_ENABLED = False
     ai_chat_manager = None
     get_chat_css_styles = None
 
@@ -11050,46 +11073,37 @@ def update_wordcloud_page(projects, start_date, end_date, aidas, statuses, sever
 
 
 if __name__ == '__main__':
-    # 尝试从环境变量读取配置
-    import os
-    host = os.environ.get('HOST', '0.0.0.0')  # 默认允许局域网访问
-    port = int(os.environ.get('PORT', 8051))
-    debug = os.environ.get('DEBUG', 'True').lower() == 'true'
+    # 读取启动配置（优先环境变量，其次 config_center，最后默认值）
+    try:
+        from config_center import cfg
+        host = os.environ.get('HOST', str(cfg.HOST))
+        port = int(os.environ.get('PORT', cfg.PORT))
+        debug = os.environ.get('DEBUG', str(cfg.DEBUG)).lower() == 'true'
+    except ImportError:
+        host = os.environ.get('HOST', '0.0.0.0')
+        port = int(os.environ.get('PORT', 8051))
+        debug = os.environ.get('DEBUG', 'False').lower() == 'true'
+
     if DISABLE_RELOADER:
         debug = False
-    
-    # 检查是否是reloader进程
-    if IS_RELOADER:
-        print("\n🔄 注意：这是reloader进程，跳过启动信息显示...\n")
-    else:
-        # 显示网络访问信息
+
+    # 显示启动信息（仅在非 reloader 进程中）
+    if not IS_RELOADER:
         import socket
         try:
             hostname = socket.gethostname()
             local_ip = socket.gethostbyname(hostname)
-            
             print("\n" + "="*50)
-            print("缺陷探索应用启动信息")
+            print("🚀 缺陷探索应用启动")
             print("="*50)
-            print(f"主机: {host}")
-            print(f"端口: {port}")
-            print(f"调试模式: {debug}")
-            print(f"本机访问: http://localhost:{port}")
+            print(f"主机: {host}  端口: {port}  调试: {debug}")
             print(f"本机访问: http://127.0.0.1:{port}")
             if host == '0.0.0.0':
                 print(f"局域网访问: http://{local_ip}:{port}")
-                print(f"主机名访问: http://{hostname}:{port}")
-            print("="*50)
-            print("团队成员可通过局域网IP访问应用")
-            print("请确保防火墙允许{}端口访问".format(port))
             print("="*50 + "\n")
-            
         except Exception as e:
             print(f"获取网络信息时出错: {e}")
 
-
-if __name__ == '__main__':
-    # AI聊天回调函数已在前面注册，这里不需要重复注册
     print("🚀 启动Defect Explorer应用...")
     app.run(
         debug=debug,
