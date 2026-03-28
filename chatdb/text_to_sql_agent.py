@@ -72,6 +72,16 @@ except ImportError:
     logger = logging.getLogger(__name__)
     logger.warning("⚠️ business_rules 导入失败，使用默认常量")
 
+# 导入新模块（业务规则解释器、业务语义理解、业务洞察生成器）
+try:
+    from chatdb.business_rule_explainer import BusinessRuleExplainer
+    from chatdb.business_semantics import BusinessSemantics
+    from chatdb.insight_generator import InsightGenerator
+    NEW_MODULES_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"⚠️ 新模块导入失败: {e}")
+    NEW_MODULES_AVAILABLE = False
+
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -108,6 +118,11 @@ class TextToSQLAgentConfig:
     # 调试配置
     verbose: bool = True
     log_sql: bool = True
+    
+    # 新模块配置
+    enable_business_explanation: bool = True  # 启用业务规则解释
+    enable_business_semantics: bool = True   # 启用业务语义理解
+    enable_insight_generation: bool = True  # 启用业务洞察生成
 
 
 # ============================================================================
@@ -432,6 +447,27 @@ class TextToSQLAgent:
         # 初始化 LangChain 组件
         self._init_langchain()
         
+        # 初始化新模块（如果可用）
+        self.business_explainer = None
+        self.business_semantics = None
+        self.insight_generator = None
+        
+        if NEW_MODULES_AVAILABLE:
+            if self.config.enable_business_explanation:
+                from chatdb.business_rule_explainer import BusinessRuleExplainer
+                self.business_explainer = BusinessRuleExplainer()
+                logger.info("✅ 业务规则解释器已初始化")
+            
+            if self.config.enable_business_semantics:
+                from chatdb.business_semantics import BusinessSemantics
+                self.business_semantics = BusinessSemantics()
+                logger.info("✅ 业务语义理解已初始化")
+            
+            if self.config.enable_insight_generation:
+                from chatdb.insight_generator import InsightGenerator
+                self.insight_generator = InsightGenerator()
+                logger.info("✅ 业务洞察生成器已初始化")
+        
         logger.info("✅ Text-to-SQL Agent 初始化完成")
     
     def _init_langchain(self):
@@ -470,15 +506,17 @@ class TextToSQLAgent:
         self,
         question: str,
         use_cache: bool = None,
-        data_context: Optional[str] = None
+        data_context: Optional[str] = None,
+        project: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        执行查询
+        执行查询（增强版：支持业务语义理解和项目上下文）
         
         Args:
             question: 用户问题
             use_cache: 是否使用缓存
             data_context: 数据上下文（可选）
+            project: 项目名称（可选，用于添加项目上下文）
         
         Returns:
             {
@@ -489,11 +527,53 @@ class TextToSQLAgent:
                 "retries": int,
                 "from_cache": bool,
                 "execution_time_ms": int,
-                "error": Optional[str]
+                "error": Optional[str],
+                "context": Optional[Dict]  # 新增：查询上下文信息
+                "insights": Optional[List[str]]  # 新增：业务洞察
             }
         """
         start_time = datetime.now()
         use_cache = use_cache if use_cache is not None else self.config.enable_cache
+        
+        # 业务语义理解（新功能）
+        context_info = {}
+        insights = []
+        
+        if self.business_semantics and self.config.enable_business_semantics:
+            # 1. 解析时间范围
+            time_range = self.business_semantics.parse_time_range(question)
+            if time_range:
+                context_info['time_range'] = {
+                    'start': time_range[0].strftime('%Y-%m-%d %H:%M'),
+                    'end': time_range[1].strftime('%Y-%m-%d %H:%M')
+                }
+                logger.info(f"✅ 识别时间范围: {time_range[0]} ~ {time_range[1]}")
+            
+            # 2. 识别业务术语
+            business_terms = self.business_semantics.identify_business_terms(question)
+            if business_terms:
+                context_info['business_terms'] = [term['term'] for term in business_terms]
+                logger.info(f"✅ 识别业务术语: {context_info['business_terms']}")
+            
+            # 3. 获取项目上下文
+            project_context = self.business_semantics.get_project_context(project or self._extract_project(question))
+            if project_context:
+                context_info['project'] = project_context
+                logger.info(f"✅ 项目上下文: {project_context.get('name', '')}")
+            
+            # 4. 扩展查询上下文
+            expanded_query = self.business_semantics.expand_query_with_context(
+                question,
+                project or self._extract_project(question)
+            )
+            
+            # 生成查询上下文说明
+            query_context_exp = self.business_semantics.explain_query_with_context(
+                question,
+                project or self._extract_project(question)
+            )
+            if query_context_exp:
+                context_info['query_explanation'] = query_context_exp
         
         # 检查缓存
         if use_cache:
@@ -502,17 +582,29 @@ class TextToSQLAgent:
                 execution_time = (datetime.now() - start_time).total_seconds() * 1000
                 return {
                     "success": True,
-                    "answer": self._generate_natural_answer(question, cached.sql, cached.result),
+                    "answer": self._generate_natural_answer(
+                        question, 
+                        cached.sql, 
+                        cached.result,
+                        context_info=context_info,
+                        insights=insights
+                    ),
                     "sql": cached.sql,
                     "data": cached.result,
                     "retries": 0,
                     "from_cache": True,
                     "execution_time_ms": int(execution_time),
-                    "error": None
+                    "error": None,
+                    "context": context_info,
+                    "insights": insights
                 }
         
-        # 生成 SQL
-        sql, retries = self._generate_sql(question, data_context)
+        # 生成 SQL（使用增强的查询上下文）
+        query_for_sql = expanded_query if 'expanded_query' in locals() else question
+        if 'query_context_exp' in locals() and query_context_exp:
+            data_context = f"{data_context}\n\n{query_context_exp}" if data_context else query_context_exp
+        
+        sql, retries = self._generate_sql(query_for_sql, data_context)
         
         if not sql:
             return {
@@ -523,7 +615,9 @@ class TextToSQLAgent:
                 "retries": retries,
                 "from_cache": False,
                 "execution_time_ms": 0,
-                "error": "SQL 生成失败"
+                "error": "SQL 生成失败",
+                "context": context_info,
+                "insights": insights
             }
         
         # 验证 SQL
@@ -537,7 +631,9 @@ class TextToSQLAgent:
                 "retries": retries,
                 "from_cache": False,
                 "execution_time_ms": 0,
-                "error": error
+                "error": error,
+                "context": context_info,
+                "insights": insights
             }
         
         # 执行 SQL
@@ -551,8 +647,40 @@ class TextToSQLAgent:
                 "retries": retries,
                 "from_cache": False,
                 "execution_time_ms": 0,
-                "error": error
+                "error": error,
+                "context": context_info,
+                "insights": insights
             }
+        
+        # 生成业务洞察（新功能）
+        if self.insight_generator and self.config.enable_insight_generation:
+            # 如果结果是单行，生成详细的业务洞察
+            if len(result) == 1:
+                defect_data = result.iloc[0].to_dict()
+                
+                # 判断是否是 TopIssue/High Runner/Long Runner
+                is_topissue = defect_data.get('is_topissue', False)
+                ecu_transfers = defect_data.get('ecu_no_of_changes', 0)
+                processing_days = defect_data.get('processing_cycle_days', 0)
+                
+                # 根据业务规则类型生成解释
+                if is_topissue and self.business_explainer:
+                    explanation = self.business_explainer.explain_top_issue(defect_data)
+                    insights.append(explanation)
+                
+                elif ecu_transfers >= HIGH_RUNNER_THRESHOLD and self.business_explainer:
+                    explanation = self.business_explainer.explain_high_runner(defect_data)
+                    insights.append(explanation)
+                
+                elif processing_days >= LONG_RUNNER_THRESHOLD and self.business_explainer:
+                    explanation = self.business_explainer.explain_long_runner(defect_data)
+                    insights.append(explanation)
+            
+            # 生成数据集级别的洞察
+            if len(result) > 1:
+                dataset_insights = self.insight_generator.generate_insights(result)
+                if dataset_insights:
+                    insights.extend(dataset_insights)
         
         # 保存缓存
         if use_cache:
@@ -562,13 +690,21 @@ class TextToSQLAgent:
         
         return {
             "success": True,
-            "answer": self._generate_natural_answer(question, sql, result),
+            "answer": self._generate_natural_answer(
+                question, 
+                sql, 
+                result,
+                context_info=context_info,
+                insights=insights
+            ),
             "sql": sql,
             "data": result,
             "retries": retries,
             "from_cache": False,
             "execution_time_ms": int(execution_time),
-            "error": None
+            "error": None,
+            "context": context_info,
+            "insights": insights
         }
     
     def _generate_sql(
@@ -776,21 +912,56 @@ class TextToSQLAgent:
         self,
         question: str,
         sql: str,
-        result: pd.DataFrame
+        result: pd.DataFrame,
+        context_info: Optional[Dict] = None,
+        insights: Optional[List[str]] = None
     ) -> str:
-        """生成自然语言回答"""
+        """
+        生成自然语言回答（增强版：支持业务规则解释和业务洞察）
+        
+        Args:
+            question: 原始问题
+            sql: SQL 查询
+            result: 查询结果
+            context_info: 查询上下文（时间范围、项目等）
+            insights: 业务洞察列表
+        """
         if result.empty:
             return f"查询结果为空。执行的SQL：{sql}"
         
         answer_parts = [f"根据查询，"]
         
-        # 简单的结果描述
-        if len(result) == 1:
-            answer_parts.append(f"找到 1 条记录。")
-        else:
-            answer_parts.append(f"找到 {len(result)} 条记录。")
+        # 1. 显示查询上下文（新功能）
+        if context_info:
+            context_parts = []
+            if 'time_range' in context_info:
+                start, end = context_info['time_range']['start'], context_info['time_range']['end']
+                context_parts.append(f"📅 时间范围: {start.strftime('%Y-%m-%d %H:%M')} ~ {end.strftime('%Y-%m-%d %H:%M')}")
+            
+            if 'project' in context_info:
+                proj_info = context_info['project']
+                context_parts.append(f"📋 项目: {proj_info.get('name', '')}")
+                if 'focus' in proj_info:
+                    context_parts.append(f"   📝 专注: {proj_info['focus']}")
+                if 'common_issues' in proj_info:
+                    common_issues = ', '.join(proj_info['common_issues'][:3])
+                    context_parts.append(f"   🔍 常见问题: {common_issues}")
+            
+            if 'business_terms' in context_info:
+                context_parts.append(f"🏷️  识别的业务术语: {', '.join(context_info['business_terms'][:3])}")
+            
+            if context_parts:
+                answer_parts.append("\n### 📊 查询上下文\n")
+                for part in context_parts:
+                    answer_parts.append(f"{part}")
         
-        # 显示前几列的值
+        # 2. 简单的结果描述
+        if len(result) == 1:
+            answer_parts.append(f"\n找到 1 条记录。")
+        else:
+            answer_parts.append(f"\n找到 {len(result)} 条记录。")
+        
+        # 3. 显示前几列的值
         if len(result.columns) <= 3:
             for idx, row in result.head(3).iterrows():
                 answer_parts.append(f"\n记录 {idx + 1}: " + ", ".join(
@@ -801,12 +972,29 @@ class TextToSQLAgent:
             answer_parts.append(f"前 3 行:")
             answer_parts.append(result.head(3).to_string())
         
-        answer = "".join(answer_parts)
+        # 4. 显示业务洞察（新功能）
+        if insights:
+            answer_parts.append("\n### 💡 业务洞察\n")
+            for insight in insights:
+                answer_parts.append(f"{insight}")
         
+        # 5. 显示执行的 SQL
         if self.config.log_sql:
-            answer += f"\n\n执行的SQL：\n{sql}"
+            answer_parts.append(f"\n### 🔍 执行的 SQL\n")
+            answer_parts.append(f"```sql\n{sql}\n```")
         
-        return answer
+        return "".join(answer_parts)
+    
+    def _extract_project(self, question: str) -> Optional[str]:
+        """从问题中提取项目名称"""
+        projects = ['App', 'IDC', 'IDCevo', 'MGU', 'RSU']
+        question_lower = question.lower()
+        
+        for project in projects:
+            if project.lower() in question_lower:
+                return project
+        
+        return None
     
     def clear_cache(self):
         """清空缓存"""
