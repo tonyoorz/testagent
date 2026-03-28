@@ -1,0 +1,27 @@
+# Text-to-SQL Agent 依赖包
+
+# LangChain 核心包
+langchain>=0.1.0
+langchain-community>=0.0.10
+langchain-openai>=0.0.2
+
+# 数据库支持
+sqlalchemy>=2.0.0
+
+# LLM 支持
+openai>=1.0.0
+
+# 数据处理
+pandas>=2.0.0
+
+# 日志和配置
+python-dotenv>=1.0.0
+
+# 可选：DeepSeek 支持
+# deepseek>=1.0.0
+
+# 可选：更好的 SQL 解析
+# sqlparse>=0.4.0
+
+# 可选：向量搜索（用于 Few-shot 匹配）
+# sentence-transformers>=2.2.0
