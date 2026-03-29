@@ -1,0 +1,201 @@
+{
+  "timestamp": "2026-03-29",
+  "file_categories": {
+    "agent_managers": [
+      "enhanced_ai_chat_manager.py",
+      "ai_chat_manager.py"
+    ],
+    "specialized_agents": [
+      "demo_agent_team.py",
+      "agent_team_system.py"
+    ],
+    "sql_engines": [
+      "test_sql_engine.py",
+      "benchmark_sql_engine.py",
+      "sql_query_engine_optimized.py",
+      "sql_query_engine.py",
+      "sql_query_engine_optimized_v2.py",
+      "business_semantics.py",
+      "integration_example.py",
+      "text_to_sql_agent.py",
+      "insight_generator.py",
+      "business_rule_explainer.py",
+      "business_rules.py",
+      "demo.py",
+      "demo_enhanced_agent.py",
+      "test_text_to_sql_agent.py"
+    ],
+    "components": [
+      "quick_opt_4_business_context.py",
+      "business_knowledge.py",
+      "chat_components.py",
+      "config_center.py"
+    ],
+    "utils": [
+      "data_processor.py",
+      "cleanup_cache.py"
+    ],
+    "data_processing": [
+      "qgate.py",
+      "vector_search_engine.py",
+      "word_cloud.py",
+      "mid_opt_1_feedback_loop.py",
+      "defect_explore.py",
+      "quick_opt_2_time_range.py",
+      "dash_common_styles.py",
+      "zhipu_agent_collaboration.py",
+      "octane_db.py",
+      "long_opt_1_knowledge_graph.py",
+      "smart_data_loader.py",
+      "quick_opt_3_data_type.py",
+      "multi_agent_system_v2.py",
+      "enhanced_memory_system.py",
+      "mid_opt_2_incremental_learning.py",
+      "example_sql_chat.py",
+      "page_components.py",
+      "reflection_system.py",
+      "generate_gallery.py",
+      "quick_opt_final_summary.py",
+      "playwright_cookie_manager.py",
+      "defect_matrix.py",
+      "aida_mapping_updater.py",
+      "intelligent_agent.py",
+      "quick_start_accuracy.py",
+      "sso_session.py",
+      "mid_opt_summary.py",
+      "local_multi_agent_analyzer.py",
+      "intelligent_data_agent_v3.py",
+      "quick_opt_1_error_examples.py",
+      "hooks_and_tracing.py",
+      "navigation_manager.py",
+      "organize_structure.py",
+      "zhipu_coding_agent.py",
+      "intelligent_context_engine.py",
+      "multi_agent_system.py",
+      "longrunner_analysis.py",
+      "run_unit_tests.py",
+      "multi_agent_collaboration_analyzer.py",
+      "mid_opt_3_intelligent_routing.py",
+      "quick_opt_summary.py",
+      "risk_analysis.py",
+      "duplicate_issue_finder.py",
+      "unified_cache_manager.py",
+      "defect_longrunner.py"
+    ],
+    "visualization": [
+      "dashboard_viewer.py"
+    ],
+    "download": [
+      "downloader.py",
+      "downloaderintegrate.py",
+      "downloaderqgate.py"
+    ],
+    "demos": [
+      "demo_smart_agent.py",
+      "demo_context_engine.py"
+    ],
+    "tests": [
+      "test_coverage.py",
+      "test_coverage_components.py",
+      "test_agent.py",
+      "test_smart_agent_integration.py",
+      "test_multi_agent_v2.py",
+      "test_context_engine.py",
+      "test_fewshot_expansion.py",
+      "test_coverage_callbacks.py",
+      "test_agent_v2_full.py",
+      "test_integration.py",
+      "benchmark_optimized_engine.py"
+    ],
+    "tests_chatdb": [],
+    "tests_database": [],
+    "tests_tests": [
+      "test_enhanced_sql_chat.py"
+    ],
+    "databases": [
+      "db_storage.py",
+      "enhanced_data_understanding.py",
+      "agent_data_understanding_v3.py",
+      "db_storage.py",
+      "agent_data_understanding.py",
+      "test_data_agent.py",
+      "optimized_db_manager.py",
+      "data_aware_agent.py",
+      "enhanced_agent_data_understanding_v2.py"
+    ],
+    "config": [
+      "config.py"
+    ],
+    "docs": [],
+    "ai_chat": [],
+    "optimization": [
+      "enhanced_prompt_builder.py",
+      "test_enhanced_prompt.py",
+      "ai_chat_with_sql.py",
+      "enhanced_ai_chat_with_sql.py",
+      "ai_chat_with_sql_optimized.py"
+    ]
+  },
+  "recommended_structure": {
+    "components/": {
+      "description": "核心组件（SQL 查询引擎、Prompt 构建器等）",
+      "file_count": 5
+    },
+    "agents/specialized/": {
+      "description": "专用 Agent（代码解释、数据分析等）",
+      "file_count": 4
+    },
+    "agents/managers/": {
+      "description": "Agent Manager（AI Chat Manager、Multi-Agent System 等）",
+      "file_count": 8
+    },
+    "components/data/": {
+      "description": "数据组件（数据处理器、数据库管理器等）",
+      "file_count": 9
+    },
+    "components/visualization/": {
+      "description": "可视化组件（仪表板、图表等）",
+      "file_count": 2
+    },
+    "components/utils/": {
+      "description": "工具组件（下载器、缓存清理等）",
+      "file_count": 4
+    },
+    "optimization/": {
+      "description": "优化组件（快速优化、中期优化、长期优化）",
+      "file_count": 14
+    },
+    "chatdb/": {
+      "description": "ChatDB 相关组件（Text-to-SQL Agent 等）",
+      "file_count": 2
+    },
+    "tests/": {
+      "description": "测试文件",
+      "file_count": 3
+    },
+    "demos/": {
+      "description": "演示文件",
+      "file_count": 1
+    },
+    "docs/": {
+      "description": "文档文件",
+      "file_count": 2
+    },
+    "database/": {
+      "description": "数据库文件",
+      "file_count": 4
+    },
+    ".github/": {
+      "description": "GitHub 配置",
+      "file_count": 1
+    },
+    "config/": {
+      "description": "配置文件",
+      "file_count": 4
+    },
+    "memory/": {
+      "description": "工作记忆",
+      "file_count": 1
+    }
+  }
+}
