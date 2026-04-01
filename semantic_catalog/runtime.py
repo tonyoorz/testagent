@@ -14,6 +14,7 @@ class SemanticSelection:
     datasets: List[Dict[str, Any]]
     metrics: List[Dict[str, Any]]
     charts: List[Dict[str, Any]]
+    business_rules: List[Dict[str, Any]]
 
 
 class SemanticCatalog:
@@ -31,17 +32,29 @@ class SemanticCatalog:
             try:
                 db_data = self._load_catalog_from_sqlite(self.db_path)
                 if db_data:
+                    if not isinstance(db_data.get("business_rules"), list):
+                        business_rules = self._load_json(self._path("business_rules.json")) or {}
+                        db_data["business_rules"] = business_rules.get("business_rules") or []
                     return db_data
             except Exception:
                 pass
-        data: Dict[str, Any] = {"datasets": [], "metrics": [], "charts": [], "schema_version": "unknown"}
+        data: Dict[str, Any] = {
+            "datasets": [],
+            "metrics": [],
+            "charts": [],
+            "business_rules": [],
+            "schema_version": "unknown",
+        }
         data.update(self._load_json(self._path("datasets.json")) or {})
         metrics = self._load_json(self._path("metrics.json")) or {}
         charts = self._load_json(self._path("charts.json")) or {}
+        business_rules = self._load_json(self._path("business_rules.json")) or {}
         if isinstance(metrics.get("metrics"), list):
             data["metrics"] = metrics["metrics"]
         if isinstance(charts.get("charts"), list):
             data["charts"] = charts["charts"]
+        if isinstance(business_rules.get("business_rules"), list):
+            data["business_rules"] = business_rules["business_rules"]
         if "schema_version" in metrics:
             data["schema_version"] = str(metrics["schema_version"])
         return data
@@ -155,7 +168,14 @@ class SemanticCatalog:
             extra_filters=chart_filters,
             max_items=max_each,
         )
-        return SemanticSelection(datasets=datasets, metrics=metrics, charts=charts)
+        business_rules = _rank_items(
+            catalog.get("business_rules") or [],
+            q_tokens=q_tokens,
+            col_tokens=col_tokens,
+            extra_filters=None,
+            max_items=max(max_each, 10),
+        )
+        return SemanticSelection(datasets=datasets, metrics=metrics, charts=charts, business_rules=business_rules)
 
 
 def build_semantic_context(
@@ -194,10 +214,53 @@ def build_semantic_context(
         )
     if selection.charts:
         blocks.append(_format_block("图表语义", selection.charts, fields=("id", "name", "description", "expected_focus", "abnormal_signals")))
+    business_rules_for_context = _merge_business_rules_for_context(selection.business_rules, SemanticCatalog(db_path=db_path, prefer_db=bool(prefer_db)).load_catalog().get("business_rules") or [])
+    if business_rules_for_context:
+        blocks.append(
+            _format_block(
+                "业务规则语义",
+                business_rules_for_context,
+                fields=("id", "name", "description", "rules", "trigger_terms", "sql_guardrails", "aliases"),
+            )
+        )
+
+    db_semantic_enabled = (os.getenv("AGENT_DB_SEMANTIC_ENABLED", "1") or "1").strip().lower() not in {"0", "false", "no"}
+    if db_semantic_enabled and db_path and os.path.exists(db_path):
+        db_block = build_db_semantic_glossary(question=question, db_path=db_path, max_columns=max(8, int(max_each) * 3))
+        if db_block:
+            blocks.append(db_block)
+
     if not blocks:
         return ""
     header = "以下为系统内置的语义目录（配置驱动），用于约束与增强分析。不得编造未在目录中的口径。"
     return header + "\n\n" + "\n\n".join(blocks)
+
+
+def _merge_business_rules_for_context(selected: List[Dict[str, Any]], all_rules: List[Dict[str, Any]], min_items: int = 12) -> List[Dict[str, Any]]:
+    """Keep semantic relevance, but guarantee a minimum breadth of business rules in context."""
+    selected = [r for r in (selected or []) if isinstance(r, dict)]
+    all_rules = [r for r in (all_rules or []) if isinstance(r, dict)]
+    if not all_rules:
+        return selected
+
+    by_id: Dict[str, Dict[str, Any]] = {}
+    ordered: List[Dict[str, Any]] = []
+    for r in selected:
+        rid = str(r.get("id") or "").strip()
+        if rid and rid not in by_id:
+            by_id[rid] = r
+            ordered.append(r)
+
+    target_n = min(len(all_rules), max(min_items, len(selected)))
+    for r in all_rules:
+        if len(ordered) >= target_n:
+            break
+        rid = str(r.get("id") or "").strip()
+        if rid and rid not in by_id:
+            by_id[rid] = r
+            ordered.append(r)
+
+    return ordered
 
 
 def _format_block(title: str, items: List[Dict[str, Any]], fields: Tuple[str, ...]) -> str:
@@ -261,6 +324,9 @@ def _rank_items(
         ("id", 3),
         ("name", 4),
         ("aliases", 3),
+        ("trigger_terms", 3),
+        ("rules", 2),
+        ("sql_guardrails", 2),
         ("synonyms", 3),
         ("description", 2),
         ("business_meaning", 2),
@@ -410,3 +476,185 @@ def _tokenize(text: str) -> set:
     if not text:
         return set()
     return set(_tokenize_list(text))
+
+
+def build_db_semantic_glossary(
+    question: str,
+    db_path: str,
+    target_table: Optional[str] = None,
+    max_columns: int = 18,
+) -> str:
+    entries = _collect_db_semantic_entries(db_path=db_path, target_table=target_table)
+    if not entries:
+        return ""
+
+    q_tokens = _tokenize(question)
+    ranked = _rank_db_semantic_entries(entries=entries, q_tokens=q_tokens, max_items=max_columns)
+    if not ranked:
+        ranked = entries[:max(1, min(max_columns, len(entries)))]
+
+    lines: List[str] = ["【数据库字段语义（自动推断）】"]
+    for it in ranked:
+        table_name = str(it.get("table") or "")
+        col = str(it.get("column") or "")
+        meaning = str(it.get("meaning") or "").strip()
+        semantic_type = str(it.get("semantic_type") or "").strip()
+        aliases = [str(x).strip() for x in (it.get("aliases") or []) if str(x).strip()]
+        sample_values = [str(x).strip() for x in (it.get("sample_values") or []) if str(x).strip()]
+        if not col:
+            continue
+        head = f"- {table_name}.{col}" if table_name else f"- {col}"
+        lines.append(head)
+        if meaning:
+            lines.append(f"  - meaning: {meaning}")
+        if semantic_type:
+            lines.append(f"  - semantic_type: {semantic_type}")
+        if aliases:
+            lines.append(f"  - aliases: {'; '.join(aliases[:8])}")
+        if sample_values:
+            lines.append(f"  - sample_values: {'; '.join(sample_values[:5])}")
+    lines.append("  - note: 以上字段语义由列名+样本值自动推断，生成SQL时应优先匹配语义最相近字段。")
+    return "\n".join(lines)
+
+
+def _collect_db_semantic_entries(db_path: str, target_table: Optional[str] = None) -> List[Dict[str, Any]]:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    out: List[Dict[str, Any]] = []
+    try:
+        table_names: List[str] = []
+        if target_table:
+            table_names = [str(target_table).strip()]
+        else:
+            rows = conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
+            table_names = [str(r[0]) for r in rows if r and r[0]]
+
+        for table in table_names[:30]:
+            try:
+                cols = conn.execute(f"PRAGMA table_info({_q_ident(table)})").fetchall()
+            except Exception:
+                continue
+            for c in cols:
+                name = str(c["name"] if isinstance(c, sqlite3.Row) else c[1])
+                col_type = str(c["type"] if isinstance(c, sqlite3.Row) else c[2])
+                sample_values = _sample_column_values(conn, table, name, limit=5)
+                sem = _infer_column_semantics(name=name, col_type=col_type, sample_values=sample_values)
+                out.append(
+                    {
+                        "table": table,
+                        "column": name,
+                        "meaning": sem.get("meaning") or "",
+                        "semantic_type": sem.get("semantic_type") or "",
+                        "aliases": sem.get("aliases") or [],
+                        "sample_values": sample_values,
+                    }
+                )
+    finally:
+        conn.close()
+    return out
+
+
+def _rank_db_semantic_entries(entries: List[Dict[str, Any]], q_tokens: set, max_items: int) -> List[Dict[str, Any]]:
+    if not entries:
+        return []
+    if not q_tokens:
+        return entries[:max(1, min(max_items, len(entries)))]
+
+    scored: List[Tuple[float, Dict[str, Any]]] = []
+    for e in entries:
+        text_parts = [
+            str(e.get("table") or ""),
+            str(e.get("column") or ""),
+            str(e.get("meaning") or ""),
+            str(e.get("semantic_type") or ""),
+            " ".join([str(a) for a in (e.get("aliases") or [])]),
+            " ".join([str(v) for v in (e.get("sample_values") or [])]),
+        ]
+        toks = _tokenize(" ".join(text_parts))
+        overlap = float(len(toks & q_tokens))
+        if overlap <= 0:
+            continue
+        bonus = 0.0
+        semantic_type = str(e.get("semantic_type") or "")
+        if semantic_type in {"time", "status", "severity", "person", "project", "module", "risk", "test_result"}:
+            bonus = 0.25
+        scored.append((overlap + bonus, e))
+
+    if not scored:
+        return entries[:max(1, min(max_items, len(entries)))]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [it for _, it in scored[:max(1, min(max_items, len(scored)))]]
+
+
+def _sample_column_values(conn: sqlite3.Connection, table: str, col: str, limit: int = 5) -> List[str]:
+    try:
+        sql = (
+            f"SELECT CAST({_q_ident(col)} AS TEXT) AS v FROM {_q_ident(table)} "
+            f"WHERE {_q_ident(col)} IS NOT NULL AND TRIM(CAST({_q_ident(col)} AS TEXT)) <> '' LIMIT {int(limit)}"
+        )
+        rows = conn.execute(sql).fetchall()
+        vals: List[str] = []
+        for r in rows:
+            v = str(r[0] if not isinstance(r, sqlite3.Row) else r["v"]).strip()
+            if not v:
+                continue
+            v = re.sub(r"\s+", " ", v)
+            if len(v) > 120:
+                v = v[:117] + "..."
+            vals.append(v)
+        return vals
+    except Exception:
+        return []
+
+
+def _infer_column_semantics(name: str, col_type: str, sample_values: List[str]) -> Dict[str, Any]:
+    n = str(name or "").strip().lower()
+    t = str(col_type or "").strip().lower()
+    samples = [str(v).strip() for v in (sample_values or []) if str(v).strip()]
+    joined = " ".join(samples).lower()
+
+    def _has_any(*keys: str) -> bool:
+        return any(k in n for k in keys)
+
+    if n in {"id", "defect_id", "test_id", "run_id", "case_id", "ticket_id", "work_item_id"} or n.endswith("_id"):
+        return {"semantic_type": "identifier", "meaning": "实体唯一标识ID", "aliases": ["id", "编号", "ticket", "work item"]}
+
+    if _has_any("creation_time", "created", "create_time", "ctime", "date_created"):
+        return {"semantic_type": "time", "meaning": "创建时间（用于新增趋势）", "aliases": ["创建时间", "新增时间", "creation time"]}
+    if _has_any("last_modified", "updated", "update_time", "closed_time", "finish_time", "resolved_time"):
+        return {"semantic_type": "time", "meaning": "状态更新时间/关闭时间（用于处理时效）", "aliases": ["更新时间", "关闭时间", "resolved time"]}
+    if _has_any("week", "test_week", "cw"):
+        return {"semantic_type": "time_bucket", "meaning": "测试周/周维度时间桶", "aliases": ["周", "calendar week", "cw"]}
+
+    if _has_any("status", "phase", "state", "lifecycle") or re.search(r"\b(open|closed|fixed|resolved|in progress|blocked)\b", joined):
+        return {"semantic_type": "status", "meaning": "状态/阶段字段（用于流转和关闭率）", "aliases": ["状态", "阶段", "phase", "status"]}
+
+    if _has_any("severity", "priority", "matrix") or re.search(r"\b(critical|major|minor|s1|s2|s3|s4)\b", joined):
+        return {"semantic_type": "severity", "meaning": "严重度/优先级字段", "aliases": ["严重度", "优先级", "risk level"]}
+
+    if _has_any("tester", "detected_by", "reporter", "found_by", "author", "owner", "assignee"):
+        return {"semantic_type": "person", "meaning": "人员字段（发现人/负责人/处理人）", "aliases": ["测试员", "发现人", "负责人", "owner", "reporter"]}
+
+    if _has_any("project", "tproject", "vehicle", "carline"):
+        return {"semantic_type": "project", "meaning": "项目/车系维度", "aliases": ["项目", "车系", "project"]}
+
+    if _has_any("aida", "product_area", "module", "component", "domain", "ecu", "fv"):
+        return {"semantic_type": "module", "meaning": "模块/域/组件维度", "aliases": ["aida", "模块", "域", "ecu", "fv"]}
+
+    if _has_any("risk", "score", "topissue"):
+        return {"semantic_type": "risk", "meaning": "风险相关字段（风险分/TopIssue）", "aliases": ["风险", "risk score", "topissue"]}
+
+    if _has_any("result", "passed", "failed", "blocked", "verdict") or re.search(r"\b(pass|passed|fail|failed|blocked|aborted|ng)\b", joined):
+        return {"semantic_type": "test_result", "meaning": "测试执行结果字段", "aliases": ["通过", "失败", "blocked", "结果"]}
+
+    if _has_any("version", "release", "istep", "milestone"):
+        return {"semantic_type": "version", "meaning": "版本/里程碑字段", "aliases": ["版本", "release", "milestone"]}
+
+    if "int" in t or "real" in t or "float" in t or "double" in t or "numeric" in t:
+        return {"semantic_type": "numeric", "meaning": "数值字段（可聚合统计）", "aliases": ["count", "sum", "avg"]}
+
+    return {"semantic_type": "text", "meaning": "文本维度字段", "aliases": ["文本", "维度"]}
+
+
+def _q_ident(name: str) -> str:
+    return '"' + str(name or "").replace('"', '""') + '"'

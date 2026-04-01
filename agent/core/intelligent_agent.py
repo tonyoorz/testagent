@@ -30,6 +30,13 @@ import logging
 from urllib.parse import quote
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from agent.core.conversation_memory import ConversationMemory as ExtractedConversationMemory
+from agent.core.task_planner import TaskPlanner as ExtractedTaskPlanner
+from agent.core.tool_executor import (
+    ToolExecutor as ExtractedToolExecutor,
+    ToolExecutorWithRetry as ExtractedToolExecutorWithRetry,
+)
+
 from analysis_utils import (
     compute_defect_explore_kpis,
     defect_quality_stats,
@@ -44,6 +51,17 @@ from analysis_utils import (
     top_counts,
     word_frequencies,
 )
+
+try:
+    from agent.tools.smart_tool_selector import (
+        SmartToolSelector,
+        create_smart_tool_selector,
+    )
+    SMART_TOOL_SELECTOR_AVAILABLE = True
+except Exception:
+    SmartToolSelector = None
+    create_smart_tool_selector = None
+    SMART_TOOL_SELECTOR_AVAILABLE = False
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -2309,9 +2327,15 @@ def _extract_business_query_hints(question: str) -> Dict[str, Any]:
         hints["flags"].append("long_runner")
 
     status_tokens = {
-        "open": ["open", "打开", "待修复", "未关闭"],
-        "closed": ["closed", "关闭", "已关闭", "已修复"],
-        "in_progress": ["处理中", "进行中", "in progress", "working"],
+        "open": ["open", "打开", "待修复", "未关闭", "new", "draft", "待处理", "未解决"],
+        "closed": [
+            "closed", "关闭", "已关闭", "已修复", "resolved", "fixed", "done", "completed",
+            "concluded", "结案", "已结案", "无需处理", "cwa", "concluded without action"
+        ],
+        "in_progress": [
+            "处理中", "进行中", "in progress", "working", "analysis", "testing", "verification",
+            "预分析", "分析中", "验证中", "测试中"
+        ],
         "reopen": ["reopen", "重开", "重新打开"],
     }
     for canonical, keys in status_tokens.items():
@@ -3070,7 +3094,44 @@ class DuplicateIssueSearchTool(DataAnalysisTool):
             return {"success": False, "tool": self.name, "error": str(e)}
 
 
-class ToolExecutor:
+def build_default_tools(llm: Any = None, db_path: Optional[str] = None) -> List[DataAnalysisTool]:
+    """Build the default tool set for extracted executors."""
+    default_tools: List[DataAnalysisTool] = [
+        TrendAnalysisTool(),
+        RiskAnalysisTool(),
+        ComparisonTool(),
+        StatisticalSummaryTool(),
+        DefectExploreKpiTool(),
+        DefectExploreDashboardTool(),
+        MatrixDistributionTool(),
+        MatrixAidaHotspotsTool(),
+        TopIssueHotlistTool(),
+        LongRunnerHotlistTool(),
+        AnalyzeTesterFindingsTool(),
+        AnalyzeTestRunTool(),
+        GroupbyAggregateTool(),
+        CorrelateDefectsTestsTool(),
+        ProjectRecentWeeksHealthTool(),
+        SemanticCatalogTool(db_path=db_path),
+        DuplicateIssueSearchTool(),
+        DescribeDatasetTool(),
+        MatchTesterTicketsTool(),
+        SemanticCoverageReportTool(),
+        DefectExploreSchemaReportTool(),
+    ]
+    if db_path:
+        default_tools.extend(
+            [
+                SQLiteDBProfileTool(db_path),
+                SQLiteSchemaTool(db_path),
+                SQLiteQueryTool(db_path),
+                SQLiteNLQueryWithFixTool(db_path, llm=llm),
+            ]
+        )
+    return default_tools
+
+
+class _LegacyToolExecutor:
     """工具执行器 - 管理所有工具的注册和执行"""
 
     def __init__(self, llm: Any = None, db_path: Optional[str] = None):
@@ -3292,7 +3353,7 @@ class ToolExecutor:
             }
 
 
-class ToolExecutorWithRetry(ToolExecutor):
+class _LegacyToolExecutorWithRetry(_LegacyToolExecutor):
     """
     带自我修正能力的工具执行器
 
@@ -4474,7 +4535,7 @@ class IntelligentContextManager:
 # 3. 对话记忆系统
 # ============================================================================
 
-class ConversationMemory:
+class _LegacyConversationMemory:
     """对话记忆系统 - 管理短期和长期记忆"""
 
     def __init__(self, max_short_term: int = 10, max_long_term: int = 100, memory_file: Optional[str] = None, autosave: bool = False):
@@ -4869,11 +4930,196 @@ class KnowledgeBase:
 # 5. 任务规划器
 # ============================================================================
 
-class TaskPlanner:
+class _LegacyTaskPlanner:
     """任务规划器 - 分解复杂任务"""
 
-    def __init__(self, tool_executor: ToolExecutor, llm: Any = None):
+    def __init__(
+        self,
+        tool_executor: _LegacyToolExecutor,
+        llm: Any = None,
+        tool_selector: Optional[Any] = None,
+    ):
         self.tool_executor = tool_executor
+        self.tool_selector = tool_selector
+
+    def _map_selector_tool(self, selector_tool: str, primary_dataset: str, intents: List[str]) -> Optional[str]:
+        """Map SmartToolSelector tool names to ToolExecutor tool names."""
+        name = str(selector_tool or "").strip()
+        if not name:
+            return None
+
+        is_test_view = (primary_dataset == "tests") or ("test" in (intents or []))
+        mapping = {
+            "time_series_counts": "analyze_test_run" if is_test_view else "analyze_trend",
+            "top_counts": "analyze_test_run" if is_test_view else "analyze_trend",
+            "stacked_top_counts": "analyze_test_run" if is_test_view else "analyze_trend",
+            "nunique_by": "analyze_test_run" if is_test_view else "analyze_trend",
+            "severity_rate_by": "analyze_test_run" if is_test_view else "analyze_risk",
+            "pick_risk_score_column": "analyze_test_run" if is_test_view else "analyze_risk",
+            "defect_quality_stats": "analyze_test_run" if is_test_view else "analyze_risk",
+            "compute_defect_explore_kpis": "defect_explore_kpis",
+            "inflow_outflow_summary": "defect_explore_dashboard",
+            "longrunner_phase_statistics": "analyze_longrunner_hotlist",
+            "word_frequencies": "defect_explore_dashboard",
+            "defect_wordcloud_source": "defect_explore_dashboard",
+            "analyze_test_run": "analyze_test_run",
+            "groupby_aggregate": "groupby_aggregate",
+        }
+        return mapping.get(name)
+
+    def _apply_smart_tool_selector(self, query: str, context: Dict[str, Any], steps: List[Dict]) -> List[Dict]:
+        """Re-rank planned steps using SmartToolSelector recommendations."""
+        if not self.tool_selector or not steps:
+            return steps
+
+        try:
+            primary_dataset = str((context or {}).get("primary_dataset") or "defects")
+            datasets_meta = (context or {}).get("datasets") or {}
+            primary_meta = datasets_meta.get(primary_dataset) if isinstance(datasets_meta, dict) else {}
+
+            available_columns: List[str] = []
+            if isinstance(primary_meta, dict):
+                available_columns = list(primary_meta.get("available_columns") or [])
+            if not available_columns and isinstance(datasets_meta, dict):
+                for meta in datasets_meta.values():
+                    if isinstance(meta, dict) and meta.get("available_columns"):
+                        available_columns = list(meta.get("available_columns") or [])
+                        break
+
+            data_size = 0
+            if isinstance(primary_meta, dict):
+                for key in ["tool_size", "filtered_size", "data_size", "context_size"]:
+                    try:
+                        value = int(primary_meta.get(key) or 0)
+                    except Exception:
+                        value = 0
+                    if value > 0:
+                        data_size = value
+                        break
+
+            intents = [str(x) for x in ((context or {}).get("intents") or []) if str(x).strip()]
+            recommendations = self.tool_selector.select_tools(
+                question=query,
+                intents=intents,
+                data_context={"data_size": int(data_size)},
+                available_columns=available_columns,
+                max_tools=5,
+            )
+
+            mapped_priority: List[str] = []
+            mapped_details: List[Dict[str, Any]] = []
+            for rec in recommendations:
+                selector_tool = str(getattr(rec, "tool_name", "") or "").strip()
+                if not selector_tool:
+                    continue
+                exec_tool = self._map_selector_tool(selector_tool, primary_dataset, intents)
+                if not exec_tool:
+                    continue
+                mapped_details.append(
+                    {
+                        "selector_tool": selector_tool,
+                        "executor_tool": exec_tool,
+                        "confidence": float(getattr(rec, "confidence", 0.0) or 0.0),
+                        "reason": str(getattr(rec, "reason", "") or ""),
+                    }
+                )
+                if exec_tool not in mapped_priority:
+                    mapped_priority.append(exec_tool)
+
+            if not mapped_priority:
+                if isinstance(context, dict):
+                    context["smart_tool_selector"] = {
+                        "enabled": True,
+                        "applied": False,
+                        "reason": "no_mapped_recommendation",
+                        "recommendations": mapped_details,
+                    }
+                return steps
+
+            priority_index = {tool_name: idx for idx, tool_name in enumerate(mapped_priority)}
+            reordered = sorted(
+                steps,
+                key=lambda s: (
+                    priority_index.get(str((s or {}).get("tool") or "").strip(), 999),
+                    int((s or {}).get("step") or 0),
+                ),
+            )
+
+            normalized_steps: List[Dict[str, Any]] = []
+            for idx, step in enumerate(reordered, start=1):
+                s = dict(step or {})
+                s["step"] = idx
+                normalized_steps.append(s)
+
+            if isinstance(context, dict):
+                context["smart_tool_selector"] = {
+                    "enabled": True,
+                    "applied": True,
+                    "mapped_priority": mapped_priority,
+                    "recommendations": mapped_details,
+                }
+            return normalized_steps
+        except Exception as e:
+            logger.warning(f"Smart tool selector application failed: {e}")
+            if isinstance(context, dict):
+                context["smart_tool_selector"] = {
+                    "enabled": bool(self.tool_selector),
+                    "applied": False,
+                    "error": str(e),
+                }
+            return steps
+
+    def _record_tool_selector_feedback(
+        self,
+        tool_name: str,
+        result: Dict[str, Any],
+        duration_ms: int,
+        context: Optional[Dict[str, Any]],
+        dataset_used: Optional[str],
+    ) -> None:
+        """Record execution feedback for selector learning."""
+        if not self.tool_selector:
+            return
+
+        try:
+            success = bool(isinstance(result, dict) and result.get("success") is True)
+            error_message = ""
+            if isinstance(result, dict) and not success:
+                error_message = str(result.get("error") or "")
+
+            datasets_meta = (context or {}).get("datasets") or {}
+            data_size = 0
+            meta = {}
+            if isinstance(datasets_meta, dict):
+                if dataset_used and isinstance(datasets_meta.get(dataset_used), dict):
+                    meta = datasets_meta.get(dataset_used) or {}
+                else:
+                    primary_dataset = (context or {}).get("primary_dataset")
+                    if isinstance(datasets_meta.get(primary_dataset), dict):
+                        meta = datasets_meta.get(primary_dataset) or {}
+
+            if isinstance(meta, dict):
+                for key in ["tool_size", "filtered_size", "data_size", "context_size"]:
+                    try:
+                        value = int(meta.get(key) or 0)
+                    except Exception:
+                        value = 0
+                    if value > 0:
+                        data_size = value
+                        break
+
+            intents = [str(x) for x in ((context or {}).get("intents") or []) if str(x).strip()]
+            self.tool_selector.record_execution(
+                tool_name=str(tool_name or ""),
+                success=success,
+                execution_time=max(0.0, float(duration_ms) / 1000.0),
+                result_quality=1.0 if success else 0.0,
+                data_size=int(data_size),
+                intents=intents,
+                error_message=error_message,
+            )
+        except Exception as e:
+            logger.debug(f"Smart tool selector feedback skipped: {e}")
 
     def plan(self, query: str, context: Dict) -> List[Dict]:
         """规划任务步骤"""
@@ -5449,6 +5695,9 @@ class TaskPlanner:
                 'params': {'dataset': primary_dataset}
             })
 
+        if isinstance(context, dict):
+            steps = self._apply_smart_tool_selector(query=query, context=context, steps=steps)
+
         return steps
 
     def execute_plan(
@@ -5528,6 +5777,13 @@ class TaskPlanner:
                         result = alt_result
                         break
             duration_ms = int((time.perf_counter() - t0) * 1000)
+            self._record_tool_selector_feedback(
+                tool_name=tool_name,
+                result=result if isinstance(result, dict) else {},
+                duration_ms=duration_ms,
+                context=context,
+                dataset_used=dataset_used,
+            )
             meta = datasets_meta.get(dataset_used) if dataset_used else None
             gate: Dict[str, Any] = {"enabled": bool(validation_enabled), "action": "none", "reason": ""}
             if validation_enabled and isinstance(result, dict) and result.get("success") is False:
@@ -5600,6 +5856,14 @@ class TaskPlanner:
 # 6. 智能 Agent 主类
 # ============================================================================
 
+# Active runtime aliases point at the extracted modules. The previous inline
+# implementations remain private compatibility scaffolding and are no longer
+# referenced by the public API.
+ToolExecutor = ExtractedToolExecutor
+ToolExecutorWithRetry = ExtractedToolExecutorWithRetry
+ConversationMemory = ExtractedConversationMemory
+TaskPlanner = ExtractedTaskPlanner
+
 class IntelligentAgent:
     """智能 Agent - 整合所有功能"""
 
@@ -5609,11 +5873,24 @@ class IntelligentAgent:
         # 初始化各组件
         # 使用带重试功能的工具执行器
         retry_enabled = os.getenv("AGENT_TOOL_RETRY_ENABLED", "1") == "1"
+        tool_executor_kwargs = {
+            'llm': llm,
+            'db_path': db_path,
+            'default_tool_factory': build_default_tools,
+        }
         if retry_enabled:
-            self.tool_executor = ToolExecutorWithRetry(llm=llm, db_path=db_path, max_retry=2)
+            self.tool_executor = ToolExecutorWithRetry(max_retry=2, **tool_executor_kwargs)
         else:
-            self.tool_executor = ToolExecutor(llm=llm, db_path=db_path)
+            self.tool_executor = ToolExecutor(**tool_executor_kwargs)
         self.context_manager = IntelligentContextManager()
+        self.smart_tool_selector = None
+        if SMART_TOOL_SELECTOR_AVAILABLE and create_smart_tool_selector:
+            try:
+                selector_db_path = os.path.join(PROJECT_ROOT, "database", "tool_performance.db")
+                self.smart_tool_selector = create_smart_tool_selector(db_path=selector_db_path)
+                logger.info("智能工具选择器初始化成功")
+            except Exception as e:
+                logger.warning(f"智能工具选择器初始化失败: {e}")
         memory_enabled = os.getenv("AGENT_MEMORY_ENABLED", "0") == "1"
         memory_file = os.getenv("AGENT_MEMORY_FILE")
         if memory_enabled and not memory_file:
@@ -5622,9 +5899,130 @@ class IntelligentAgent:
         autosave = os.getenv("AGENT_MEMORY_AUTOSAVE", "0") == "1"
         self.memory = ConversationMemory(memory_file=memory_file, autosave=autosave)
         self.knowledge_base = KnowledgeBase()
-        self.task_planner = TaskPlanner(self.tool_executor)
+        self.task_planner = TaskPlanner(self.tool_executor, tool_selector=self.smart_tool_selector)
+        self._pending_execution_confirmation: Optional[Dict[str, Any]] = None
 
         logger.info(f"智能 Agent 初始化完成 (类型: {dashboard_type})")
+
+    def _is_positive_confirmation(self, text: str) -> bool:
+        s = str(text or "").strip().lower()
+        if not s:
+            return False
+        positives = [
+            "继续", "继续执行", "确认", "确认执行", "是", "好的", "好", "ok", "yes", "y", "proceed", "continue",
+        ]
+        return any(p == s or p in s for p in positives)
+
+    def _is_negative_confirmation(self, text: str) -> bool:
+        s = str(text or "").strip().lower()
+        if not s:
+            return False
+        negatives = [
+            "取消", "停止", "不执行", "算了", "否", "不要", "no", "n", "cancel", "stop",
+        ]
+        return any(n == s or n in s for n in negatives)
+
+    def _should_require_step_confirmation(self, plan: List[Dict[str, Any]], context: Dict[str, Any]) -> bool:
+        enabled = os.getenv("AGENT_CONFIRM_MULTISTEP", "1") != "0"
+        if not enabled:
+            return False
+        min_steps = int(os.getenv("AGENT_CONFIRM_MIN_STEPS", "2") or 2)
+        min_steps = max(2, min_steps)
+        steps = plan or []
+        if len(steps) < min_steps:
+            return False
+        return True
+
+    def _build_confirmation_prompt(self, question: str, plan: List[Dict[str, Any]]) -> str:
+        preview = []
+        for i, step in enumerate((plan or [])[:8], start=1):
+            tool = str(step.get("tool") or "")
+            desc = str(step.get("description") or "")
+            preview.append(f"{i}. {tool} - {desc}")
+        lines = [
+            f"问题: {question}",
+            "已生成多步执行计划。为提升结果准确性和确定性，请先确认：",
+            "",
+            *preview,
+            "",
+            "回复 继续/确认 执行；回复 取消/停止 放弃本次计划。",
+        ]
+        return "\n".join(lines)
+
+    def _normalize_response_payload(
+        self,
+        payload: Dict[str, Any],
+        execution_results: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        out = dict(payload or {})
+        out["text"] = str(out.get("text") or "").strip()
+
+        raw_insights = out.get("insights")
+        insights = []
+        if isinstance(raw_insights, list):
+            seen = set()
+            for item in raw_insights:
+                txt = str(item or "").strip()
+                if txt and txt not in seen:
+                    seen.add(txt)
+                    insights.append(txt)
+        out["insights"] = insights[:80]
+
+        raw_viz = out.get("visualizations")
+        visualizations = []
+        if isinstance(raw_viz, list):
+            for v in raw_viz:
+                if isinstance(v, dict):
+                    vv = dict(v)
+                    data_obj = vv.get("data")
+                    if isinstance(data_obj, list) and len(data_obj) > 200:
+                        vv["data"] = data_obj[:200]
+                    visualizations.append(vv)
+        out["visualizations"] = visualizations
+
+        tools_used = out.get("tools_used") if isinstance(out.get("tools_used"), list) else []
+        if execution_results:
+            for r in execution_results:
+                t = str((r or {}).get("tool") or "").strip()
+                if t:
+                    tools_used.append(t)
+        dedup_tools = []
+        seen_tools = set()
+        for t in tools_used:
+            ts = str(t or "").strip()
+            if ts and ts not in seen_tools:
+                seen_tools.add(ts)
+                dedup_tools.append(ts)
+        out["tools_used"] = dedup_tools
+
+        ctx = out.get("context")
+        out["context"] = ctx if isinstance(ctx, dict) else {}
+
+        summary = {
+            "total_steps": 0,
+            "success_steps": 0,
+            "failed_steps": 0,
+        }
+        if isinstance(execution_results, list):
+            total = len(execution_results)
+            success = 0
+            failed = 0
+            for r in execution_results:
+                rr = (r or {}).get("result")
+                if isinstance(rr, dict):
+                    if rr.get("success") is True:
+                        success += 1
+                    elif rr.get("success") is False:
+                        failed += 1
+            summary = {
+                "total_steps": total,
+                "success_steps": success,
+                "failed_steps": failed,
+            }
+
+        out["execution_summary"] = summary
+        out["response_schema_version"] = "v2"
+        return out
 
     def process(
         self,
@@ -5647,14 +6045,39 @@ class IntelligentAgent:
         start_time = datetime.now()
 
         qtext = (question or "").strip()
+        confirmed_now = False
+        pending = self._pending_execution_confirmation
+        if isinstance(pending, dict):
+            ttl_sec = int(os.getenv("AGENT_CONFIRM_TTL_SEC", "600") or 600)
+            created_at = float(pending.get("created_at") or 0)
+            if created_at and (time.time() - created_at > max(30, ttl_sec)):
+                self._pending_execution_confirmation = None
+            elif self._is_negative_confirmation(qtext):
+                self._pending_execution_confirmation = None
+                return self._normalize_response_payload(
+                    {
+                        "text": "已取消待执行计划。请继续输入新的分析问题。",
+                        "insights": [],
+                        "visualizations": [],
+                        "tools_used": [],
+                        "context": {"confirmation": "cancelled"},
+                    }
+                )
+            elif self._is_positive_confirmation(qtext):
+                question = str(pending.get("question") or question)
+                qtext = question.strip()
+                confirmed_now = True
+            else:
+                self._pending_execution_confirmation = None
+
         if qtext.startswith("记住：") or qtext.lower().startswith("remember:"):
             payload = qtext.split("：", 1)[-1].strip() if "：" in qtext else qtext.split(":", 1)[-1].strip()
             self.memory.add_fact(payload, importance=0.98)
-            return {"text": "已记住。", "insights": [], "visualizations": [], "tools_used": [], "context": {"memory": "saved"}}
+            return self._normalize_response_payload({"text": "已记住。", "insights": [], "visualizations": [], "tools_used": [], "context": {"memory": "saved"}})
         if qtext.startswith("忘记：") or qtext.lower().startswith("forget:"):
             payload = qtext.split("：", 1)[-1].strip() if "：" in qtext else qtext.split(":", 1)[-1].strip()
             removed = self.memory.forget(payload)
-            return {"text": f"已删除 {removed} 条相关记忆。", "insights": [], "visualizations": [], "tools_used": [], "context": {"memory": "deleted", "removed": removed}}
+            return self._normalize_response_payload({"text": f"已删除 {removed} 条相关记忆。", "insights": [], "visualizations": [], "tools_used": [], "context": {"memory": "deleted", "removed": removed}})
 
         if conversation_history and os.getenv("AGENT_SYNC_UI_HISTORY", "1") == "1":
             try:
@@ -5720,7 +6143,7 @@ class IntelligentAgent:
                     clarification = None
 
         if clarification and early_confidence < 0.7:
-            return {
+            return self._normalize_response_payload({
                 "text": clarification,
                 "insights": [],
                 "visualizations": [],
@@ -5730,7 +6153,7 @@ class IntelligentAgent:
                     "confidence": early_confidence,
                     "needs_clarification": True,
                 },
-            }
+            })
 
         # 2. 准备上下文
         context, prepared_data = self.context_manager.prepare_context(question, data)
@@ -5959,7 +6382,16 @@ class IntelligentAgent:
                 analysis_trace["agentic_stop_reason"] = stop_reason
                 context["analysis_trace"] = analysis_trace
                 self.memory.add_message('assistant', final_text, {'tools_used': [r.get('tool') for r in exec_rows], 'execution_time': (datetime.now() - start_time).total_seconds()})
-                return {"text": final_text, "insights": [], "visualizations": [], "tools_used": [r.get("tool") for r in exec_rows], "context": context}
+                return self._normalize_response_payload(
+                    {
+                        "text": final_text,
+                        "insights": [],
+                        "visualizations": [],
+                        "tools_used": [r.get("tool") for r in exec_rows],
+                        "context": context,
+                    },
+                    execution_results=[{"tool": r.get("tool"), "result": {"success": bool(r.get("success"))}} for r in exec_rows],
+                )
             except Exception as e:
                 analysis_trace["execution"] = exec_rows
                 context["analysis_trace"] = analysis_trace
@@ -5996,8 +6428,47 @@ class IntelligentAgent:
         # 4. 获取相关知识
         knowledge_context = self.knowledge_base.get_knowledge_context(question)
 
-        # 5. 规划任务
-        plan = self.task_planner.plan(question, context)
+        # 5. 规划任务（若用户刚确认，则复用待确认计划）
+        plan = None
+        if isinstance(pending, dict) and self._is_positive_confirmation((qtext or "").strip()):
+            reused_plan = pending.get("plan")
+            if isinstance(reused_plan, list) and reused_plan:
+                plan = reused_plan
+            self._pending_execution_confirmation = None
+        if plan is None:
+            plan = self.task_planner.plan(question, context)
+
+        if (not confirmed_now) and self._should_require_step_confirmation(plan, context):
+            self._pending_execution_confirmation = {
+                "question": question,
+                "plan": plan,
+                "created_at": time.time(),
+            }
+            analysis_trace["plan"] = [
+                {
+                    "step": int(s.get("step") or 0),
+                    "tool": s.get("tool"),
+                    "description": s.get("description"),
+                    "params": dict(s.get("params") or {}),
+                }
+                for s in (plan or [])
+            ]
+            context["analysis_trace"] = analysis_trace
+            return self._normalize_response_payload(
+                {
+                    "text": self._build_confirmation_prompt(question, plan),
+                    "insights": ["已进入多步执行确认模式"],
+                    "visualizations": [],
+                    "tools_used": [],
+                    "context": {
+                        **(context or {}),
+                        "needs_confirmation": True,
+                        "confirmation_pending": True,
+                        "plan_steps": len(plan or []),
+                    },
+                }
+            )
+
         if progress_cb:
             try:
                 progress_cb(
@@ -6050,7 +6521,7 @@ class IntelligentAgent:
             'execution_time': (datetime.now() - start_time).total_seconds()
         })
 
-        return answer
+        return self._normalize_response_payload(answer, execution_results=execution_results)
 
     def _generate_answer(self, question: str, context: Dict, execution_results: List[Dict],
                         knowledge_context: str, relevant_history: List) -> Dict[str, Any]:

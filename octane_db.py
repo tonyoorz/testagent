@@ -301,6 +301,44 @@ class OctaneSQLiteStore:
             )
         """)
 
+        # Testcase scope tables populated by testcase_downloader
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS octane_testcases (
+                test_id TEXT NOT NULL,
+                scope_team TEXT NOT NULL,
+                scope_release TEXT NOT NULL,
+                source TEXT NOT NULL,
+                test_name TEXT,
+                test_subtype TEXT,
+                run_count INTEGER,
+                run_ids_json TEXT NOT NULL,
+                run_status_distribution_json TEXT NOT NULL,
+                defect_ids_json TEXT NOT NULL,
+                manual_test_ids_json TEXT NOT NULL,
+                feature_ids_json TEXT NOT NULL,
+                story_ids_json TEXT NOT NULL,
+                raw_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                PRIMARY KEY (test_id, scope_team, scope_release, source)
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS octane_testcase_relations (
+                test_id TEXT NOT NULL,
+                scope_team TEXT NOT NULL,
+                scope_release TEXT NOT NULL,
+                source TEXT NOT NULL,
+                relation_type TEXT NOT NULL,
+                related_id TEXT NOT NULL,
+                related_name TEXT,
+                related_subtype TEXT,
+                related_path TEXT,
+                fetched_at TEXT NOT NULL,
+                PRIMARY KEY (test_id, scope_team, scope_release, source, relation_type, related_id)
+            )
+        """)
+
         # Indexes for performance
         cur.execute("CREATE INDEX IF NOT EXISTS idx_defects_year ON octane_defects(year)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_defects_team ON octane_defects(team)")
@@ -311,9 +349,130 @@ class OctaneSQLiteStore:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_manual_runs_year ON octane_manual_runs(year)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_manual_runs_release ON octane_manual_runs(release)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_manual_runs_defect ON octane_manual_runs(defect_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_testcases_scope ON octane_testcases(scope_team, scope_release, source)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_testcase_relations_scope ON octane_testcase_relations(scope_team, scope_release, source, relation_type)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_testcase_relations_related ON octane_testcase_relations(relation_type, related_id)")
 
         self._conn.commit()
         return None
+
+    def upsert_testcase_dataset(self, dataset: Dict[str, Any], fetched_at: Optional[str] = None) -> Dict[str, int]:
+        """Replace one testcase scope dataset written by testcase_downloader."""
+        if not isinstance(dataset, dict):
+            return {"testcases": 0, "relations": 0}
+
+        scope = dataset.get("scope") if isinstance(dataset.get("scope"), dict) else {}
+        scope_team = str(scope.get("team") or "UNKNOWN")
+        scope_release = str(scope.get("release") or "ALL")
+        source = str(scope.get("source") or "runs")
+        testcases = dataset.get("testcases") if isinstance(dataset.get("testcases"), list) else []
+        fetched_at_val = fetched_at or dataset.get("generated_at") or _utc_now_iso()
+
+        testcase_rows = []
+        relation_rows = []
+
+        def normalize_id(value: Any) -> Optional[str]:
+            if value is None:
+                return None
+            text = str(value).strip()
+            return text or None
+
+        def append_relations(test_id: str, relation_type: str, items: Any) -> None:
+            if not isinstance(items, list):
+                return
+            for item in items:
+                if isinstance(item, dict):
+                    related_id = normalize_id(item.get("id"))
+                    related_name = item.get("name")
+                    related_subtype = item.get("subtype")
+                    related_path = item.get("path")
+                else:
+                    related_id = normalize_id(item)
+                    related_name = None
+                    related_subtype = None
+                    related_path = None
+                if related_id is None:
+                    continue
+                relation_rows.append((
+                    test_id,
+                    scope_team,
+                    scope_release,
+                    source,
+                    relation_type,
+                    related_id,
+                    related_name,
+                    related_subtype,
+                    related_path,
+                    fetched_at_val,
+                ))
+
+        for testcase in testcases:
+            if not isinstance(testcase, dict):
+                continue
+            test_id = normalize_id(testcase.get("test_id"))
+            if test_id is None:
+                continue
+
+            testcase_rows.append((
+                test_id,
+                scope_team,
+                scope_release,
+                source,
+                testcase.get("test_name"),
+                testcase.get("test_subtype"),
+                int(testcase.get("run_count") or 0),
+                json.dumps(testcase.get("run_ids") or [], ensure_ascii=False),
+                json.dumps(testcase.get("run_status_distribution") or {}, ensure_ascii=False),
+                json.dumps(testcase.get("defect_ids") or [], ensure_ascii=False),
+                json.dumps(testcase.get("manual_test_ids") or [], ensure_ascii=False),
+                json.dumps(testcase.get("feature_ids") or [], ensure_ascii=False),
+                json.dumps(testcase.get("story_ids") or [], ensure_ascii=False),
+                json.dumps(testcase, ensure_ascii=False),
+                fetched_at_val,
+            ))
+
+            append_relations(test_id, "defect", testcase.get("defect_links"))
+            append_relations(test_id, "manual_test", testcase.get("manual_test_links"))
+            append_relations(test_id, "feature", testcase.get("feature_links"))
+            append_relations(test_id, "story", testcase.get("story_links"))
+            append_relations(test_id, "feature_parent_testevent", testcase.get("feature_parent_testevent"))
+
+        with self.transaction():
+            self._conn.execute(
+                "DELETE FROM octane_testcase_relations WHERE scope_team=? AND scope_release=? AND source=?",
+                (scope_team, scope_release, source),
+            )
+            self._conn.execute(
+                "DELETE FROM octane_testcases WHERE scope_team=? AND scope_release=? AND source=?",
+                (scope_team, scope_release, source),
+            )
+            if testcase_rows:
+                self._conn.executemany(
+                    """
+                    INSERT INTO octane_testcases(
+                        test_id, scope_team, scope_release, source,
+                        test_name, test_subtype, run_count,
+                        run_ids_json, run_status_distribution_json,
+                        defect_ids_json, manual_test_ids_json,
+                        feature_ids_json, story_ids_json,
+                        raw_json, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    testcase_rows,
+                )
+            if relation_rows:
+                self._conn.executemany(
+                    """
+                    INSERT INTO octane_testcase_relations(
+                        test_id, scope_team, scope_release, source,
+                        relation_type, related_id, related_name,
+                        related_subtype, related_path, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    relation_rows,
+                )
+
+        return {"testcases": len(testcase_rows), "relations": len(relation_rows)}
 
     def upsert_defects_batch(self, defects: list, year: int, fetched_at: Optional[str] = None) -> int:
         """Insert or update defects in batch (optimized schema)
@@ -711,6 +870,45 @@ class OctaneSQLiteStore:
                         names.append(name)
             return ','.join(names) if names else None
 
+        def extract_primary_defect_id(mr_value):
+            """Extract primary defect id from manual run payload.
+
+            Octane manual run may expose defect in several shapes:
+            - defect.id
+            - defect.data[0].id
+            - defect.data.id
+            - linked_defects[0].id (after relation enrichment)
+            """
+            if not isinstance(mr_value, dict):
+                return None
+
+            defect_ref = mr_value.get('defect')
+            if isinstance(defect_ref, dict):
+                direct_id = defect_ref.get('id')
+                if direct_id:
+                    return str(direct_id)
+
+                defect_data = defect_ref.get('data')
+                if isinstance(defect_data, list):
+                    for item in defect_data:
+                        if isinstance(item, dict) and item.get('id'):
+                            return str(item.get('id'))
+                elif isinstance(defect_data, dict) and defect_data.get('id'):
+                    return str(defect_data.get('id'))
+
+            elif isinstance(defect_ref, list):
+                for item in defect_ref:
+                    if isinstance(item, dict) and item.get('id'):
+                        return str(item.get('id'))
+
+            linked_defects = mr_value.get('linked_defects')
+            if isinstance(linked_defects, list):
+                for item in linked_defects:
+                    if isinstance(item, dict) and item.get('id'):
+                        return str(item.get('id'))
+
+            return None
+
         batch = []
         for mr in manual_runs:
             try:
@@ -728,7 +926,7 @@ class OctaneSQLiteStore:
                 finished = mr.get('finished_udf')
 
                 # Relations
-                defect_id = safe_nested(mr, 'defect', 'id')
+                defect_id = extract_primary_defect_id(mr)
 
                 # Team info
                 run_team = safe_nested(mr, 'run_team_000_udf', 'name')

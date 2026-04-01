@@ -11,6 +11,7 @@ from collections import Counter
 from datetime import datetime
 
 import pandas as pd
+from octane_db import default_db_path
 
 
 EMPTY_TEXTS = {'', 'nan', 'none', 'null', 'n/a', 'na'}
@@ -90,6 +91,23 @@ def get_series_or_default(df, col, default_unknown=UNKNOWN_TEXT, default_missing
     if col in df.columns:
         return df[col].apply(lambda v: normalize_text(v, default_unknown))
     return pd.Series([default_missing] * len(df), index=df.index, dtype='object')
+
+
+def normalize_phase_value(phase):
+    s = str(phase or '').strip().lower()
+    if '_' in s:
+        base, tail = s.rsplit('_', 1)
+        if tail in {'critical', 'high', 'medium', 'low', 's1', 's2', 's3', 's4'}:
+            s = base
+    return s
+
+
+def phase_matches(phase, target):
+    p = normalize_phase_value(phase)
+    t = normalize_phase_value(target)
+    if not p or not t:
+        return False
+    return (p == t) or p.startswith(t) or (t in p)
 
 
 print("=" * 80)
@@ -294,7 +312,7 @@ for label in ['已覆盖', '部分覆盖', '未覆盖']:
 
 print("\n【7. 加载Defect数据】")
 print("-" * 60)
-conn = sqlite3.connect('database/local_data.db')
+conn = sqlite3.connect(default_db_path())
 df_def_2024 = pd.read_sql_query("SELECT raw_json FROM octane_defects WHERE year=2024", conn)
 df_def_2025 = pd.read_sql_query("SELECT raw_json FROM octane_defects WHERE year=2025", conn)
 print(f"  2024年缺陷: {len(df_def_2024):,}")
@@ -360,9 +378,9 @@ def analyze_defects(df):
             stats['obstructing_maturity'] += 1
         elif any('Homologation' in c for c in classes):
             stats['homologation'] += 1
-        if phase == '06-Concluded':
+        if phase_matches(phase, '06-Concluded'):
             stats['concluded_06'] += 1
-        elif phase == '09-Concluded without action':
+        elif phase_matches(phase, '09-Concluded without action'):
             stats['cwa_09'] += 1
             stats['cwa_reasons'][blocking_reason] += 1
     return stats

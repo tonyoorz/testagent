@@ -33,6 +33,13 @@ import dash
 from dash import dcc, html, Input, Output, State, callback_context
 from dash.exceptions import PreventUpdate
 
+from agent.core.harness_config import load_dify_workflow_config
+from agent.core.harness_router import (
+    HarnessRouteHandler,
+    HarnessRouteRequest,
+    resolve_harness_route,
+    should_load_local_data,
+)
 from duplicate_issue_finder import extract_hints, get_or_build_index
 from octane_db import default_db_path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -52,38 +59,38 @@ DEFAULT_DIFY_WORKFLOW_USER_PREFIX = "preanalysis"
 try:
     from agent.core.smart_context_generator import create_smart_context_generator, SmartContextGenerator
     SMART_CONTEXT_AVAILABLE = True
-    logger.info("✅ Smart Context Generator loaded")
+    logger.info("Smart Context Generator loaded")
 except ImportError as e:
     SMART_CONTEXT_AVAILABLE = False
     SmartContextGenerator = None
-    logger.warning(f"⚠️ Smart Context Generator not available: {e}")
+    logger.warning(f"Smart Context Generator not available: {e}")
 
 try:
     from agent.memory.enhanced_memory_system import create_memory_system, EnhancedMemorySystem
     MEMORY_SYSTEM_AVAILABLE = True
-    logger.info("✅ Enhanced Memory System loaded")
+    logger.info("Enhanced Memory System loaded")
 except ImportError as e:
     MEMORY_SYSTEM_AVAILABLE = False
     EnhancedMemorySystem = None
-    logger.warning(f"⚠️ Enhanced Memory System not available: {e}")
+    logger.warning(f"Enhanced Memory System not available: {e}")
 
 try:
     from agent.tools.smart_tool_selector import create_smart_tool_selector, SmartToolSelector
     SMART_TOOL_SELECTOR_AVAILABLE = True
-    logger.info("✅ Smart Tool Selector loaded")
+    logger.info("Smart Tool Selector loaded")
 except ImportError as e:
     SMART_TOOL_SELECTOR_AVAILABLE = False
     SmartToolSelector = None
-    logger.warning(f"⚠️ Smart Tool Selector not available: {e}")
+    logger.warning(f"Smart Tool Selector not available: {e}")
 
 try:
     from agent.core.explainable_agent import create_explainable_agent, ExplainableAgent
     EXPLAINABLE_AGENT_AVAILABLE = True
-    logger.info("✅ Explainable Agent loaded")
+    logger.info("Explainable Agent loaded")
 except ImportError as e:
     EXPLAINABLE_AGENT_AVAILABLE = False
     ExplainableAgent = None
-    logger.warning(f"⚠️ Explainable Agent not available: {e}")
+    logger.warning(f"Explainable Agent not available: {e}")
 
 try:
     from agent.core.conversation_entity_tracker import (
@@ -93,30 +100,30 @@ try:
         ConversationState
     )
     ENTITY_TRACKER_AVAILABLE = True
-    logger.info("✅ Conversation Entity Tracker loaded")
+    logger.info("Conversation Entity Tracker loaded")
 except ImportError as e:
     ENTITY_TRACKER_AVAILABLE = False
     ConversationEntityTracker = None
     ConversationState = None
-    logger.warning(f"⚠️ Conversation Entity Tracker not available: {e}")
+    logger.warning(f"Conversation Entity Tracker not available: {e}")
 
 try:
     from agent.core.hybrid_retriever import HybridRetriever, create_hybrid_retriever
     HYBRID_RETRIEVER_AVAILABLE = True
-    logger.info("✅ Hybrid Retriever loaded")
+    logger.info("Hybrid Retriever loaded")
 except ImportError as e:
     HYBRID_RETRIEVER_AVAILABLE = False
     HybridRetriever = None
-    logger.warning(f"⚠️ Hybrid Retriever not available: {e}")
+    logger.warning(f"Hybrid Retriever not available: {e}")
 
 try:
     from agent.core.confluence_retriever import ConfluenceRetriever, create_confluence_retriever
     CONFLUENCE_RETRIEVER_AVAILABLE = True
-    logger.info("✅ Confluence Retriever loaded")
+    logger.info("Confluence Retriever loaded")
 except ImportError as e:
     CONFLUENCE_RETRIEVER_AVAILABLE = False
     ConfluenceRetriever = None
-    logger.warning(f"⚠️ Confluence Retriever not available: {e}")
+    logger.warning(f"Confluence Retriever not available: {e}")
 
 # 导入原有的 AI Chat Manager 组件
 try:
@@ -156,10 +163,10 @@ try:
         ToolExecutor
     )
     AGENT_AVAILABLE = True
-    print("✅ 智能Agent系统已加载")
+    logger.info("Intelligent agent system loaded")
 except ImportError as e:
     AGENT_AVAILABLE = False
-    print(f"⚠️ 智能Agent系统不可用: {e}")
+    logger.warning(f"Intelligent agent system unavailable: {e}")
     IntelligentAgent = None
 
 
@@ -172,13 +179,23 @@ class DifyWorkflowClient:
     """最小化 Dify Workflow 客户端（用于 RAG 模式）。"""
 
     def __init__(self, api_base: Optional[str] = None, api_key: Optional[str] = None):
-        self.api_base = (api_base or os.environ.get("DIFY_API_BASE") or HARDCODED_DIFY_API_BASE).rstrip("/")
-        self.api_key = api_key or os.environ.get("DIFY_API_KEY") or HARDCODED_DIFY_API_KEY
-        self.query_key = os.environ.get("DIFY_WORKFLOW_QUERY_KEY") or DEFAULT_DIFY_WORKFLOW_QUERY_KEY
-        self.context_key = os.environ.get("DIFY_WORKFLOW_CONTEXT_KEY") or DEFAULT_DIFY_WORKFLOW_CONTEXT_KEY
-        self.user_prefix = os.environ.get("DIFY_USER_PREFIX") or DEFAULT_DIFY_WORKFLOW_USER_PREFIX
-        self.timeout = float(os.environ.get("DIFY_TIMEOUT", "120"))
-        self.enabled = bool(self.api_base and self.api_key)
+        config = load_dify_workflow_config(
+            default_api_base=HARDCODED_DIFY_API_BASE,
+            default_api_key=HARDCODED_DIFY_API_KEY,
+            default_query_key=DEFAULT_DIFY_WORKFLOW_QUERY_KEY,
+            default_context_key=DEFAULT_DIFY_WORKFLOW_CONTEXT_KEY,
+            default_user_prefix=DEFAULT_DIFY_WORKFLOW_USER_PREFIX,
+            override_api_base=api_base,
+            override_api_key=api_key,
+        )
+        self.api_base = config.api_base
+        self.api_key = config.api_key
+        self.query_key = config.query_key
+        self.context_key = config.context_key
+        self.user_prefix = config.user_prefix
+        self.timeout = config.timeout
+        self.response_mode = config.response_mode
+        self.enabled = config.enabled
         self.http_client = httpx.Client(timeout=self.timeout, verify=False)
 
     def build_user(self, dashboard_type: str) -> str:
@@ -205,7 +222,7 @@ class DifyWorkflowClient:
 
         payload = {
             "inputs": inputs,
-            "response_mode": os.environ.get("DIFY_RESPONSE_MODE", "blocking"),
+            "response_mode": "blocking",
             "user": user or self.build_user("general"),
         }
 
@@ -990,74 +1007,6 @@ class EnhancedAIChatManager:
 
         # 构建界面
         interface = html.Div([
-            # 会话与视图控制栏
-            html.Div([
-                html.Div([
-                    dcc.Dropdown(
-                        id=f'{chat_id_prefix}-session-selector',
-                        options=[{'label': '当前会话', 'value': 'session-default'}],
-                        value='session-default',
-                        placeholder='选择历史会话',
-                        clearable=False,
-                        style={'minWidth': '260px', 'fontSize': '12px'}
-                    ),
-                    html.Button(
-                        [html.I(className="fas fa-plus", style={'marginRight': '5px'}), '新会话'],
-                        id=f'{chat_id_prefix}-new-session-btn',
-                        n_clicks=0,
-                        style={
-                            'padding': '6px 10px',
-                            'backgroundColor': '#2563eb',
-                            'color': 'white',
-                            'border': 'none',
-                            'borderRadius': '6px',
-                            'cursor': 'pointer',
-                            'fontSize': '12px'
-                        }
-                    ),
-                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'flexWrap': 'wrap'}),
-                html.Div([
-                    html.Button(
-                        [html.I(className="fas fa-compress-alt", style={'marginRight': '5px'}), '紧凑排版'],
-                        id=f'{chat_id_prefix}-compact-toggle-btn',
-                        n_clicks=0,
-                        style={
-                            'padding': '6px 10px',
-                            'backgroundColor': '#f3f4f6',
-                            'color': '#374151',
-                            'border': '1px solid #d1d5db',
-                            'borderRadius': '6px',
-                            'cursor': 'pointer',
-                            'fontSize': '12px'
-                        }
-                    ),
-                    html.Button(
-                        [html.I(className="fas fa-expand", style={'marginRight': '5px'}), '放大全屏'],
-                        id=f'{chat_id_prefix}-fullscreen-btn',
-                        n_clicks=0,
-                        style={
-                            'padding': '6px 10px',
-                            'backgroundColor': '#f3f4f6',
-                            'color': '#374151',
-                            'border': '1px solid #d1d5db',
-                            'borderRadius': '6px',
-                            'cursor': 'pointer',
-                            'fontSize': '12px'
-                        }
-                    ),
-                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'flexWrap': 'wrap'})
-            ], style={
-                'display': 'flex',
-                'justifyContent': 'space-between',
-                'alignItems': 'center',
-                'gap': '8px',
-                'flexWrap': 'wrap',
-                'padding': '6px 8px',
-                'backgroundColor': '#f9fafb',
-                'border': '1px solid #e5e7eb',
-                'borderRadius': '8px'
-            }),
-
             # 对话历史区域
             html.Div(
                 id=f'{chat_id_prefix}-history',
@@ -1069,22 +1018,20 @@ class EnhancedAIChatManager:
                             f"{'当前为 Skill（工具链）模式。' if default_mode == 'agent' else '当前为 Agent（数据库直读）模式。'}"
                         )
                     ], style={
-                        'padding': '6px 9px',
+                        'padding': '8px 10px',
                         'backgroundColor': '#f8f9fa',
                         'borderRadius': '8px',
-                        'margin': '2px 0',
+                        'margin': '4px 0',
                         'border': '1px solid #e9ecef',
-                        'fontSize': '12px',
-                        'lineHeight': '1.35'
+                        'fontSize': '13px'
                     })
                 ],
                 style={
                     'flex': '1 1 auto',
-                    'minHeight': '240px',
-                    'height': 'calc(100vh - 360px)',
+                    'minHeight': '180px',
                     'overflowY': 'auto',
                     'border': '1px solid #ddd',
-                    'padding': '8px',
+                    'padding': '10px',
                     'borderRadius': '8px',
                     'backgroundColor': '#fafafa'
                 }
@@ -1156,11 +1103,11 @@ class EnhancedAIChatManager:
                     placeholder='请输入您的问题...',
                     style={
                         'width': '84%',
-                        'padding': '8px 10px',
+                        'padding': '9px 10px',
                         'marginRight': '8px',
                         'borderRadius': '8px',
                         'border': '1px solid #d1d5db',
-                        'fontSize': '12px'
+                        'fontSize': '13px'
                     },
                     value='',
                     persistence=False
@@ -1171,13 +1118,13 @@ class EnhancedAIChatManager:
                     n_clicks=0,
                     style={
                         'width': '14%',
-                        'padding': '8px 10px',
+                        'padding': '9px 10px',
                         'backgroundColor': '#3498db',
                         'color': 'white',
                         'border': 'none',
                         'borderRadius': '8px',
                         'cursor': 'pointer',
-                        'fontSize': '12px',
+                        'fontSize': '13px',
                         'fontWeight': 'bold'
                     }
                 )
@@ -1234,42 +1181,47 @@ class EnhancedAIChatManager:
                 'backgroundColor': '#f8f9fa',
                 'borderRadius': '4px'
             })
-        ], id=f'{chat_id_prefix}-container', style={
-            'width': '100%',
-            'height': 'calc(100vh - 120px)',
-            'minHeight': '520px',
-            'display': 'flex',
-            'flexDirection': 'column',
-            'gap': '6px',
-            'padding': '10px',
-            'boxSizing': 'border-box'
-        })
+        ], style={'width': '100%', 'height': '100%', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px', 'padding': '12px'})
 
         return interface
 
-    def create_enhanced_chat_stores(self, chat_id_prefix: str = 'chat') -> List[dcc.Store]:
-        """创建增强版聊天存储组件"""
-        # Initialize conversation state if entity tracker is available
-        initial_conversation_state = {}
+    def _create_initial_conversation_state(self) -> Dict[str, Any]:
         if ENTITY_TRACKER_AVAILABLE and create_initial_conversation_state:
             try:
                 initial_state = create_initial_conversation_state()
-                initial_conversation_state = initial_state.to_dict()
+                return initial_state.to_dict()
             except Exception as e:
                 logger.warning(f"Failed to create initial conversation state: {e}")
+        return {}
 
-        now_ts = int(time.time())
-        default_session_id = 'session-default'
-        default_sessions = {
-            'sessions': [
-                {
-                    'id': default_session_id,
-                    'title': '当前会话',
-                    'messages': [],
-                    'updated_at': now_ts,
-                }
-            ]
-        }
+    def _build_route_reasoning(self, route_trace: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(route_trace, dict) or not route_trace:
+            return ""
+
+        lines = []
+        requested_label = route_trace.get("requested_mode_label") or route_trace.get("requested_mode")
+        handler_label = route_trace.get("handler_label") or route_trace.get("handler")
+
+        if requested_label:
+            lines.append(f"请求模式: {requested_label}")
+        if handler_label:
+            lines.append(f"执行路由: {handler_label}")
+
+        reason = str(route_trace.get("reason") or "").strip()
+        if reason:
+            lines.append(f"原因: {reason}")
+
+        if route_trace.get("used_fallback") and route_trace.get("fallback_reason"):
+            lines.append(f"回退: {route_trace.get('fallback_reason')}")
+
+        if route_trace.get("should_try_local_data"):
+            lines.append(f"本地数据: {'已命中' if route_trace.get('has_data') else '未命中'}")
+
+        return "\n".join(lines).strip()
+
+    def create_enhanced_chat_stores(self, chat_id_prefix: str = 'chat') -> List[dcc.Store]:
+        """创建增强版聊天存储组件"""
+        initial_conversation_state = self._create_initial_conversation_state()
 
         stores = [
             dcc.Store(id=f'{chat_id_prefix}-messages', data=[], storage_type='session'),
@@ -1278,9 +1230,6 @@ class EnhancedAIChatManager:
             dcc.Store(id=f'{chat_id_prefix}-known-issue-state', data={'enabled': False}, storage_type='session'),
             dcc.Store(id=f'{chat_id_prefix}-streaming-state', data={'active': False, 'task_id': None}, storage_type='session'),
             dcc.Store(id=f'{chat_id_prefix}-conversation-state', data=initial_conversation_state, storage_type='session'),
-            dcc.Store(id=f'{chat_id_prefix}-chat-sessions', data=default_sessions, storage_type='local'),
-            dcc.Store(id=f'{chat_id_prefix}-active-session-id', data=default_session_id, storage_type='session'),
-            dcc.Store(id=f'{chat_id_prefix}-ui-state', data={'fullscreen': False, 'compact': True}, storage_type='session'),
             dcc.Interval(
                 id=f'{chat_id_prefix}-update-interval',
                 interval=max(100, int(os.getenv("CHAT_UI_POLL_INTERVAL_MS", "250") or 250)),
@@ -1320,12 +1269,7 @@ class EnhancedAIChatManager:
                 return messages
             return messages[-max_store_messages:]
 
-        def _is_compact(ui_state: Optional[Dict[str, Any]]) -> bool:
-            if not isinstance(ui_state, dict):
-                return True
-            return bool(ui_state.get('compact', True))
-
-        def render_chat_history(chat_messages: List[Dict[str, Any]], compact: bool = True):
+        def render_chat_history(chat_messages: List[Dict[str, Any]]):
             chat_history_children = []
             messages = _trim_chat_messages(chat_messages or [])
             visible = messages
@@ -1348,23 +1292,20 @@ class EnhancedAIChatManager:
                 visible = visible[-max_render_messages:]
             for msg in visible:
                 if msg.get("role") == "user":
-                    bubble_padding = '8px 10px' if compact else '12px'
-                    bubble_margin = '4px 0' if compact else '8px 0'
-                    msg_font = '12px' if compact else '13px'
                     chat_history_children.append(
                         html.Div([
                             html.Div([
                                 html.I(className="fas fa-user", style={'marginRight': '8px', 'color': '#2c3e50'}),
                                 html.Span("您", style={'fontWeight': 'bold', 'color': '#2c3e50'})
                             ], style={'marginBottom': '5px'}),
-                            html.Div(msg.get("content", ""), style={'paddingLeft': '20px', 'fontSize': msg_font, 'lineHeight': '1.4'})
+                            html.Div(msg.get("content", ""), style={'paddingLeft': '24px'})
                         ], style={
-                            'padding': bubble_padding,
+                            'padding': '12px',
                             'backgroundColor': '#e3f2fd',
                             'borderRadius': '8px',
-                            'margin': bubble_margin,
+                            'margin': '8px 0',
                             'border': '1px solid #bbdefb',
-                            'marginLeft': '8px'
+                            'marginLeft': '20px'
                         })
                     )
                 elif msg.get("role") == "assistant":
@@ -1395,10 +1336,8 @@ class EnhancedAIChatManager:
                         title = self.assistant_name
 
                     content_style = {
-                        'paddingLeft': '20px',
-                        'whiteSpace': 'pre-line',
-                        'fontSize': '12px' if compact else '13px',
-                        'lineHeight': '1.4'
+                        'paddingLeft': '24px',
+                        'whiteSpace': 'pre-line'
                     }
                     if msg_type == "reasoning":
                         content_style.update({
@@ -1416,226 +1355,19 @@ class EnhancedAIChatManager:
                             ], style={'marginBottom': '5px'}),
                             html.Div(msg.get("content", ""), style=content_style)
                         ], style={
-                            'padding': '8px 10px' if compact else '12px',
+                            'padding': '12px',
                             'backgroundColor': bg_color,
                             'borderRadius': '8px',
-                            'margin': '4px 0' if compact else '8px 0',
+                            'margin': '8px 0',
                             'border': f'1px solid {border_color}',
-                            'marginRight': '8px'
+                            'marginRight': '20px'
                         })
                     )
             return chat_history_children
 
-        def _session_title_from_messages(messages: List[Dict[str, Any]]) -> str:
-            for msg in messages or []:
-                if msg.get('role') == 'user':
-                    t = str(msg.get('content') or '').strip()
-                    if t:
-                        return t[:24]
-            return '新会话'
-
-        def _session_options(sessions_data: Dict[str, Any]) -> List[Dict[str, str]]:
-            sessions = list((sessions_data or {}).get('sessions') or [])
-            # new -> old ordering
-            sessions = sorted(sessions, key=lambda s: int(s.get('updated_at') or 0), reverse=True)
-            return [
-                {
-                    'label': str(s.get('title') or '会话'),
-                    'value': str(s.get('id') or ''),
-                }
-                for s in sessions if s.get('id')
-            ]
-
-        def _build_container_style(ui_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-            fullscreen = bool((ui_state or {}).get('fullscreen', False))
-            if fullscreen:
-                try:
-                    left_px = int(os.getenv('CHAT_FULLSCREEN_LEFT_PX', '300'))
-                except Exception:
-                    left_px = 300
-                return {
-                    'position': 'fixed',
-                    'top': '8px',
-                    'right': '8px',
-                    'bottom': '8px',
-                    'left': f'{left_px}px',
-                    'zIndex': 2000,
-                    'backgroundColor': '#ffffff',
-                    'border': '1px solid #d1d5db',
-                    'borderRadius': '10px',
-                    'boxShadow': '0 8px 24px rgba(0,0,0,0.16)',
-                    'display': 'flex',
-                    'flexDirection': 'column',
-                    'gap': '6px',
-                    'padding': '10px',
-                    'boxSizing': 'border-box'
-                }
-
-            return {
-                'width': '100%',
-                'height': 'calc(100vh - 120px)',
-                'minHeight': '520px',
-                'display': 'flex',
-                'flexDirection': 'column',
-                'gap': '6px',
-                'padding': '10px',
-                'boxSizing': 'border-box'
-            }
-
-        def _build_history_style(ui_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-            fullscreen = bool((ui_state or {}).get('fullscreen', False))
-            compact = _is_compact(ui_state)
-            return {
-                'flex': '1 1 auto',
-                'minHeight': '240px' if compact else '220px',
-                'height': 'calc(100vh - 200px)' if fullscreen else 'calc(100vh - 360px)',
-                'overflowY': 'auto',
-                'border': '1px solid #ddd',
-                'padding': '8px' if compact else '10px',
-                'borderRadius': '8px',
-                'backgroundColor': '#fafafa'
-            }
-
-        @app.callback(
-            [Output(f'{chat_id_prefix}-chat-sessions', 'data', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-session-selector', 'options', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-session-selector', 'value', allow_duplicate=True)],
-            [Input(f'{chat_id_prefix}-messages', 'data')],
-            [State(f'{chat_id_prefix}-chat-sessions', 'data'),
-             State(f'{chat_id_prefix}-active-session-id', 'data')],
-            prevent_initial_call=True
-        )
-        def sync_active_session(messages, sessions_data, active_session_id):
-            sessions_data = sessions_data or {'sessions': []}
-            sessions = list(sessions_data.get('sessions') or [])
-            sid = str(active_session_id or '').strip()
-            if not sid:
-                return dash.no_update, dash.no_update, dash.no_update
-
-            updated = False
-            now_ts = int(time.time())
-            for s in sessions:
-                if str(s.get('id') or '') == sid:
-                    s['messages'] = _trim_chat_messages(messages or [])
-                    s['updated_at'] = now_ts
-                    s['title'] = _session_title_from_messages(s.get('messages') or [])
-                    updated = True
-                    break
-
-            if not updated:
-                sessions.append({
-                    'id': sid,
-                    'title': _session_title_from_messages(messages or []),
-                    'messages': _trim_chat_messages(messages or []),
-                    'updated_at': now_ts,
-                })
-
-            data = {'sessions': sessions}
-            options = _session_options(data)
-            return data, options, sid
-
-        @app.callback(
-            [Output(f'{chat_id_prefix}-messages', 'data', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-active-session-id', 'data', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-chat-sessions', 'data', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-session-selector', 'options', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-session-selector', 'value', allow_duplicate=True)],
-            [Input(f'{chat_id_prefix}-new-session-btn', 'n_clicks'),
-             Input(f'{chat_id_prefix}-session-selector', 'value')],
-            [State(f'{chat_id_prefix}-chat-sessions', 'data'),
-             State(f'{chat_id_prefix}-active-session-id', 'data')],
-            prevent_initial_call=True
-        )
-        def handle_session_switch(new_session_clicks, selected_session_id, sessions_data, active_session_id):
-            sessions_data = sessions_data or {'sessions': []}
-            sessions = list(sessions_data.get('sessions') or [])
-            ctx = callback_context
-            if not ctx.triggered:
-                raise PreventUpdate
-
-            prop_id = ctx.triggered[0]['prop_id']
-            now_ts = int(time.time())
-
-            if prop_id == f'{chat_id_prefix}-new-session-btn.n_clicks':
-                sid = f'session-{int(time.time() * 1000)}'
-                sessions.append({'id': sid, 'title': '新会话', 'messages': [], 'updated_at': now_ts})
-                data = {'sessions': sessions}
-                options = _session_options(data)
-                return [], sid, data, options, sid
-
-            sid = str(selected_session_id or '').strip()
-            if not sid:
-                raise PreventUpdate
-
-            for s in sessions:
-                if str(s.get('id') or '') == sid:
-                    data = {'sessions': sessions}
-                    options = _session_options(data)
-                    return _trim_chat_messages(s.get('messages') or []), sid, data, options, sid
-
-            raise PreventUpdate
-
-        @app.callback(
-            [Output(f'{chat_id_prefix}-container', 'style', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-history', 'style', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-fullscreen-btn', 'children', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-compact-toggle-btn', 'children', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-ui-state', 'data', allow_duplicate=True)],
-            [Input(f'{chat_id_prefix}-fullscreen-btn', 'n_clicks'),
-             Input(f'{chat_id_prefix}-compact-toggle-btn', 'n_clicks')],
-            [State(f'{chat_id_prefix}-ui-state', 'data')],
-            prevent_initial_call=True
-        )
-        def toggle_ui_modes(fullscreen_clicks, compact_clicks, ui_state):
-            ui_state = dict(ui_state or {'fullscreen': False, 'compact': True})
-            ctx = callback_context
-            if not ctx.triggered:
-                raise PreventUpdate
-            prop_id = ctx.triggered[0]['prop_id']
-
-            if prop_id == f'{chat_id_prefix}-fullscreen-btn.n_clicks':
-                ui_state['fullscreen'] = not bool(ui_state.get('fullscreen', False))
-            elif prop_id == f'{chat_id_prefix}-compact-toggle-btn.n_clicks':
-                ui_state['compact'] = not bool(ui_state.get('compact', True))
-
-            fullscreen_btn_text = (
-                [html.I(className="fas fa-compress", style={'marginRight': '5px'}), '退出全屏']
-                if ui_state.get('fullscreen') else
-                [html.I(className="fas fa-expand", style={'marginRight': '5px'}), '放大全屏']
-            )
-            compact_btn_text = (
-                [html.I(className="fas fa-compress-alt", style={'marginRight': '5px'}), '紧凑排版']
-                if ui_state.get('compact', True) else
-                [html.I(className="fas fa-text-height", style={'marginRight': '5px'}), '舒适排版']
-            )
-            return _build_container_style(ui_state), _build_history_style(ui_state), fullscreen_btn_text, compact_btn_text, ui_state
-
-        @app.callback(
-            [Output(f'{chat_id_prefix}-history', 'children', allow_duplicate=True)],
-            [Input(f'{chat_id_prefix}-messages', 'data'),
-             Input(f'{chat_id_prefix}-ui-state', 'data')],
-            prevent_initial_call=True
-        )
-        def rerender_history_on_session_switch(messages, ui_state):
-            compact = _is_compact(ui_state)
-            if not messages:
-                return [[
-                    html.Div([
-                        html.I(className="fas fa-robot", style={'marginRight': '8px', 'color': '#3498db'}),
-                        html.Span(f"您好！我是{self.assistant_name}。可以从历史会话继续，或新建会话。")
-                    ], style={
-                        'padding': '6px 9px',
-                        'backgroundColor': '#f8f9fa',
-                        'borderRadius': '8px',
-                        'margin': '2px 0',
-                        'border': '1px solid #e9ecef',
-                        'fontSize': '12px',
-                        'lineHeight': '1.35'
-                    })
-                ]]
-            return [render_chat_history(messages, compact=compact)]
-
-        def start_agent_streaming(task_id: str, question: str, current_data: Any, conversation_history: List[Dict[str, Any]]):
+        def start_agent_streaming(task_id: str, question: str, current_data: Any,
+                      conversation_history: List[Dict[str, Any]],
+                      conversation_state: Optional[Dict[str, Any]]):
             def worker():
                 heartbeat_running = {"on": True}
 
@@ -1665,9 +1397,23 @@ class EnhancedAIChatManager:
                         streaming_data[task_id]['reasoning'] = "处理中: 规划任务与执行工具"
                         streaming_data[task_id]['last_update'] = time.time()
 
-                    result = self.process_with_agent(question, current_data, conversation_history)
+                    result = self.process_with_agent(
+                        question,
+                        current_data,
+                        conversation_history,
+                        conversation_state=conversation_state,
+                    )
                     if not result.get('success'):
                         raise RuntimeError(result.get('text') or result.get('error') or "智能Agent执行失败")
+
+                    with streaming_lock:
+                        if task_id in streaming_data:
+                            streaming_data[task_id]['conversation_state'] = result.get('conversation_state')
+                            streaming_data[task_id]['result_meta'] = {
+                                'agent_used': True,
+                                'resolved_question': result.get('resolved_question'),
+                                'tools_used': result.get('tools_used', []),
+                            }
 
                     ctx = result.get("context") or {}
                     trace = (ctx.get("analysis_trace") or {}) if isinstance(ctx, dict) else {}
@@ -1874,7 +1620,10 @@ class EnhancedAIChatManager:
 
         def _guess_target_table(question_text: str) -> str:
             q = (question_text or "").lower()
-            if any(k in q for k in ["manual run", "testrun", "测试执行", "测试运行"]):
+            if any(k in q for k in [
+                "manual run", "testrun", "测试执行", "测试运行", "覆盖率", "通过率", "执行状态",
+                "run status", "execution status", "blocked", "failed", "passed", "requires attention"
+            ]):
                 return "octane_manual_runs"
             if any(k in q for k in ["history", "历史", "阶段变化", "phase"]):
                 return "octane_defect_histories"
@@ -1924,7 +1673,11 @@ class EnhancedAIChatManager:
             entity_tokens = []
             stop_words = {
                 "aida", "ticket", "topissue", "issue", "defect", "summary", "agent", "sqlite",
-                "tester", "reporter", "owner", "team", "project", "status", "phase", "query"
+                "tester", "reporter", "owner", "team", "project", "status", "phase", "query",
+                "trend", "efficiency", "analysis", "analyze", "recommend", "recommendation", "improve", "optimization",
+                "passed", "failed", "blocked", "requires", "attention", "coverage", "frequency", "week", "monthly",
+                "please", "kindly", "thanks", "thank", "thx", "assistant", "copilot", "chatgpt", "sisi",
+                "matrix", "distribution", "severity", "priority"
             }
             for t in en_tokens:
                 tl = t.lower()
@@ -1934,7 +1687,17 @@ class EnhancedAIChatManager:
                     continue
                 entity_tokens.append(t)
             for t in zh_tokens:
+                if t.startswith("请"):
+                    continue
+                if t in {"您好", "你好", "请问", "麻烦", "谢谢", "辛苦"}:
+                    continue
                 if any(k in t for k in ["提票", "情况", "如何", "分析", "查询", "统计", "数据", "测试", "缺陷", "团队", "项目"]):
+                    continue
+                if any(k in t for k in [
+                    "建议", "改进", "优化", "趋势", "效率", "复盘", "对策", "提升", "比较", "执行状态",
+                    "通过率", "覆盖率", "关闭率", "周变化", "周趋势", "高风险", "数据库", "优先处理", "状态分布",
+                    "分布", "矩阵", "维度", "严重", "严重性", "等级", "占比", "比例", "问题"
+                ]):
                     continue
                 entity_tokens.append(t)
 
@@ -1948,32 +1711,77 @@ class EnhancedAIChatManager:
                 seen.add(tl)
                 dedup_tokens.append(str(t).strip())
 
-            wants_aida_dist = any(k in ql for k in ["aida", "分布", "distribution", "领域", "模块"])
-            wants_topissue = any(k in ql for k in ["topissue", "top issue", "高风险", "风险", "严重"])
+            wants_distribution = any(k in ql for k in ["分布", "distribution", "占比", "比例"])
+            wants_matrix = any(k in ql for k in ["矩阵", "matrix"])
+            wants_severity = any(k in ql for k in [
+                "严重性", "severity", "严重等级", "等级", "priority", "critical", "major", "minor", "s1", "s2", "s3"
+            ])
+            wants_matrix_severity = bool(wants_matrix or (wants_distribution and wants_severity))
+            wants_aida_dist = ("aida" in ql) or (wants_distribution and any(k in ql for k in ["领域", "模块", "domain"]))
+            wants_topissue = any(k in ql for k in [
+                "topissue", "top issue", "高风险", "high risk", "风险", "risk matrix", "风险矩阵", "1a", "1b", "1c", "1d", "1e"
+            ])
             wants_detail = any(k in ql for k in ["详情", "详细", "detail", "ticket", "列表", "哪些"])
             wants_tester = any(k in ql for k in ["提票", "提单", "报缺陷", "提交人", "报告人", "发现人", "测试员", "测试人员", "tester", "reporter", "found by", "found_by", "detected by", "detected_by"])
+            wants_trend = any(k in ql for k in ["趋势", "trend", "走势", "变化", "周", "月"])
+            wants_efficiency = any(k in ql for k in ["效率", "efficiency", "修复", "关闭率", "通过率", "处理时长", "时效"])
+            wants_test_coverage = any(k in ql for k in [
+                "测试覆盖", "覆盖率", "pass rate", "test frequency", "通过率", "执行状态", "run status", "blocked", "requires attention"
+            ])
+            wants_recommendation = any(k in ql for k in ["建议", "recommend", "改进", "优化", "improve", "复盘", "对策"])
+            wants_analysis = bool(
+                wants_trend
+                or wants_efficiency
+                or wants_recommendation
+                or wants_test_coverage
+                or wants_matrix_severity
+                or wants_aida_dist
+            )
 
             return {
                 "entity_tokens": dedup_tokens[:6],
+                "wants_distribution": wants_distribution,
+                "wants_matrix": wants_matrix,
+                "wants_severity": wants_severity,
+                "wants_matrix_severity": wants_matrix_severity,
                 "wants_aida_dist": wants_aida_dist,
                 "wants_topissue": wants_topissue,
                 "wants_detail": wants_detail,
                 "wants_tester": wants_tester,
+                "wants_trend": wants_trend,
+                "wants_efficiency": wants_efficiency,
+                "wants_test_coverage": wants_test_coverage,
+                "wants_recommendation": wants_recommendation,
+                "wants_analysis": wants_analysis,
                 "columns": set(columns or []),
             }
 
-        def _build_deterministic_sql(question: str, table_name: str, columns: List[str]) -> str:
+        def _build_deterministic_sql(
+            question: str,
+            table_name: str,
+            columns: List[str],
+            entity_tokens_override: Optional[List[str]] = None,
+        ) -> str:
             """规则化SQL生成：摘要模式默认走这里，避免LLM生成SQL卡住。"""
             hints = _extract_query_hints(question, columns)
+            if entity_tokens_override is not None:
+                hints["entity_tokens"] = [
+                    str(t).strip()
+                    for t in (entity_tokens_override or [])
+                    if str(t).strip()
+                ][:6]
             cols = hints["columns"]
 
             def _esc_like(token: str) -> str:
                 return str(token or "").replace("'", "''")
 
+            def _coalesced_text_expr(col_name: str) -> str:
+                return f"COALESCE(NULLIF(TRIM(CAST({col_name} AS TEXT)), ''), '未标注')"
+
             select_cols = []
             for c in [
                 "defect_id", "id", "name", "project", "tproject", "team", "ecu",
-                "aida_english", "top_aida", "status_phase", "severity_group",
+                "aida_english", "top_aida", "status_phase", "phase", "severity_group",
                 "tester", "detected_by", "reporter", "found_by", "author_name", "owner",
                 "topissue_display", "creation_time", "last_modified"
             ]:
@@ -1996,12 +1804,176 @@ class EnhancedAIChatManager:
                 generic_fields = [c for c in ["project", "tproject", "team", "ecu", "name"] if c in cols]
                 searchable = person_fields if (hints.get("wants_tester") and person_fields) else (person_fields + generic_fields if person_fields else generic_fields)
                 for tok in hints["entity_tokens"]:
+                    tok_l = str(tok).strip().lower()
+                    if hints.get("wants_test_coverage") and tok_l in {
+                        "passed", "failed", "blocked", "requires", "attention", "status", "run", "test", "week"
+                    }:
+                        continue
                     if searchable:
                         safe_tok = _esc_like(tok)
                         like_group = " OR ".join([f"LOWER(CAST({c} AS TEXT)) LIKE LOWER('%{safe_tok}%')" for c in searchable])
                         where_parts.append(f"({like_group})")
 
             where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+            if hints.get("wants_aida_dist"):
+                aida_col = "aida_english" if "aida_english" in cols else ("top_aida" if "top_aida" in cols else "")
+                if aida_col:
+                    aida_expr = _coalesced_text_expr(aida_col)
+                    return (
+                        f"SELECT {aida_expr} AS aida, COUNT(*) AS defect_count "
+                        f'FROM "{table_name}" '
+                        f"{where_sql} "
+                        "GROUP BY 1 "
+                        "ORDER BY defect_count DESC "
+                        "LIMIT 20"
+                    )
+
+            if hints.get("wants_matrix_severity"):
+                matrix_col = next((c for c in ["topissue_display", "risk_zone", "risk_matrix"] if c in cols), "")
+                severity_col = next((c for c in ["severity_group", "severity", "severity_level", "priority"] if c in cols), "")
+
+                if matrix_col and severity_col:
+                    matrix_expr = _coalesced_text_expr(matrix_col)
+                    severity_expr = _coalesced_text_expr(severity_col)
+                    return (
+                        f"SELECT {matrix_expr} AS matrix_zone, "
+                        f"{severity_expr} AS severity, "
+                        "COUNT(*) AS defect_count "
+                        f'FROM "{table_name}" '
+                        f"{where_sql} "
+                        "GROUP BY 1, 2 "
+                        "ORDER BY defect_count DESC "
+                        "LIMIT 60"
+                    )
+
+                # 主缺陷表通常不含矩阵列，必要时联 defect_features 取 topissue_display。
+                if (not matrix_col) and severity_col and table_name == "octane_defects" and ("defect_id" in cols):
+                    matrix_expr = "COALESCE(NULLIF(TRIM(CAST(df.topissue_display AS TEXT)), ''), '未标注')"
+                    severity_expr = _coalesced_text_expr(f"d.{severity_col}")
+                    return (
+                        f"SELECT {matrix_expr} AS matrix_zone, "
+                        f"{severity_expr} AS severity, "
+                        "COUNT(*) AS defect_count "
+                        f'FROM "{table_name}" d '
+                        'LEFT JOIN "defect_features" df ON CAST(df.defect_id AS TEXT) = CAST(d.defect_id AS TEXT) '
+                        f"{where_sql} "
+                        "GROUP BY 1, 2 "
+                        "ORDER BY defect_count DESC "
+                        "LIMIT 60"
+                    )
+
+                if severity_col:
+                    severity_expr = _coalesced_text_expr(severity_col)
+                    return (
+                        f"SELECT {severity_expr} AS severity, COUNT(*) AS defect_count "
+                        f'FROM "{table_name}" '
+                        f"{where_sql} "
+                        "GROUP BY 1 "
+                        "ORDER BY defect_count DESC "
+                        "LIMIT 20"
+                    )
+
+                if matrix_col:
+                    matrix_expr = _coalesced_text_expr(matrix_col)
+                    return (
+                        f"SELECT {matrix_expr} AS matrix_zone, COUNT(*) AS defect_count "
+                        f'FROM "{table_name}" '
+                        f"{where_sql} "
+                        "GROUP BY 1 "
+                        "ORDER BY defect_count DESC "
+                        "LIMIT 20"
+                    )
+
+            if hints.get("wants_analysis"):
+                if hints.get("wants_test_coverage"):
+                    week_col = "test_week" if "test_week" in cols else ("creation_time" if "creation_time" in cols else "")
+                    status_col = "run_status" if "run_status" in cols else ("status" if "status" in cols else ("execution_status" if "execution_status" in cols else ""))
+                    if week_col and status_col:
+                        week_bucket_expr = week_col if week_col == "test_week" else f"strftime('%Y-W%W', {week_col})"
+                        status_text_expr = f"LOWER(CAST({status_col} AS TEXT))"
+                        passed_expr = (
+                            "SUM(CASE WHEN ("
+                            f"{status_text_expr} IN ('passed','pass') "
+                            f"OR {status_text_expr} LIKE 'pass%')"
+                            " THEN 1 ELSE 0 END)"
+                        )
+                        failed_expr = (
+                            "SUM(CASE WHEN ("
+                            f"{status_text_expr} IN ('failed','failure') "
+                            f"OR {status_text_expr} LIKE 'fail%')"
+                            " THEN 1 ELSE 0 END)"
+                        )
+                        blocked_expr = (
+                            "SUM(CASE WHEN ("
+                            f"{status_text_expr} IN ('blocked','requires attention','requires_attention','attention required') "
+                            f"OR {status_text_expr} LIKE '%block%' "
+                            f"OR {status_text_expr} LIKE '%require%attention%' "
+                            f"OR {status_text_expr} LIKE '%attention required%')"
+                            " THEN 1 ELSE 0 END)"
+                        )
+                        return (
+                            f"SELECT {week_bucket_expr} AS week, "
+                            "COUNT(*) AS run_count, "
+                            f"{passed_expr} AS passed_count, "
+                            f"{failed_expr} AS failed_count, "
+                            f"{blocked_expr} AS blocked_count, "
+                            f"ROUND(100.0 * {passed_expr} / NULLIF(COUNT(*), 0), 2) AS pass_rate "
+                            f'FROM "{table_name}" '
+                            f"{where_sql} "
+                            f"GROUP BY {week_bucket_expr} "
+                            "ORDER BY week DESC "
+                            "LIMIT 20"
+                        )
+
+                time_col = "creation_time" if "creation_time" in cols else ("last_modified" if "last_modified" in cols else "")
+                status_candidates = [c for c in ["status", "phase", "status_phase"] if c in cols]
+                status_col = status_candidates[0] if status_candidates else ""
+                status_text_expr = ""
+                if status_candidates:
+                    if len(status_candidates) == 1:
+                        status_text_expr = f"LOWER(CAST({status_candidates[0]} AS TEXT))"
+                    else:
+                        status_text_expr = f"LOWER(CAST(COALESCE({', '.join(status_candidates)}) AS TEXT))"
+                if time_col:
+                    closed_expr = "0"
+                    if status_text_expr:
+                        closed_expr = (
+                            "SUM(CASE WHEN ("
+                            f"{status_text_expr} IN ('closed','fixed','resolved','done','completed','concluded','concluded without action') "
+                            f"OR {status_text_expr} LIKE '%conclud%' "
+                            f"OR {status_text_expr} LIKE '%resolv%' "
+                            f"OR {status_text_expr} LIKE '%clos%' "
+                            f"OR {status_text_expr} LIKE '%fix%' "
+                            f"OR {status_text_expr} LIKE '%complet%' "
+                            f"OR {status_text_expr} LIKE '%已关闭%' "
+                            f"OR {status_text_expr} LIKE '%已解决%' "
+                            f"OR {status_text_expr} LIKE '%已修复%' "
+                            f"OR {status_text_expr} LIKE '%结案%')"
+                            " THEN 1 ELSE 0 END)"
+                        )
+                    where_with_time = where_parts + [f"{time_col} IS NOT NULL"]
+                    where_sql_analysis = " WHERE " + " AND ".join(where_with_time)
+                    return (
+                        f"SELECT strftime('%Y-W%W', {time_col}) AS week, "
+                        "COUNT(*) AS defect_count, "
+                        f"{closed_expr} AS closed_count, "
+                        f"ROUND(100.0 * {closed_expr} / NULLIF(COUNT(*), 0), 2) AS close_rate "
+                        f'FROM "{table_name}" '
+                        f"{where_sql_analysis} "
+                        "GROUP BY week "
+                        "ORDER BY week DESC "
+                        "LIMIT 16"
+                    )
+                if status_col:
+                    return (
+                        f"SELECT {status_col} AS status, COUNT(*) AS defect_count "
+                        f'FROM "{table_name}" '
+                        f"{where_sql} "
+                        f"GROUP BY {status_col} "
+                        "ORDER BY defect_count DESC "
+                        "LIMIT 12"
+                    )
 
             order_col = "creation_time" if "creation_time" in cols else "last_modified" if "last_modified" in cols else None
             order_sql = f" ORDER BY {order_col} DESC" if order_col else ""
@@ -2441,6 +2413,152 @@ class EnhancedAIChatManager:
                                 d = {}
                             out_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
 
+                    # 分析类问题若因噪声实体词导致零结果，先放宽实体词重试；仍为空则切换聚合模板再试一次。
+                    if (not out_rows) and summary_sql_mode == "deterministic":
+                        retry_hints = _extract_query_hints(question, col_preview)
+                        analysis_like_intent = bool(
+                            retry_hints.get("wants_analysis")
+                            or retry_hints.get("wants_aida_dist")
+                            or retry_hints.get("wants_matrix_severity")
+                        )
+                        if analysis_like_intent and (retry_hints.get("entity_tokens") or []):
+                            _mark_stage("retry_broad_query")
+                            execution_path.append("sql_retry:deterministic_broad")
+                            with streaming_lock:
+                                streaming_data[task_id]['progress'] = '结果为空，正在放宽筛选重试...'
+                                streaming_data[task_id]['last_update'] = time.time()
+
+                            broad_sql = _build_deterministic_sql(
+                                question=question,
+                                table_name=target_table,
+                                columns=col_preview,
+                                entity_tokens_override=[],
+                            )
+                            broad_sql_clean = broad_sql.strip().rstrip(';')
+                            if not broad_sql_clean or not re.match(r"^\s*(select|with)\b", broad_sql_clean, flags=re.IGNORECASE):
+                                broad_sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
+                            if re.search(r"\b(insert|update|delete|drop|alter|truncate|attach|detach|pragma\s+write)\b", broad_sql_clean, flags=re.IGNORECASE):
+                                broad_sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
+
+                            retry_rows: List[Dict[str, Any]] = []
+                            if tool_executor:
+                                try:
+                                    retry_out = tool_executor.execute_tool("run_sqlite_query", None, sql=broad_sql_clean, limit=summary_row_limit)
+                                    if isinstance(retry_out, dict) and retry_out.get("success") is True:
+                                        retry_rs = retry_out.get("result") or {}
+                                        broad_sql_clean = str(retry_rs.get("sql") or broad_sql_clean)
+                                        retry_items = retry_rs.get("rows") or []
+                                        if isinstance(retry_items, list):
+                                            retry_rows = [r for r in retry_items[:summary_row_limit] if isinstance(r, dict)]
+                                except Exception:
+                                    retry_rows = []
+
+                            if not retry_rows:
+                                try:
+                                    conn_retry = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                                    conn_retry.row_factory = sqlite3.Row
+                                    cur_retry = conn_retry.cursor()
+                                    try:
+                                        cur_retry.execute("PRAGMA query_only = ON")
+                                    except Exception:
+                                        pass
+                                    cur_retry.execute(broad_sql_clean)
+                                    retry_raw = cur_retry.fetchmany(200)
+                                    conn_retry.close()
+                                    for rr in retry_raw[:summary_row_limit]:
+                                        try:
+                                            d = dict(rr) if rr is not None else {}
+                                        except Exception:
+                                            d = {}
+                                        retry_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
+                                except Exception:
+                                    retry_rows = []
+
+                            # 放宽实体词后仍为空：再尝试一次通用聚合模板，避免分析问题直接返回无数据。
+                            if (not retry_rows) and analysis_like_intent:
+                                overview_sql = ""
+                                if target_table == "octane_defects":
+                                    if "severity_group" in col_preview:
+                                        overview_sql = (
+                                            f'SELECT COALESCE(NULLIF(TRIM(CAST(severity_group AS TEXT)), ""), "未标注") AS severity, '
+                                            "COUNT(*) AS defect_count "
+                                            f'FROM "{target_table}" '
+                                            "GROUP BY 1 ORDER BY defect_count DESC LIMIT 20"
+                                        )
+                                    elif "severity" in col_preview:
+                                        overview_sql = (
+                                            f'SELECT COALESCE(NULLIF(TRIM(CAST(severity AS TEXT)), ""), "未标注") AS severity, '
+                                            "COUNT(*) AS defect_count "
+                                            f'FROM "{target_table}" '
+                                            "GROUP BY 1 ORDER BY defect_count DESC LIMIT 20"
+                                        )
+                                    elif "status_phase" in col_preview:
+                                        overview_sql = (
+                                            f'SELECT COALESCE(NULLIF(TRIM(CAST(status_phase AS TEXT)), ""), "未标注") AS status, '
+                                            "COUNT(*) AS defect_count "
+                                            f'FROM "{target_table}" '
+                                            "GROUP BY 1 ORDER BY defect_count DESC LIMIT 20"
+                                        )
+                                elif target_table == "octane_manual_runs":
+                                    status_col = "run_status" if "run_status" in col_preview else ("status" if "status" in col_preview else "")
+                                    if status_col:
+                                        overview_sql = (
+                                            f'SELECT COALESCE(NULLIF(TRIM(CAST({status_col} AS TEXT)), ""), "未标注") AS run_status, '
+                                            "COUNT(*) AS run_count "
+                                            f'FROM "{target_table}" '
+                                            "GROUP BY 1 ORDER BY run_count DESC LIMIT 20"
+                                        )
+
+                                if overview_sql:
+                                    execution_path.append("sql_retry:deterministic_overview")
+                                    with streaming_lock:
+                                        streaming_data[task_id]['progress'] = '结果仍为空，正在切换聚合模板重试...'
+                                        streaming_data[task_id]['last_update'] = time.time()
+
+                                    if tool_executor:
+                                        try:
+                                            ov_out = tool_executor.execute_tool("run_sqlite_query", None, sql=overview_sql, limit=summary_row_limit)
+                                            if isinstance(ov_out, dict) and ov_out.get("success") is True:
+                                                ov_rs = ov_out.get("result") or {}
+                                                overview_sql = str(ov_rs.get("sql") or overview_sql)
+                                                ov_items = ov_rs.get("rows") or []
+                                                if isinstance(ov_items, list):
+                                                    retry_rows = [r for r in ov_items[:summary_row_limit] if isinstance(r, dict)]
+                                        except Exception:
+                                            retry_rows = []
+
+                                    if not retry_rows:
+                                        try:
+                                            conn_overview = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                                            conn_overview.row_factory = sqlite3.Row
+                                            cur_overview = conn_overview.cursor()
+                                            try:
+                                                cur_overview.execute("PRAGMA query_only = ON")
+                                            except Exception:
+                                                pass
+                                            cur_overview.execute(overview_sql)
+                                            overview_raw = cur_overview.fetchmany(200)
+                                            conn_overview.close()
+                                            for rr in overview_raw[:summary_row_limit]:
+                                                try:
+                                                    d = dict(rr) if rr is not None else {}
+                                                except Exception:
+                                                    d = {}
+                                                retry_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
+                                        except Exception:
+                                            retry_rows = []
+
+                                    if retry_rows:
+                                        broad_sql_clean = overview_sql
+
+                            if retry_rows:
+                                out_rows = retry_rows
+                                sql_clean = broad_sql_clean
+                                local_fallback_reason = (
+                                    f"{local_fallback_reason}; 零结果后自动放宽实体词过滤重试成功"
+                                    if local_fallback_reason else "零结果后自动放宽实体词过滤重试成功"
+                                )
+
                     total_count = _compute_total_count(db_path=db_path, table_name=target_table, sql_text=sql_clean)
 
                     with streaming_lock:
@@ -2771,7 +2889,8 @@ class EnhancedAIChatManager:
              Output(f'{chat_id_prefix}-streaming-state', 'data'),
              Output(f'{chat_id_prefix}-update-interval', 'disabled'),
              Output(f'{chat_id_prefix}-status', 'children'),
-             Output(f'{chat_id_prefix}-agent-results', 'data')],
+             Output(f'{chat_id_prefix}-agent-results', 'data'),
+             Output(f'{chat_id_prefix}-conversation-state', 'data')],
             [Input(f'{chat_id_prefix}-send-button', 'n_clicks'),
              Input(f'{chat_id_prefix}-input', 'n_submit'),
              Input(f'{chat_id_prefix}-clear-button', 'n_clicks')] +
@@ -2782,8 +2901,8 @@ class EnhancedAIChatManager:
              State(f'{chat_id_prefix}-streaming-state', 'data'),
              State(data_store_id, 'data'),
              State(f'{chat_id_prefix}-chat-mode', 'value'),
-               State(f'{chat_id_prefix}-known-issues', 'value'),
-               State(f'{chat_id_prefix}-ui-state', 'data')]
+             State(f'{chat_id_prefix}-known-issues', 'value'),
+             State(f'{chat_id_prefix}-conversation-state', 'data')]
         )
         def handle_enhanced_chat(*args):
             send_clicks = args[0]
@@ -2796,7 +2915,7 @@ class EnhancedAIChatManager:
             filtered_data = args[-4]
             chat_mode = (args[-3] or "summary")
             known_issues_checked = args[-2] or []
-            ui_state = args[-1] if isinstance(args[-1], dict) else {}
+            conversation_state = args[-1] or self._create_initial_conversation_state()
 
             ctx = callback_context
             if not ctx.triggered:
@@ -2817,27 +2936,16 @@ class EnhancedAIChatManager:
                     'margin': '8px 0',
                     'border': '1px solid #e9ecef'
                 })
-                return [initial_message], "", [], {'active': False, 'task_id': None}, True, "", {}
+                return [initial_message], "", [], {'active': False, 'task_id': None}, True, "", {}, self._create_initial_conversation_state()
 
             if streaming_state.get('active'):
                 status_display = html.Div([
                     html.I(className="fas fa-spinner fa-spin", style={'marginRight': '8px', 'color': '#3498db'}),
                     html.Span("上一条消息正在生成中，请稍候…（可点击“清空”重置）", style={'color': '#666'})
                 ])
-                return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, status_display, dash.no_update
+                return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, status_display, dash.no_update, dash.no_update
 
             use_known_issues = 'known' in (known_issues_checked or [])
-
-            def _is_advanced_decision_query(text: str) -> bool:
-                q = str(text or "").strip().lower()
-                if not q:
-                    return False
-                keywords = [
-                    "趋势", "trend", "风险", "risk", "预测", "predict", "策略", "strategy",
-                    "建议", "recommend", "复盘", "retrospective", "恶化", "improve",
-                    "下个版本", "next release", "测试重点", "质量趋势", "根因", "priority"
-                ]
-                return any(k in q for k in keywords)
 
             # 确定用户消息
             user_message = ""
@@ -2857,7 +2965,8 @@ class EnhancedAIChatManager:
             # 处理用户消息
             agent_results = {}
             status_display = ""
-            prefer_agent_for_query = False
+            route_decision = None
+            route_trace = {}
 
             if user_message:
                 # 问候语快速路径：避免被分析型提示词放大为长篇数据说明。
@@ -2870,17 +2979,23 @@ class EnhancedAIChatManager:
                         "content": "你好，我在。你可以直接问我问题，或告诉我你想分析的范围。"
                     })
                     chat_messages = _trim_chat_messages(chat_messages)
-                    chat_history_children = render_chat_history(chat_messages, compact=_is_compact(ui_state))
-                    return chat_history_children, "", chat_messages, {'active': False, 'task_id': None}, True, "", {}
+                    chat_history_children = render_chat_history(chat_messages)
+                    return chat_history_children, "", chat_messages, {'active': False, 'task_id': None}, True, "", {}, conversation_state
 
                 # 添加用户消息
                 chat_messages.append({"role": "user", "content": user_message})
                 chat_messages = _trim_chat_messages(chat_messages)
 
-                # 获取数据
+                route_request = HarnessRouteRequest(
+                    question=user_message,
+                    selected_mode=chat_mode,
+                    known_issues_enabled=use_known_issues,
+                    use_agent=self.use_agent,
+                    dashboard_type=self.dashboard_type,
+                )
+
                 current_data: Any = pd.DataFrame()
-                allow_local_data = (chat_mode in {"agent", "rag", "confluence"}) or use_known_issues
-                if filtered_data and allow_local_data:
+                if filtered_data and should_load_local_data(route_request):
                     try:
                         if data_processor_func:
                             try:
@@ -2892,12 +3007,10 @@ class EnhancedAIChatManager:
                             current_data = pd.read_json(io.StringIO(json_data), orient='split')
                     except Exception as e:
                         logger.error(f"数据解析失败: {e}")
-                prefer_agent_for_query = (
-                    (not use_known_issues)
-                    and (chat_mode == "agent")
-                    and self.use_agent
-                    and _is_advanced_decision_query(user_message)
-                )
+
+                route_decision = resolve_harness_route(route_request, has_data=self._has_data(current_data))
+                route_trace = route_decision.to_trace()
+                agent_results = {'route': route_trace}
             else:
                 raise PreventUpdate
 
@@ -2920,13 +3033,16 @@ class EnhancedAIChatManager:
                     logger.warning(f"Streaming data size exceeded limit, cleaned up old entries")
 
             task_id = f"{chat_id_prefix}_{int(time.time() * 1000)}"
+            route_reasoning = self._build_route_reasoning(route_trace)
             with streaming_lock:
                 streaming_data[task_id] = {
                     'status': 'processing',
                     'reasoning': '',
+                    'route_reasoning': route_reasoning,
+                    'route_trace': route_trace,
                     'response': '',
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'progress': 'AI正在初始化...',
+                    'progress': f"{route_trace.get('handler_label', 'AI')} 正在初始化...",
                     'chunk_buffer': '',
                     'last_update': time.time()
                 }
@@ -2936,7 +3052,7 @@ class EnhancedAIChatManager:
                 "content": "",
                 "type": "stream_response",
                 "task_id": task_id,
-                "agent_used": bool((not use_known_issues) and ((chat_mode == "agent") or prefer_agent_for_query) and self.use_agent and self._has_data(current_data))
+                "agent_used": bool(route_decision and route_decision.agent_used)
             })
             chat_messages = _trim_chat_messages(chat_messages)
 
@@ -2945,27 +3061,27 @@ class EnhancedAIChatManager:
                 html.Span("AI正在思考...", style={'color': '#666'})
             ])
 
-            if use_known_issues:
+            if route_decision.handler == HarnessRouteHandler.KNOWN_ISSUE:
                 with streaming_lock:
                     if task_id in streaming_data:
                         streaming_data[task_id]['progress'] = '正在检索已知问题...'
                 start_duplicate_check_streaming(task_id, user_message, current_data, chat_messages)
-            elif chat_mode == "rag":
+            elif route_decision.handler == HarnessRouteHandler.DIFY_WORKFLOW:
                 start_dify_streaming(task_id, user_message, current_data)
-            elif chat_mode == "confluence":
+            elif route_decision.handler == HarnessRouteHandler.CONFLUENCE:
                 start_confluence_streaming(task_id, user_message, current_data)
-            elif chat_mode == "summary":
+            elif route_decision.handler == HarnessRouteHandler.DATABASE_SUMMARY:
                 start_db_summary_streaming(task_id, user_message, chat_messages)
-            elif ((chat_mode == "agent") or prefer_agent_for_query) and self.use_agent and self._has_data(current_data):
-                start_agent_streaming(task_id, user_message, current_data, chat_messages)
+            elif route_decision.handler == HarnessRouteHandler.SKILL_AGENT:
+                start_agent_streaming(task_id, user_message, current_data, chat_messages, conversation_state)
             else:
-                start_llm_streaming(task_id, user_message, current_data, chat_messages, chat_mode=chat_mode)
+                start_llm_streaming(task_id, user_message, current_data, chat_messages, chat_mode=route_decision.llm_mode)
 
             streaming_state = {'active': True, 'task_id': task_id}
 
-            chat_history_children = render_chat_history(chat_messages, compact=_is_compact(ui_state))
+            chat_history_children = render_chat_history(chat_messages)
             interval_disabled = not streaming_state.get('active')
-            return chat_history_children, "", chat_messages, streaming_state, interval_disabled, status_display, agent_results
+            return chat_history_children, "", chat_messages, streaming_state, interval_disabled, status_display, agent_results, conversation_state
 
         @app.callback(
             [Output(f'{chat_id_prefix}-history', 'children', allow_duplicate=True),
@@ -2973,16 +3089,17 @@ class EnhancedAIChatManager:
              Output(f'{chat_id_prefix}-streaming-state', 'data', allow_duplicate=True),
              Output(f'{chat_id_prefix}-update-interval', 'disabled', allow_duplicate=True),
              Output(f'{chat_id_prefix}-status', 'children', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-agent-results', 'data', allow_duplicate=True)],
+             Output(f'{chat_id_prefix}-agent-results', 'data', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-conversation-state', 'data', allow_duplicate=True)],
             [Input(f'{chat_id_prefix}-update-interval', 'n_intervals')],
             [State(f'{chat_id_prefix}-messages', 'data'),
              State(f'{chat_id_prefix}-streaming-state', 'data'),
              State(f'{chat_id_prefix}-show-reasoning', 'value'),
              State(f'{chat_id_prefix}-agent-results', 'data'),
-             State(f'{chat_id_prefix}-ui-state', 'data')],
+             State(f'{chat_id_prefix}-conversation-state', 'data')],
             prevent_initial_call=True
         )
-        def update_streaming_response(n_intervals, chat_messages, streaming_state, show_reasoning, agent_results, ui_state):
+        def update_streaming_response(n_intervals, chat_messages, streaming_state, show_reasoning, agent_results, conversation_state):
             if not streaming_state or not streaming_state.get('active'):
                 raise PreventUpdate
 
@@ -3004,10 +3121,10 @@ class EnhancedAIChatManager:
                     chat_messages[response_index]["type"] = "error"
                     chat_messages[response_index]["content"] = "❌ 流式任务已失效（可能刷新页面/后端重启/网络中断）。请重新发送。"
                 streaming_state = {'active': False, 'task_id': None}
-                chat_history_children = render_chat_history(chat_messages, compact=_is_compact(ui_state))
+                chat_history_children = render_chat_history(chat_messages)
                 interval_disabled = True
                 status_display = ""
-                return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, agent_results
+                return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, agent_results, conversation_state
 
             max_stale_seconds = 300
             try:
@@ -3023,11 +3140,11 @@ class EnhancedAIChatManager:
                 tail = raw_lines[-max_lines:] if raw_lines else []
                 return "\n".join(tail).strip()
 
-            reasoning_content = stream_data.get('reasoning') or ''
+            route_reasoning = stream_data.get('route_reasoning') or ''
+            live_reasoning = stream_data.get('reasoning') or ''
+            trimmed_live_reasoning = _tail_lines(live_reasoning, 5) if live_reasoning else ''
+            reasoning_content = "\n".join([x for x in [route_reasoning, trimmed_live_reasoning] if x]).strip()
             if reasoning_content and show_reasoning and 'show' in (show_reasoning or []):
-                trimmed = _tail_lines(reasoning_content, 5)
-                if trimmed:
-                    reasoning_content = trimmed
                 reasoning_index = -1
                 for i in range(len(chat_messages) - 1, -1, -1):
                     if chat_messages[i].get('type') == 'reasoning' and chat_messages[i].get('task_id') == current_task_id:
@@ -3039,10 +3156,10 @@ class EnhancedAIChatManager:
                         "type": "reasoning",
                         "task_id": current_task_id,
                         "agent_used": False,
-                        "content": f"💭 AI思考(最近5行)：\n{reasoning_content}"
+                        "content": f"💭 AI思考：\n{reasoning_content}"
                     })
                 else:
-                    chat_messages[reasoning_index]["content"] = f"💭 AI思考(最近5行)：\n{reasoning_content}"
+                    chat_messages[reasoning_index]["content"] = f"💭 AI思考：\n{reasoning_content}"
                 chat_messages = _trim_chat_messages(chat_messages)
 
             response_content = stream_data.get('response') or ''
@@ -3054,6 +3171,20 @@ class EnhancedAIChatManager:
             if response_index != -1:
                 chat_messages[response_index]["content"] = response_content
             chat_messages = _trim_chat_messages(chat_messages)
+
+            updated_agent_results = dict(agent_results or {})
+            route_trace = stream_data.get('route_trace')
+            if isinstance(route_trace, dict) and route_trace:
+                updated_agent_results['route'] = route_trace
+
+            result_meta = stream_data.get('result_meta')
+            if isinstance(result_meta, dict) and result_meta:
+                updated_agent_results.update(result_meta)
+
+            updated_conversation_state = conversation_state or self._create_initial_conversation_state()
+            streamed_conversation_state = stream_data.get('conversation_state')
+            if isinstance(streamed_conversation_state, dict) and streamed_conversation_state:
+                updated_conversation_state = streamed_conversation_state
 
             status = stream_data.get('status')
             last_update = float(stream_data.get('last_update') or 0)
@@ -3091,9 +3222,9 @@ class EnhancedAIChatManager:
                         logger.info(f"Cleaned up streaming data for task {task_id}")
                 status_display = ""
 
-            chat_history_children = render_chat_history(chat_messages, compact=_is_compact(ui_state))
+            chat_history_children = render_chat_history(chat_messages)
             interval_disabled = not streaming_state.get('active')
-            return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, agent_results
+            return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, updated_agent_results, updated_conversation_state
 
     def _format_agent_message(self, text: str, tools_used: List[str], insights: List[str]) -> str:
         parts = []
@@ -3306,11 +3437,11 @@ if __name__ == "__main__":
 
     # 测试创建
     manager = create_enhanced_chat_manager('defect', use_agent=True)
-    print(f"✅ 增强版AI Chat Manager创建成功")
+    print("Enhanced AI Chat Manager created successfully")
     print(f"   - 看板类型: {manager.dashboard_type}")
     print(f"   - Agent启用: {manager.use_agent}")
     print(f"   - 预设问题数: {len(manager.preset_questions[manager.dashboard_type])}")
 
     # 测试界面创建
     interface = manager.create_enhanced_chat_interface('test-chat')
-    print(f"✅ 聊天界面创建成功")
+    print("Chat interface created successfully")

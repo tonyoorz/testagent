@@ -1,0 +1,270 @@
+{
+  "business_rules": [
+    {
+      "id": "br_defect_critical_classification_default",
+      "name": "Critical Issue Severity Definition",
+      "description": "默认关键问题分类口径来自 defect_explore，常用于高风险缺陷范围界定。",
+      "trigger_terms": ["critical", "关键问题", "高风险", "showstopper", "maturity"],
+      "rules": [
+        "默认包含: Showstopper_Candidate",
+        "默认包含: Showstopper_Confirmed",
+        "默认包含: Preventing Maturity Grade ConDrive",
+        "默认包含: Obstructing Maturity Grade ConDrive"
+      ],
+      "sql_guardrails": [
+        "若 classification 为数组/JSON，需按元素匹配，不可直接等值比较整串",
+        "不要把 'critical' 误当 matrix 文本过滤"
+      ],
+      "aliases": ["critical issue", "严重问题定义", "默认严重分类"]
+    },
+    {
+      "id": "br_field_mapping_defect_core",
+      "name": "Defect 字段映射口径",
+      "description": "data_processor 中将原始 Octane 字段映射为统一分析字段。",
+      "trigger_terms": ["字段映射", "mapping", "status_phase", "severity", "project"],
+      "rules": [
+        "severity <- problem_severity_udf.name",
+        "status_phase <- phase.name",
+        "solution <- solution_responsible_udf.name",
+        "parent_child <- parent_child_udf.name",
+        "blocking_reason <- blocking_reason_udf.name",
+        "tester <- detected_by.full_name/name",
+        "ecu <- assigned_ecu_udf.name",
+        "release <- detected_in_release.name",
+        "lead_model <- lead_model_udf.name",
+        "software_version <- software_version_udf"
+      ],
+      "sql_guardrails": [
+        "优先使用映射后的统一字段名，避免直接用原始 *_udf 嵌套对象",
+        "人员字段优先匹配 tester/detected_by/reporter/found_by 的同义列"
+      ],
+      "aliases": ["字段标准化", "统一列口径", "normalized fields"]
+    },
+    {
+      "id": "br_matrix_extraction_and_order",
+      "name": "Matrix 提取与排序",
+      "description": "matrix 来自 tags 中前缀 matrix-，并派生 matrix_display 和 matrix_order。",
+      "trigger_terms": ["matrix", "严重度矩阵", "matrix_display", "matrix_order"],
+      "rules": [
+        "matrix 从 tags 中提取首个以 matrix- 开头的标签",
+        "matrix_display = matrix 去掉前缀后大写",
+        "matrix_order 用 matrix_severity_order 计算排序值"
+      ],
+      "sql_guardrails": [
+        "做趋势或TopN时，显示维度优先 matrix_display，排序优先 matrix_order",
+        "若只存在 matrix 原始值，需统一大小写后比较"
+      ],
+      "aliases": ["matrix severity", "矩阵等级", "severity matrix"]
+    },
+    {
+      "id": "br_topissue_risk_score_non_linear",
+      "name": "TopIssue 风险分非线性算法",
+      "description": "TopIssue 风险分由多维信号计算，包含非线性衰减/增长逻辑。",
+      "trigger_terms": ["topissue", "risk score", "风险分", "非线性"],
+      "rules": [
+        "矩阵维度使用指数衰减，高危矩阵分值差距更大",
+        "处理时长对新票和长期票采用双峰策略",
+        "子票复杂度采用对数增长而非线性累加",
+        "综合多个维度后产出 topissue_risk_score 与 topissue_recommend_reason"
+      ],
+      "sql_guardrails": [
+        "若数据库已有 topissue_risk_score，优先直接使用，不要二次拍脑袋重算",
+        "问 TopIssue 时优先按 topissue_risk_score 降序",
+        "无该列时才退化到 severity/classification 代理口径"
+      ],
+      "aliases": ["风险评分", "top issue risk", "高风险排序"]
+    },
+    {
+      "id": "br_test_week_definition",
+      "name": "test_week 时间桶定义",
+      "description": "test_week 由 creation_time 派生，格式为 YYYY-CWww。",
+      "trigger_terms": ["test_week", "周趋势", "calendar week", "cw"],
+      "rules": [
+        "test_week = year(creation_time) + '-CW' + ISO week",
+        "按年读取数据时需过滤 creation_time.year == 目标年份"
+      ],
+      "sql_guardrails": [
+        "跨年趋势要保留年份前缀，避免只按周号聚合",
+        "周趋势优先按 test_week 排序而非字符串自然序"
+      ],
+      "aliases": ["测试周", "周口径", "year-week"]
+    },
+    {
+      "id": "br_tester_intent_resolution",
+      "name": "提票人/测试员语义口径",
+      "description": "提票相关问题应优先命中人员字段，而非项目或标题字段。",
+      "trigger_terms": ["提票", "提单", "提交人", "发现人", "tester", "reporter"],
+      "rules": [
+        "人员意图优先搜索 tester/detected_by/reporter/found_by/author_name/owner",
+        "仅在人员字段缺失时才扩展到 project/team/name"
+      ],
+      "sql_guardrails": [
+        "不要把‘建议/改进/趋势/效率’等意图词当实体过滤值",
+        "避免 LIKE '%建议%' 这类无业务字段意义的过滤"
+      ],
+      "aliases": ["提票人分析", "tester analysis", "reporter query"]
+    },
+    {
+      "id": "br_analysis_intent_fallback",
+      "name": "趋势/效率/建议问题降级查询",
+      "description": "当问题是分析意图且无明确实体时，默认返回聚合趋势而不是关键词匹配。",
+      "trigger_terms": ["趋势", "效率", "建议", "改进", "recommendation", "analysis"],
+      "rules": [
+        "优先周维度聚合: defect_count / closed_count / close_rate",
+        "若缺少时间列，退化为状态分布聚合"
+      ],
+      "sql_guardrails": [
+        "分析型问题禁止生成纯关键词 LIKE 语句",
+        "close_rate 应以 closed_count / COUNT(*) 计算并处理除零"
+      ],
+      "aliases": ["分析降级", "deterministic aggregate", "intent fallback"]
+    },
+    {
+      "id": "br_classification_and_domain_extraction",
+      "name": "classification/domain 提取口径",
+      "description": "classification 来自 reporting_class_udf.data[].name，domain 来自 solution_cluster_udf.name。",
+      "trigger_terms": ["classification", "domain", "reporting class", "solution cluster"],
+      "rules": [
+        "classification 为列表类型字段",
+        "domain 为 solution_cluster_udf 的 name",
+        "top_aida 从 aidas 列表提取主需求维度"
+      ],
+      "sql_guardrails": [
+        "分类过滤需支持数组元素匹配",
+        "domain 与 aida 不可混用为同一列"
+      ],
+      "aliases": ["分类口径", "领域口径", "reporting class mapping"]
+    },
+    {
+      "id": "br_risk_analysis_coverage_formula",
+      "name": "Risk Analysis 覆盖率口径",
+      "description": "risk_analysis 中覆盖率定义为从首次有测试周到当前周之间的覆盖比例。",
+      "trigger_terms": ["coverage", "覆盖率", "risk analysis", "aida"],
+      "rules": [
+        "coverage_percentage = 有case的周数 / (首次有测试周到当前周的总周数)",
+        "覆盖率限制在 0-100%",
+        "case_count 按唯一 testcase id 统计"
+      ],
+      "sql_guardrails": [
+        "分母不是全历史周数，而是从该AIDA首次测试周起算",
+        "不要把缺陷数当覆盖率分母"
+      ],
+      "aliases": ["AIDA覆盖率", "risk coverage", "周覆盖"]
+    },
+    {
+      "id": "br_risk_analysis_level_threshold",
+      "name": "Risk Level 分层阈值",
+      "description": "risk_analysis 的风险等级由缺陷阈值与覆盖率阈值联合决定。",
+      "trigger_terms": ["高风险", "中风险", "低风险", "threshold", "风险等级"],
+      "rules": [
+        "缺陷数 > 阈值 且 覆盖率 < 50 -> 高风险",
+        "缺陷数 > 阈值 且 覆盖率 >= 50 -> 中风险(高缺陷)",
+        "缺陷数 <= 阈值 且 覆盖率 < 50 -> 中风险(低覆盖)",
+        "缺陷数 <= 阈值 且 覆盖率 >= 50 -> 低风险"
+      ],
+      "sql_guardrails": [
+        "风险等级必须由缺陷和覆盖双维共同判断",
+        "排序优先级: 高风险 > 中风险(高缺陷) > 中风险(低覆盖) > 低风险"
+      ],
+      "aliases": ["risk bucket", "风险分层", "风险阈值"]
+    },
+    {
+      "id": "br_test_status_normalization",
+      "name": "Test Status 归一化口径",
+      "description": "test_coverage_callbacks 中状态先归一化，再用于周维度统计。",
+      "trigger_terms": ["Passed", "Failed", "Blocked", "Requires Attention", "run_status"],
+      "rules": [
+        "passed -> Passed",
+        "failed -> Failed",
+        "blocked -> Blocked",
+        "planned -> Planned",
+        "requires attention -> Blocked"
+      ],
+      "sql_guardrails": [
+        "Requires Attention 在统计中应并入 Blocked",
+        "状态比较需大小写不敏感"
+      ],
+      "aliases": ["执行状态归一化", "status normalization", "结果口径"]
+    },
+    {
+      "id": "br_test_frequency_pass_rate_definition",
+      "name": "Test Frequency 与 Pass Rate 口径",
+      "description": "按 testcase 粒度，基于周透视表计算频率与通过率。",
+      "trigger_terms": ["test frequency", "pass rate", "周通过率", "pivot"],
+      "rules": [
+        "weeks_with_result = 有非空状态的周数",
+        "weeks_passed = 状态为 Passed 的周数",
+        "test_frequency = weeks_with_result / total_weeks",
+        "pass_rate = weeks_passed / weeks_with_result"
+      ],
+      "sql_guardrails": [
+        "pass_rate 分母是 weeks_with_result，不是 total_weeks",
+        "同 testcase 同周多状态时按优先级取最差状态"
+      ],
+      "aliases": ["测试频率", "周通过率", "用例稳定性"]
+    },
+    {
+      "id": "br_test_week_status_priority",
+      "name": "同周状态优先级口径",
+      "description": "同一 testcase 在同一周出现多个状态时，采用优先级规则。",
+      "trigger_terms": ["priority", "同周状态", "最差状态", "pick_status"],
+      "rules": [
+        "优先级: Failed(4) > Blocked(3) ~= Requires Attention(3) > Planned(1) > Passed(0)",
+        "周状态取优先级最高者"
+      ],
+      "sql_guardrails": [
+        "聚合同周状态不得随意取 first/last",
+        "应显式按优先级映射后再聚合"
+      ],
+      "aliases": ["状态优先级", "worst status", "weekly status rollup"]
+    },
+    {
+      "id": "br_status_field_priority_extraction",
+      "name": "缺陷状态字段优先级口径",
+      "description": "defect_explore 中状态读取按字段优先级回退，且支持字典结构提取 name/full_name。",
+      "trigger_terms": ["status", "status_phase", "phase", "状态字段", "phase.name", "状态", "缺陷状态", "执行状态", "关闭率", "状态分布", "blocked", "failed", "passed", "requires attention", "执行状态中"],
+      "rules": [
+        "状态字段优先级: status > status_phase > phase > status.name > phase.name",
+        "若字段值为对象，优先取 name，再取 full_name",
+        "状态比较前需转字符串并清理空值"
+      ],
+      "sql_guardrails": [
+        "查询状态时优先使用 status_phase/status，不要假设只有单一列名",
+        "状态过滤需兼容对象展开后的 name 值"
+      ],
+      "aliases": ["状态列回退", "status fallback", "phase mapping", "status phase mapping", "状态口径", "run status field mapping", "执行结果状态映射"]
+    },
+    {
+      "id": "br_year_inference_from_test_week",
+      "name": "年份推断与周排序口径",
+      "description": "defect_explore 会从 test_week 反推年份并按 年+周 排序，避免跨年混淆。",
+      "trigger_terms": ["year", "test_week", "CW", "周排序", "跨年", "趋势", "周趋势", "近16周", "周变化", "通过率趋势", "关闭率趋势"],
+      "rules": [
+        "若 year 缺失，可从 test_week 形如 YYYY-CWww 或 YY-CWww 中提取年份",
+        "两位年份需要补齐到 2000+",
+        "周排序按 (year, week) 数值排序，而非字符串字典序"
+      ],
+      "sql_guardrails": [
+        "周趋势必须保留年份维度，不能仅按周号聚合",
+        "跨年统计不能把 2025-CW01 与 2026-CW01 合并"
+      ],
+      "aliases": ["跨年周口径", "year-week parsing", "CW year inference", "year-week trend", "周维度排序"]
+    },
+    {
+      "id": "br_topissue_child_master_score_selection",
+      "name": "Child/Master 风险分取高口径",
+      "description": "data_processor 的 topissue 风险计算中，Child 票会额外计算 Master 风险并采用更高分。",
+      "trigger_terms": ["child", "master", "parent", "topissue_risk_score", "relation_to_udf"],
+      "rules": [
+        "当 ticket 为 Child/Child (candidate) 且可定位 master_id 时，需同时计算 master 风险分",
+        "最终风险分取 child_score 与 master_score 的较高值",
+        "master 子票数量可由 relation_to_udf 解析得到"
+      ],
+      "sql_guardrails": [
+        "同一问题对 Child 查询时，不可只看子票自身分数",
+        "若表中已存在 topissue_risk_score，则以已计算结果为准"
+      ],
+      "aliases": ["主子票取高", "master override", "child master risk"]
+    }
+  ]
+}

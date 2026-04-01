@@ -76,7 +76,9 @@ npm run dev
 
 | 模块 | 功能描述 |
 |------|----------|
-| **downloader3.py** | Octane API 数据下载 (支持 SSO) |
+| **download/octane_downloader.py** | 高频 Octane 同步，负责 defect / manual run / history 入库 |
+| **download/testcase_downloader.py** | 低频 testcase 关系同步，负责 testcase 与 manual test / feature / story / testevent 关系落库 |
+| **downloader3.py** | 旧版下载器，保留兼容用途 |
 | **downloader5.py** | 备用下载器 |
 | **downloader6.py** | 增强版下载器 |
 | **history_downloader.py** | 历史数据采集 |
@@ -122,7 +124,7 @@ Recharts 3.6+        # 图表
 
 ### 数据存储
 - **JSON**: 主要数据格式 (defect, history)
-- **SQLite**: 本地数据库 (`database/local_data.db`)
+- **SQLite**: 本地数据库 (`database/local_data_rebuilt.db` 优先，否则回退到 `database/local_data.db`)
 - **Excel**: 映射数据 (AIDA, VIN)
 - **Pickle**: 缓存数据
 
@@ -160,11 +162,65 @@ export DEEPSEEK_API_KEY="sk-..."
 ### 3️⃣ 准备数据
 
 ```bash
-# 下载最新缺陷数据
-python downloader3.py --defect-years 2025 --auth-method cookie
+# 高频同步（推荐）：defect + MR + history 写入 SQLite，默认逐 release 拉取 MR
+python download/octane_downloader.py --team DTSV_China --auth-method cookie --skip-mr-relations
+
+# DB-only（不落地本地 JSON/CSV/Excel）
+python download/octane_downloader.py --team DTSV_China --auth-method cookie --skip-file-output --skip-mr-relations
+
+# MR 年聚合模式：按年一次拉取，再按 release 分桶写入（进度更像 defect）
+python download/octane_downloader.py --team DTSV_China --auth-method cookie --mr-download-mode per-year --skip-mr-relations
+
+# MR 全量模式：按年份拉取该团队所有 release（忽略 mr-spec 的 release 范围）
+python download/octane_downloader.py --team DTSV_China --auth-method cookie --mr-download-mode per-year --mr-all-releases --mr-spec 2025:01-13 --skip-mr-relations
+
+# 仅下载 defect + history（跳过 MR）
+python download/octane_downloader.py --team DTSV_China --auth-method cookie --skip-mr
+
+# 低频同步：补齐 testcase 与 feature/story/manual test/testevent 关系并写库
+python download/testcase_downloader.py --dtsv-all --team-name DTSV_China --release-name R2601 --auth-method cookie --full-details --save-db
+
+# 定向同步单个 feature（常用于排查）
+python download/testcase_downloader.py --auth-method cookie --feature-id 2617783 --full-details --output-dir testcase --save-csv --save-db
 
 # 更新 AIDA 映射
 python aida_mapping_updater.py
+```
+
+### 推荐同步策略
+
+- `download/octane_downloader.py`: 日常高频运行，负责 defect、manual run、history 基础数据。为了保证速度，常规同步建议带上 `--skip-mr-relations`。
+- `download/testcase_downloader.py --dtsv-all --save-db`: 低频运行，负责 testcase 与 manual test、feature、story、feature_parent_testevent 关系落库。
+- 两者职责拆开后，MR 的基础 defect 字段仍由 `octane_downloader` 写入，testcase 的覆盖关系由 `testcase_downloader` 维护。
+
+### 下载参数速查
+
+- `octane_downloader` 常用参数:
+    - `--skip-file-output`: 只写数据库，不落地文件。
+    - `--skip-db`: 只落地文件，不写数据库。
+    - `--mr-download-mode per-year`: MR 按年聚合抓取，日志更简洁。
+    - `--mr-all-releases`: 在 `per-year` 模式下抓取该年全部 release。
+    - `--skip-mr-relations`: 跳过 MR 关系增强，加速主流程。
+    - `--skip-mr` / `--skip-defects` / `--skip-history`: 按模块跳过下载。
+    - `--defect-years 2024,2025` / `--mr-spec 2025:01-13` / `--year 2025`: 控制下载年份范围。
+- `testcase_downloader` 常用参数:
+    - `--dtsv-all`: 拉取 DTSV 范围 testcase。
+    - `--feature-id` / `--epic-id`: 定向拉取。
+    - `--full-details`: 拉取 runs 与关联详情。
+    - `--save-db`: 写入 SQLite 的 testcase 关系表。
+
+### serving_* 表说明
+
+- 当前主下载链路写入的是 `octane_*` 表（如 `octane_defects`, `octane_manual_runs`, `octane_testcases`）。
+- `serving_*`（如 `serving_manual_runs`）属于历史遗留的服务层物化表；当前代码已不再直接消费它们。
+- 因此看到 `serving_manual_runs.defect_id` 全空，不会影响当前看板主链路；需要联表时应优先使用 `octane_manual_runs.defect_id` 与 testcase 关系表。
+
+```bash
+# 预览（不改库）
+python scripts/manage_serving_tables.py
+
+# 先自动备份，再删除所有 serving_* 表
+python scripts/manage_serving_tables.py --execute
 ```
 
 ### 4️⃣ 启动应用
@@ -238,7 +294,9 @@ testanalysis/
 │   └── sso_session.py             # BMW SSO 认证
 │
 ├── 📥 数据采集
-│   ├── downloader3.py             # 主下载器
+│   ├── download/octane_downloader.py   # 主 Octane 同步器
+│   ├── download/testcase_downloader.py # testcase 关系同步器
+│   ├── downloader3.py             # 旧版主下载器
 │   ├── downloader5.py             # 备用下载器
 │   ├── downloader6.py             # 增强下载器
 │   ├── history_downloader.py      # 历史数据
@@ -477,8 +535,8 @@ npm run dev  # 确保使用了 NEXT_PRIVATE_DISABLE_TURBOPACK=1
 
 ### 并发下载
 ```bash
-# 多线程下载
-python downloader3.py --defect-years 2025 --workers 4
+# 推荐：启用 turbo + 合理并发上限
+python download/octane_downloader.py --team DTSV_China --auth-method cookie --turbo-mode --max-concurrent-requests 25 --skip-mr-relations
 ```
 
 ---

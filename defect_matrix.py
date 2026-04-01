@@ -380,8 +380,11 @@ def get_time_periods(df):
 # 创建Dash应用
 app = dash.Dash(__name__, title="缺陷矩阵分布看板")
 
-# 加载缺陷数据 - 使用完整的defect目录路径
-defect_data = load_defect_data("defect/*.json")
+# 加载缺陷数据 - 仅在独立运行该模块时执行，避免被其他模块导入时阻塞启动
+if __name__ == '__main__':
+    defect_data = load_defect_data("defect/*.json")
+else:
+    defect_data = pd.DataFrame()
 
 # --- 调试：检查初始加载的数据 ---
 print("--- 初始加载数据检查 ---")

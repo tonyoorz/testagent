@@ -7,12 +7,15 @@ import glob
 import logging
 import re # 用于解析 history 文件名
 
+from octane_db import default_db_path
+
 # --- 日志配置 ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 配置 ---
 # 将数据库文件创建在 pre-analysis/database 目录下
-DB_FILE = '/Users/tonyorz/pre-analysis/database/local_data.db'
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.environ.get("OCTANE_DB_PATH") or default_db_path(PROJECT_ROOT)
 MR_FOLDER = '/Users/tonyorz/pre-analysis/mr'
 DEFECT_FOLDER = '/Users/tonyorz/pre-analysis/defect'
 HISTORY_FOLDER = '/Users/tonyorz/pre-analysis/history'

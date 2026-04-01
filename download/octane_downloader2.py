@@ -406,7 +406,7 @@ def main():
     general_group.add_argument("--save-csv", action='store_true', help="同时保存为 CSV")
     general_group.add_argument("--save-excel", action='store_true', help="同时保存为 Excel (需要 openpyxl)")
     general_group.add_argument("--limit-per-page", type=int, default=DEFAULT_LIMIT_PER_PAGE, help=f"API 分页大小 (默认: {DEFAULT_LIMIT_PER_PAGE})")
-    general_group.add_argument("--db-path", default=None, help="SQLite 数据库路径 (默认: database/local_data.db)")
+    general_group.add_argument("--db-path", default=None, help="SQLite 数据库路径 (默认: 自动优先 database/local_data_rebuilt.db, 否则 database/local_data.db)")
     general_group.add_argument("--skip-db", action='store_true', help="跳过写入 SQLite 数据库")
     general_group.add_argument("--skip-file-output", action='store_true', help="不输出 JSON/CSV/Excel 文件，仅写入数据库（如启用）")
     general_group.add_argument("--legacy-schema", action='store_true', help="使用旧表结构(仅保留原始JSON，不展平字段)")

@@ -5,6 +5,8 @@ import argparse
 import sqlite3
 from typing import Any, Dict, List, Tuple
 
+from octane_db import default_db_path
+
 
 def _connect_pg(pg_url: str):
     try:
@@ -40,7 +42,7 @@ def _to_map(rows: List[Tuple[Any, ...]], key_idx: int = 0, val_idx: int = 1) -> 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="对比 SQLite 与 PostgreSQL 双写结果")
-    parser.add_argument("--sqlite-path", default="database/local_data.db")
+    parser.add_argument("--sqlite-path", default=default_db_path())
     parser.add_argument("--pg-url", required=True)
     parser.add_argument("--pg-schema", default="public")
     args = parser.parse_args()

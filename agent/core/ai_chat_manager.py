@@ -18,112 +18,68 @@ from typing import Dict, List, Any, Optional, Callable, Generator
 import io
 import uuid
 
+from agent.core.harness_config import load_llm_provider_config, load_workspace_env
 from duplicate_issue_finder import extract_hints, get_or_build_index
 
 import dash
 from dash import dcc, html, Input, Output, State, callback_context
 from dash.exceptions import PreventUpdate
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    env_path_candidates = [
-        os.path.join(os.getcwd(), ".env"),
-        os.path.join(os.path.dirname(__file__), ".env"),
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"),
-    ]
-    for env_path in env_path_candidates:
-        try:
-            if not os.path.exists(env_path):
-                continue
-            with open(env_path, "r", encoding="utf-8") as f:
-                for raw_line in f:
-                    line = raw_line.strip()
-                    if not line or line.startswith("#") or "=" not in line:
-                        continue
-                    key, value = line.split("=", 1)
-                    key = key.strip()
-                    value = value.strip().strip("'").strip('"')
-                    if key and key not in os.environ:
-                        os.environ[key] = value
-        except Exception:
-            continue
+load_workspace_env()
 
 # ============================================================================
 # DeepSeek API 配置部分
 # ============================================================================
 
-_DEFAULT_INTERNAL_BASE = "https://aistudio.bmwbrill.cn/function-service/open-ai/deepseek-v3.2/v3"
-_DEFAULT_INTERNAL_MODEL = "deepseek-v3.2"
+_DEFAULT_INTERNAL_BASE = "https://aistudio.bmwbrill.cn/api/service/163/ernie/v2/chat/completions"
+_DEFAULT_INTERNAL_MODEL = "glm-5"
 _DEFAULT_PUBLIC_BASE = "https://api.deepseek.com/v1"
 _DEFAULT_PUBLIC_MODEL = "deepseek-reasoner"
 _DEFAULT_MOONSHOT_BASE = "https://api.moonshot.cn/v1"
 _DEFAULT_MOONSHOT_MODEL = "kimi-k2.5"
-_DEFAULT_INTERNAL_TEMPLATE_URL = "https://aistudio.bmwbrill.cn/api/service/160/{access_code}/llama4/v2/chat/completions"
+_DEFAULT_INTERNAL_TEMPLATE_URL = "https://aistudio.bmwbrill.cn/api/service/163/ernie/v2/chat/completions"
 
 HARDCODED_DEEPSEEK_ACCESS_CODE = "7FD25E1BD6124A1C8BF29030C8BFC43E"
 HARDCODED_DEEPSEEK_API_KEY = ""
-HARDCODED_DEEPSEEK_API_BASE = "https://aistudio.bmwbrill.cn/function-service/open-ai/deepseek-v3.2/v3"
-HARDCODED_DEEPSEEK_MODEL = "deepseek-v3.2"
+HARDCODED_DEEPSEEK_API_BASE = "https://aistudio.bmwbrill.cn/api/service/163/ernie/v2/chat/completions"
+HARDCODED_DEEPSEEK_MODEL = "glm-5"
 HARDCODED_DEEPSEEK_API_KEY_BACKUP = "sk-e1a77ca98a30498ca33acc7f803f0d41"
 HARDCODED_DEEPSEEK_API_BASE_BACKUP = ""
 HARDCODED_DEEPSEEK_MODEL_BACKUP = ""
 
-ACCESS_CODE = os.environ.get("DEEPSEEK_ACCESS_CODE", "") or HARDCODED_DEEPSEEK_ACCESS_CODE
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY") or (f"ACCESSCODE {ACCESS_CODE}" if ACCESS_CODE else "") or HARDCODED_DEEPSEEK_API_KEY
-
-_env_base = os.environ.get("DEEPSEEK_API_BASE")
-_env_model = os.environ.get("DEEPSEEK_MODEL")
-if _env_base:
-    DEEPSEEK_API_BASE = _env_base
-elif HARDCODED_DEEPSEEK_API_BASE:
-    DEEPSEEK_API_BASE = HARDCODED_DEEPSEEK_API_BASE
-else:
-    DEEPSEEK_API_BASE = _DEFAULT_PUBLIC_BASE if (DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.startswith("sk-")) else _DEFAULT_INTERNAL_BASE
-
-if _env_model:
-    DEEPSEEK_MODEL = _env_model
-elif HARDCODED_DEEPSEEK_MODEL:
-    DEEPSEEK_MODEL = HARDCODED_DEEPSEEK_MODEL
-else:
-    DEEPSEEK_MODEL = _DEFAULT_PUBLIC_MODEL if (DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.startswith("sk-")) else _DEFAULT_INTERNAL_MODEL
-
-_moonshot_backup_key = os.environ.get("MOONSHOT_API_KEY_BACKUP")
-_backup_base_default = _DEFAULT_MOONSHOT_BASE if _moonshot_backup_key else _DEFAULT_PUBLIC_BASE
-DEEPSEEK_API_BASE_BACKUP = (
-    os.environ.get("MOONSHOT_API_BASE_BACKUP")
-    or os.environ.get("DEEPSEEK_API_BASE_BACKUP")
-    or HARDCODED_DEEPSEEK_API_BASE_BACKUP
-    or _backup_base_default
-)
-DEEPSEEK_API_KEY_BACKUP = (
-    _moonshot_backup_key
-    or os.environ.get("DEEPSEEK_API_KEY_BACKUP")
-    or HARDCODED_DEEPSEEK_API_KEY_BACKUP
+_PROVIDER_CONFIG = load_llm_provider_config(
+    hardcoded_access_code=HARDCODED_DEEPSEEK_ACCESS_CODE,
+    hardcoded_api_key=HARDCODED_DEEPSEEK_API_KEY,
+    hardcoded_api_base=HARDCODED_DEEPSEEK_API_BASE,
+    hardcoded_model=HARDCODED_DEEPSEEK_MODEL,
+    hardcoded_backup_api_key=HARDCODED_DEEPSEEK_API_KEY_BACKUP,
+    hardcoded_backup_api_base=HARDCODED_DEEPSEEK_API_BASE_BACKUP,
+    hardcoded_backup_model=HARDCODED_DEEPSEEK_MODEL_BACKUP,
+    default_internal_base=_DEFAULT_INTERNAL_BASE,
+    default_internal_model=_DEFAULT_INTERNAL_MODEL,
+    default_public_base=_DEFAULT_PUBLIC_BASE,
+    default_public_model=_DEFAULT_PUBLIC_MODEL,
+    default_moonshot_base=_DEFAULT_MOONSHOT_BASE,
+    default_moonshot_model=_DEFAULT_MOONSHOT_MODEL,
+    default_internal_template_url=_DEFAULT_INTERNAL_TEMPLATE_URL,
 )
 
-_env_backup_model = (
-    os.environ.get("MOONSHOT_MODEL_BACKUP")
-    or os.environ.get("DEEPSEEK_MODEL_BACKUP")
-    or os.environ.get("BACKUP_LLM_MODEL")
-)
-if _env_backup_model:
-    DEEPSEEK_MODEL_BACKUP = _env_backup_model
-elif HARDCODED_DEEPSEEK_MODEL_BACKUP:
-    DEEPSEEK_MODEL_BACKUP = HARDCODED_DEEPSEEK_MODEL_BACKUP
-elif "moonshot.cn" in DEEPSEEK_API_BASE_BACKUP:
-    DEEPSEEK_MODEL_BACKUP = _DEFAULT_MOONSHOT_MODEL
-else:
-    DEEPSEEK_MODEL_BACKUP = _DEFAULT_PUBLIC_MODEL
+ACCESS_CODE = _PROVIDER_CONFIG.access_code
+DEEPSEEK_API_KEY = _PROVIDER_CONFIG.primary_api_key
+DEEPSEEK_API_BASE = _PROVIDER_CONFIG.primary_api_base
+DEEPSEEK_MODEL = _PROVIDER_CONFIG.primary_model
+DEEPSEEK_API_KEY_BACKUP = _PROVIDER_CONFIG.backup_api_key
+DEEPSEEK_API_BASE_BACKUP = _PROVIDER_CONFIG.backup_api_base
+DEEPSEEK_MODEL_BACKUP = _PROVIDER_CONFIG.backup_model
+INTERNAL_TEMPLATE_URL = _PROVIDER_CONFIG.internal_template_url
 
 # Chat Configuration
-DEFAULT_TEMPERATURE = 0.7
-DEFAULT_MAX_TOKENS = 2000
-DEFAULT_STREAM = True
+DEFAULT_TEMPERATURE = _PROVIDER_CONFIG.default_temperature
+DEFAULT_MAX_TOKENS = _PROVIDER_CONFIG.default_max_tokens
+DEFAULT_STREAM = _PROVIDER_CONFIG.default_stream
 
 # SSL验证设置 - 内网环境可能需要禁用SSL验证
-VERIFY_SSL = False
+VERIFY_SSL = _PROVIDER_CONFIG.verify_ssl
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -145,13 +101,26 @@ class DeepSeekStreamingChat:
         self.access_code = ACCESS_CODE
         self.model = model
         self.api_base = api_base or DEEPSEEK_API_BASE
-        self.client = self._create_client(self.api_key, self.api_base) if self.api_key else None
+        self.client = self._create_client(self.api_key, self.api_base) if self._should_use_openai_client(self.api_key, self.api_base) else None
         self.response_queue = queue.Queue()
         self.streaming_active = False
         # 备用API参数
         self.backup_api_key = DEEPSEEK_API_KEY_BACKUP
         self.backup_api_base = DEEPSEEK_API_BASE_BACKUP
         self.backup_model = DEEPSEEK_MODEL_BACKUP
+
+    def _is_internal_direct_endpoint(self, api_base: Optional[str]) -> bool:
+        base = str(api_base or "")
+        return "/api/service/" in base and "/chat/completions" in base
+
+    def _should_use_openai_client(self, api_key: Optional[str], api_base: Optional[str]) -> bool:
+        return bool(api_key) and not self._is_internal_direct_endpoint(api_base)
+
+    def _build_openai_compat_url(self) -> str:
+        base = (self.api_base or "").rstrip("/")
+        if base.endswith("/chat/completions"):
+            return base
+        return base + "/chat/completions"
         
     def _create_client(self, api_key, api_base):
         """创建优化的HTTP客户端"""
@@ -191,7 +160,7 @@ class DeepSeekStreamingChat:
         return bool(self._extract_access_code())
 
     def _resolve_internal_template_url(self) -> str:
-        tmpl = os.environ.get("DEEPSEEK_INTERNAL_TEMPLATE_URL") or _DEFAULT_INTERNAL_TEMPLATE_URL
+        tmpl = os.environ.get("DEEPSEEK_INTERNAL_TEMPLATE_URL") or INTERNAL_TEMPLATE_URL
         code = self._extract_access_code()
         if not code:
             raise ValueError("未配置 access code，无法调用内网模板接口")
@@ -200,18 +169,22 @@ class DeepSeekStreamingChat:
     def _request_internal_template_nonstream(self, messages: List[Dict[str, str]],
                                              temperature: float, max_tokens: int) -> str:
         url = self._resolve_internal_template_url()
+        access_code = self._extract_access_code()
+        if not access_code:
+            raise ValueError("未配置 access code，无法调用内网GLM-5接口")
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": self._resolve_temperature(temperature, self.model, self.api_base),
-            "max_token_length": max_tokens,
             "stream": False,
         }
         headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
+            "Authorization": f"ACCESSCODE {access_code}",
         }
-        resp = requests.post(url, headers=headers, json=payload, timeout=60, verify=False)
+        timeout_sec = float(os.environ.get("DEEPSEEK_INTERNAL_TIMEOUT", "120"))
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout_sec, verify=False)
         resp.raise_for_status()
         try:
             obj = resp.json()
@@ -242,7 +215,7 @@ class DeepSeekStreamingChat:
     def _probe_non_stream_error(self, messages: List[Dict[str, str]], temperature: float, max_tokens: int) -> str:
         """在SDK返回结构异常时，直接探测原始HTTP返回，给出可读错误。"""
         try:
-            url = (self.api_base or "").rstrip("/") + "/chat/completions"
+            url = self._build_openai_compat_url()
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -288,9 +261,13 @@ class DeepSeekStreamingChat:
             try:
                 return self._request_internal_template_nonstream(messages, temperature, max_tokens)
             except Exception as e:
+                if self._is_internal_direct_endpoint(self.api_base):
+                    raise RuntimeError(f"内网GLM-5接口调用失败: {e}") from e
                 logger.warning(f"内网模板接口调用失败，回退OpenAI兼容链路: {e}")
 
         if not self.client:
+            if self._is_internal_direct_endpoint(self.api_base):
+                raise RuntimeError("当前内网接口不是OpenAI兼容base_url，已阻止错误回退链路")
             self.client = self._create_client(self.api_key, self.api_base)
         try:
             resolved_temperature = self._resolve_temperature(temperature, self.model, self.api_base)

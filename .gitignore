@@ -45,3 +45,5 @@ history/
 database/
 backups/
 notebooks/
+report/generated_runs/
+testcase/dtsv_testcases_all*.json

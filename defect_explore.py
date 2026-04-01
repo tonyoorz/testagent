@@ -136,6 +136,17 @@ def get_status_series(current_df):
     return pd.Series([], dtype=str)
 
 
+def normalize_status_text(value):
+    raw = extract_status_value(value)
+    s = str(raw) if raw is not None else ''
+    s = s.strip().lower()
+    if '_' in s:
+        base, tail = s.rsplit('_', 1)
+        if tail in {'critical', 'high', 'medium', 'low', 's1', 's2', 's3', 's4'}:
+            s = base
+    return s
+
+
 def extract_filter_value(value):
     if isinstance(value, dict):
         for key in ('name', 'full_name', 'value', 'id'):
@@ -1658,13 +1669,15 @@ def filter_dataframe(df, years=None, projects=None, start_date=None, end_date=No
         if special_child_status in statuses and 'status_phase' in filtered_df.columns and 'blocking_reason' in filtered_df.columns:
             normal_statuses = [s for s in statuses if s != special_child_status]
             normal_statuses.append("09-Concluded without action")
+            status_norm = filtered_df['status_phase'].apply(normalize_status_text)
             if len(statuses) == 1 and statuses[0] == special_child_status:
                 filtered_df = filtered_df[
-                    (filtered_df['status_phase'] == '09-Concluded without action') &
+                    (status_norm == '09-concluded without action') &
                     (filtered_df['blocking_reason'] == 'Child (Duplicate)')
                 ]
             else:
-                filtered_df = filtered_df[filtered_df['status_phase'].isin(normal_statuses)]
+                normal_statuses_norm = {normalize_status_text(s) for s in normal_statuses if normalize_status_text(s)}
+                filtered_df = filtered_df[status_norm.isin(normal_statuses_norm)]
         else:
             status_series = get_status_series(filtered_df)
             if not status_series.empty:

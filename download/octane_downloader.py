@@ -12,6 +12,7 @@ import concurrent.futures # Added for history
 from tqdm import tqdm # Added for history
 import sys
 import re
+from requests.adapters import HTTPAdapter
 
 try:
     _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,6 +60,7 @@ EP_DEFECT = "defects"
 EP_MANUALRUN = "manual_runs"
 EP_USER = "workspace_users"
 EP_HISTORY = "history_logs"
+EP_WORK_ITEMS = "work_items"
 
 DEFAULT_F_DEFECT_MAIN = (
     "id", "name", "creation_time", "last_modified", "parent_child_udf", "team",
@@ -82,16 +84,31 @@ DEFAULT_F_MANUALRUN = (
     "test_version", "test_phase", "run_team_000_udf", "domain_udf", "status",
     "native_status", "target_ecu_conf_udf"
 )
+
+FIELDS_MR_REL_WORK_ITEMS = (
+    "id", "name", "subtype", "parent{id,name,subtype}", "run_covered_content_relation{id}"
+)
 F_DEFECT_FOR_HISTORY_IDS = ("id", "name", "last_modified", "creation_time", "team", "problem_finder_team_udf", "severity", "phase", "owner", "detected_in_release")
 
 DEFAULT_TEAM = "DTSV_China" # Default team for all operations unless overridden by specific args
 
 # --- CORE FUNCTIONS ---
-def fetch_octane_data(session, endpoint, fields, query, limit_per_page=DEFAULT_LIMIT_PER_PAGE, order_by=None, api_url=API_BASE_URL):
+def _shorten_for_log(text, max_len=240):
+    if text is None:
+        return ""
+    t = str(text)
+    if len(t) <= max_len:
+        return t
+    return f"{t[:max_len]}...<len={len(t)}>"
+
+
+def fetch_octane_data(session, endpoint, fields, query, limit_per_page=DEFAULT_LIMIT_PER_PAGE, order_by=None, api_url=API_BASE_URL, log_query=True, suppress_info=False):
     all_data = []
     offset = 0
     total_fetched = 0
-    logging.info(f"开始从端点 '{endpoint}' (API URL: {api_url}) 获取数据，查询条件: {query}")
+    query_for_log = _shorten_for_log(query) if log_query else "<hidden>"
+    if not suppress_info:
+        logging.info(f"开始从端点 '{endpoint}' (API URL: {api_url}) 获取数据，查询条件: {query_for_log}")
     while True:
         request_params = {
             "fields": ",".join(fields) if isinstance(fields, (list, tuple)) else fields,
@@ -122,18 +139,27 @@ def fetch_octane_data(session, endpoint, fields, query, limit_per_page=DEFAULT_L
             total_count = int(total_count_api) if isinstance(total_count_api, int) else 0
 
             if not batch_data and offset == 0:
-                logging.info(f"端点 '{endpoint}' 查询没有返回任何数据。"); break
+                if not suppress_info:
+                    logging.info(f"端点 '{endpoint}' 查询没有返回任何数据。")
+                break
             if not batch_data:
-                logging.info(f"获取到空数据页，假定数据已全部获取. 总计 {total_fetched} 条."); break
+                if not suppress_info:
+                    logging.info(f"获取到空数据页，假定数据已全部获取. 总计 {total_fetched} 条.")
+                break
             
             all_data.extend(batch_data)
             total_fetched += batch_size
-            logging.info(f"成功获取 {batch_size} 条数据，累计 {total_fetched} 条 (API报告总数: {total_count_api if total_count_api is not None else '未知'}).")
+            if not suppress_info:
+                logging.info(f"成功获取 {batch_size} 条数据，累计 {total_fetched} 条 (API报告总数: {total_count_api if total_count_api is not None else '未知'}).")
 
             if total_count > 0 and total_fetched >= total_count:
-                logging.info(f"已获取 API 报告的所有 {total_fetched} 条数据."); break
+                if not suppress_info:
+                    logging.info(f"已获取 API 报告的所有 {total_fetched} 条数据.")
+                break
             if batch_size < limit_per_page:
-                logging.info(f"获取到的数据 ({batch_size}) 少于分页限制 ({limit_per_page})，已获取所有数据. 总计 {total_fetched} 条."); break
+                if not suppress_info:
+                    logging.info(f"获取到的数据 ({batch_size}) 少于分页限制 ({limit_per_page})，已获取所有数据. 总计 {total_fetched} 条.")
+                break
             offset += limit_per_page
             time.sleep(0.3)
         except requests.exceptions.Timeout:
@@ -144,7 +170,8 @@ def fetch_octane_data(session, endpoint, fields, query, limit_per_page=DEFAULT_L
             logging.error(f"解析JSON失败: {e}. Response: {resp.text[:500]}"); break
         except Exception as e:
             logging.error(f"处理请求时发生未知错误 '{endpoint}': {e}"); break
-    logging.info(f"从端点 '{endpoint}' 数据获取完成，共获取 {len(all_data)} 条数据。")
+    if not suppress_info:
+        logging.info(f"从端点 '{endpoint}' 数据获取完成，共获取 {len(all_data)} 条数据。")
     return all_data
 
 def fetch_single_page(session, endpoint, fields, query, limit_per_page, offset, order_by=None, api_url=API_BASE_URL):
@@ -188,7 +215,7 @@ def fetch_single_page(session, endpoint, fields, query, limit_per_page, offset, 
         return {"error": f"未知错误: {e}", "data": []}
 
 def fetch_octane_data_parallel(session, endpoint, fields, query, limit_per_page=DEFAULT_LIMIT_PER_PAGE, order_by=None, api_url=API_BASE_URL, max_workers=10):
-    logging.info(f"开始并发下载 '{endpoint}' 数据，查询条件: {query}")
+    logging.info(f"开始并发下载 '{endpoint}' 数据，查询条件: {_shorten_for_log(query)}")
     first_page = fetch_single_page(session, endpoint, fields, query, limit_per_page, 0, order_by, api_url)
     if first_page["error"]:
         logging.error(f"获取第一页失败: {first_page['error']}")
@@ -225,6 +252,40 @@ def fetch_octane_data_parallel(session, endpoint, fields, query, limit_per_page=
     page_results.sort(key=lambda x: x[0])
     for _, page_data in page_results:
         all_data.extend(page_data)
+
+    # 某些 Octane 查询会把 total_count 截断为固定上限(例如 15000)，
+    # 这里在达到 total_count 后继续向后探测，直到遇到空页/短页，避免漏数。
+    next_offset = limit_per_page * total_pages
+    if len(all_data) >= total_count:
+        while True:
+            extra_page = fetch_single_page(
+                session,
+                endpoint,
+                fields,
+                query,
+                limit_per_page,
+                next_offset,
+                order_by,
+                api_url,
+            )
+            if extra_page.get("error"):
+                logging.warning(f"额外分页探测失败 offset={next_offset}: {extra_page['error']}")
+                break
+
+            extra_data = extra_page.get("data", [])
+            if not extra_data:
+                break
+
+            if next_offset == limit_per_page * total_pages:
+                logging.warning(
+                    f"检测到 API total_count 可能被截断 (reported={total_count})，继续补拉后续分页..."
+                )
+
+            all_data.extend(extra_data)
+            if len(extra_data) < limit_per_page:
+                break
+            next_offset += limit_per_page
+
     logging.info(f"并发下载完成，总数据量: {len(all_data)} 条")
     return all_data
 
@@ -323,6 +384,271 @@ def save_data(data_to_save, filename_prefix, output_directory, save_csv_flag=Fal
     elif save_csv_flag or save_excel_flag:
         logging.warning(f"无法为 {filename_prefix} 保存 CSV/Excel，数据非字典列表格式.")
 
+def _chunk_list(items, chunk_size):
+    for i in range(0, len(items), chunk_size):
+        yield items[i:i + chunk_size]
+
+def _as_id_str(value):
+    if value is None:
+        return None
+    value_str = str(value).strip()
+    return value_str if value_str else None
+
+def _add_unique_link(target_list, seen_ids, item_id, item_name, subtype):
+    item_id_str = _as_id_str(item_id)
+    if not item_id_str or item_id_str in seen_ids:
+        return
+    target_list.append({
+        "id": item_id_str,
+        "name": item_name,
+        "subtype": subtype,
+    })
+    seen_ids.add(item_id_str)
+
+def _extract_defect_links_from_mr_field(defect_ref):
+    rows = []
+    if isinstance(defect_ref, dict):
+        if isinstance(defect_ref.get("data"), list):
+            rows.extend([d for d in defect_ref.get("data") if isinstance(d, dict)])
+        elif isinstance(defect_ref.get("data"), dict):
+            rows.append(defect_ref.get("data"))
+        elif defect_ref.get("id") is not None:
+            rows.append(defect_ref)
+    elif isinstance(defect_ref, list):
+        rows.extend([d for d in defect_ref if isinstance(d, dict)])
+    return rows
+
+
+def _load_relation_cache_from_mr_file(mr_file_path):
+    """从历史 MR 文件加载关系字段缓存，按 run_id 索引。"""
+    if not mr_file_path or not os.path.exists(mr_file_path):
+        return {}
+    try:
+        with open(mr_file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            return {}
+
+        cache = {}
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            run_id = _as_id_str(item.get("id"))
+            if not run_id:
+                continue
+            cache[run_id] = {
+                "linked_defects": item.get("linked_defects", []),
+                "covered_features": item.get("covered_features", []),
+                "covered_stories": item.get("covered_stories", []),
+                "testevent_features": item.get("testevent_features", []),
+                "last_modified": item.get("last_modified"),
+                "version_stamp": item.get("version_stamp"),
+            }
+        return cache
+    except Exception as e:
+        logging.warning(f"读取 MR 关系缓存失败: {mr_file_path}, 错误: {e}")
+        return {}
+
+
+def _apply_relation_cache_to_row(run_item, cached_rel, seen_sets):
+    if not isinstance(cached_rel, dict):
+        return
+
+    for d in cached_rel.get("linked_defects", []):
+        if isinstance(d, dict):
+            _add_unique_link(run_item["linked_defects"], seen_sets["defects"], d.get("id"), d.get("name"), d.get("subtype") or "defect")
+
+    for f in cached_rel.get("covered_features", []):
+        if isinstance(f, dict):
+            _add_unique_link(run_item["covered_features"], seen_sets["features"], f.get("id"), f.get("name"), f.get("subtype") or "feature")
+
+    for s in cached_rel.get("covered_stories", []):
+        if isinstance(s, dict):
+            _add_unique_link(run_item["covered_stories"], seen_sets["stories"], s.get("id"), s.get("name"), s.get("subtype") or "story")
+
+    for te in cached_rel.get("testevent_features", []):
+        if isinstance(te, dict):
+            _add_unique_link(run_item["testevent_features"], seen_sets["testevents"], te.get("id"), te.get("name"), te.get("subtype") or "feature")
+
+
+def _fetch_work_items_for_run_ids(session, run_ids):
+    if not run_ids:
+        return []
+    id_expr = ",".join(f"'{rid}'" for rid in run_ids)
+    rel_query = f'"(subtype IN \'defect\',\'feature\',\'story\';run_covered_content_relation={{id IN {id_expr}}})"'
+    return fetch_octane_data(
+        session,
+        EP_WORK_ITEMS,
+        FIELDS_MR_REL_WORK_ITEMS,
+        rel_query,
+        limit_per_page=500,
+        order_by="id",
+        api_url=API_BASE_URL,
+        log_query=False,
+        suppress_info=True,
+    )
+
+def enrich_manual_runs_with_relations(
+    session,
+    manual_runs,
+    max_workers=12,
+    chunk_size=40,
+    refresh_mode="smart",
+    relation_cache=None,
+):
+    """保持 MR 原结构，补充 linked defect / covered feature / user story 关系。"""
+    if not manual_runs:
+        return manual_runs
+
+    run_id_to_rows = {}
+    row_seen = {}
+    all_run_ids = []
+    cache_hits = 0
+    for idx, run_item in enumerate(manual_runs):
+        if not isinstance(run_item, dict):
+            continue
+
+        run_id = _as_id_str(run_item.get("id"))
+        if not run_id:
+            continue
+        run_id_to_rows.setdefault(run_id, []).append(idx)
+
+        # 保持原结构并追加增强字段（不存在时创建）
+        run_item.setdefault("linked_defects", [])
+        run_item.setdefault("covered_features", [])
+        run_item.setdefault("covered_stories", [])
+        run_item.setdefault("testevent_features", [])
+
+        row_seen[idx] = {
+            "defects": {str(x.get("id")) for x in run_item["linked_defects"] if isinstance(x, dict) and x.get("id") is not None},
+            "features": {str(x.get("id")) for x in run_item["covered_features"] if isinstance(x, dict) and x.get("id") is not None},
+            "stories": {str(x.get("id")) for x in run_item["covered_stories"] if isinstance(x, dict) and x.get("id") is not None},
+            "testevents": {str(x.get("id")) for x in run_item["testevent_features"] if isinstance(x, dict) and x.get("id") is not None},
+        }
+
+        # 兼容原 MR 的 defect 字段：先回填到 linked_defects
+        defect_ref = run_item.get("defect")
+        for d in _extract_defect_links_from_mr_field(defect_ref):
+            _add_unique_link(
+                run_item["linked_defects"],
+                row_seen[idx]["defects"],
+                d.get("id"),
+                d.get("name"),
+                d.get("subtype") or "defect",
+            )
+
+        if isinstance(relation_cache, dict):
+            cached_rel = relation_cache.get(run_id)
+            if cached_rel:
+                _apply_relation_cache_to_row(run_item, cached_rel, row_seen[idx])
+                cache_hits += 1
+
+        has_relation_data = bool(
+            run_item.get("linked_defects")
+            or run_item.get("covered_features")
+            or run_item.get("covered_stories")
+            or run_item.get("testevent_features")
+        )
+
+        cache_row = relation_cache.get(run_id) if isinstance(relation_cache, dict) else None
+        cached_last_modified = cache_row.get("last_modified") if isinstance(cache_row, dict) else None
+        cached_version_stamp = cache_row.get("version_stamp") if isinstance(cache_row, dict) else None
+        current_last_modified = run_item.get("last_modified")
+        current_version_stamp = run_item.get("version_stamp")
+
+        is_updated_since_cache = False
+        if cache_row is not None:
+            if cached_last_modified and current_last_modified and str(cached_last_modified) != str(current_last_modified):
+                is_updated_since_cache = True
+            elif cached_version_stamp is not None and current_version_stamp is not None and str(cached_version_stamp) != str(current_version_stamp):
+                is_updated_since_cache = True
+
+        should_query = True
+        if refresh_mode == "cache-only":
+            should_query = False
+        elif refresh_mode == "missing":
+            should_query = not has_relation_data
+        elif refresh_mode == "smart":
+            should_query = (not has_relation_data) or is_updated_since_cache
+        elif refresh_mode == "force":
+            should_query = True
+
+        if should_query:
+            all_run_ids.append(run_id)
+
+    if not all_run_ids:
+        logging.info(f"MR 关系字段增强跳过远端查询。缓存命中 {cache_hits} 条 run。")
+        return manual_runs
+
+    all_run_ids = sorted(set(all_run_ids))
+    logging.info(f"开始增强 MR 关系字段，模式={refresh_mode}，缓存命中={cache_hits}，待查询 run={len(all_run_ids)}")
+
+    run_chunks = list(_chunk_list(all_run_ids, max(10, chunk_size)))
+
+    with tqdm(total=len(run_chunks), desc="增强MR关系", unit="chunk") as pbar:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, max_workers)) as executor:
+            future_to_chunk = {
+                executor.submit(_fetch_work_items_for_run_ids, session, chunk): chunk
+                for chunk in run_chunks
+            }
+            for future in concurrent.futures.as_completed(future_to_chunk):
+                chunk = future_to_chunk[future]
+                chunk_set = set(chunk)
+                try:
+                    relation_items = future.result() or []
+                except Exception as e:
+                    logging.warning(f"MR 关系增强失败 chunk_size={len(chunk)}: {e}")
+                    pbar.update(1)
+                    continue
+
+                for wi in relation_items:
+                    if not isinstance(wi, dict):
+                        continue
+
+                    wi_id = _as_id_str(wi.get("id"))
+                    wi_name = wi.get("name")
+                    wi_subtype = wi.get("subtype")
+                    parent = wi.get("parent") if isinstance(wi.get("parent"), dict) else None
+
+                    rel_data = wi.get("run_covered_content_relation", {})
+                    rel_rows = rel_data.get("data", []) if isinstance(rel_data, dict) else []
+                    related_run_ids = []
+                    for rel in rel_rows:
+                        rid = _as_id_str(rel.get("id") if isinstance(rel, dict) else None)
+                        if rid and rid in chunk_set:
+                            related_run_ids.append(rid)
+
+                    if not related_run_ids:
+                        continue
+
+                    for rid in set(related_run_ids):
+                        for row_idx in run_id_to_rows.get(rid, []):
+                            mr_item = manual_runs[row_idx]
+                            linked_defects = mr_item.setdefault("linked_defects", [])
+                            covered_features = mr_item.setdefault("covered_features", [])
+                            covered_stories = mr_item.setdefault("covered_stories", [])
+                            testevent_features = mr_item.setdefault("testevent_features", [])
+
+                            if wi_subtype == "defect":
+                                _add_unique_link(linked_defects, row_seen[row_idx]["defects"], wi_id, wi_name, "defect")
+                            elif wi_subtype == "feature":
+                                _add_unique_link(covered_features, row_seen[row_idx]["features"], wi_id, wi_name, "feature")
+                            elif wi_subtype == "story":
+                                _add_unique_link(covered_stories, row_seen[row_idx]["stories"], wi_id, wi_name, "story")
+                                if parent and str(parent.get("subtype")) == "feature":
+                                    _add_unique_link(
+                                        testevent_features,
+                                        row_seen[row_idx]["testevents"],
+                                        parent.get("id"),
+                                        parent.get("name"),
+                                        parent.get("subtype"),
+                                    )
+
+                pbar.update(1)
+
+    logging.info("MR 关系字段增强完成。")
+    return manual_runs
+
 def _build_year_list_from_start_year(start_year, end_year=None):
     if end_year is None:
         end_year = datetime.now().year
@@ -337,6 +663,10 @@ def _build_mr_spec_from_start_year(start_year, end_year=None, release_range="01-
 def get_authenticated_session(auth_method_choice, sso_login_file=None, cookie_file_path=None):
     session_obj = requests.Session()
     session_obj.verify = False
+    # 提高连接池上限，避免高并发时出现 "Connection pool is full" 导致吞吐下降
+    adapter = HTTPAdapter(pool_connections=64, pool_maxsize=64)
+    session_obj.mount("https://", adapter)
+    session_obj.mount("http://", adapter)
 
     if auth_method_choice == 'sso':
         if not SSO_AVAILABLE:
@@ -533,7 +863,7 @@ def main():
     general_group.add_argument("--save-excel", action='store_true', help="同时保存为 Excel (需要 openpyxl)")
     general_group.add_argument("--year", type=int, default=None, help="全局起始年份。设置后，默认只下载该年份及之后的数据；若同时显式指定 --defect-years / --mr-spec / --history-start-date，则以显式参数为准")
     general_group.add_argument("--limit-per-page", type=int, default=DEFAULT_LIMIT_PER_PAGE, help=f"API 分页大小 (默认: {DEFAULT_LIMIT_PER_PAGE})")
-    general_group.add_argument("--db-path", default=None, help="SQLite 数据库路径 (默认: database/local_data.db)")
+    general_group.add_argument("--db-path", default=None, help="SQLite 数据库路径 (默认: 自动优先 database/local_data_rebuilt.db, 否则 database/local_data.db)")
     general_group.add_argument("--skip-db", action='store_true', help="跳过写入 SQLite 数据库")
     general_group.add_argument("--skip-file-output", action='store_true', help="不输出 JSON/CSV/Excel 文件，仅写入数据库（如启用）")
     general_group.add_argument("--legacy-schema", action='store_true', help="使用旧表结构(仅保留原始JSON，不展平字段)")
@@ -554,6 +884,12 @@ def main():
     mr_group.add_argument("--skip-mr", action='store_true', help="跳过下载 Manual Runs")
     default_mr_spec = f"{datetime.now().year-1}:01-13,{datetime.now().year}:01-13"
     mr_group.add_argument("--mr-spec",default=default_mr_spec, help="Manual Runs 年份和 Release 范围.")
+    mr_group.add_argument("--mr-download-mode", choices=["per-release", "per-year"], default="per-release", help="MR 下载模式: per-release(默认，逐release) / per-year(按年一次拉取后按release分桶)")
+    mr_group.add_argument("--mr-all-releases", action='store_true', help="MR 全量模式：按年份拉取该团队所有 release（忽略 --mr-spec 中的 release 范围）")
+    mr_group.add_argument("--skip-mr-relations", action='store_true', help="跳过 MR 关系增强（linked defect/feature/story）")
+    mr_group.add_argument("--mr-rel-workers", type=int, default=12, help="MR 关系增强并发数 (默认: 12)")
+    mr_group.add_argument("--mr-rel-chunk-size", type=int, default=40, help="MR 关系增强每批 run 数 (默认: 40)")
+    mr_group.add_argument("--mr-rel-mode", choices=["smart", "missing", "cache-only", "force"], default="smart", help="MR 关系刷新策略: smart(默认，缺失或run更新才刷新) / missing(仅补缺失) / cache-only(只用本地缓存) / force(全量刷新)")
 
     history_group = parser.add_argument_group('Defect History Download')
     history_group.add_argument("--fetch-history", action='store_true', default=True, help="启用 Defect History 下载")
@@ -834,72 +1170,151 @@ def main():
     # --- Download Manual Runs ---
     if not args.skip_mr and args.mr_spec:
         os.makedirs(mr_output_path, exist_ok=True)
+        if args.mr_all_releases and args.mr_download_mode != "per-year":
+            logging.warning("--mr-all-releases 仅支持按年聚合下载，已自动切换为 --mr-download-mode per-year")
+            args.mr_download_mode = "per-year"
         year_specs_mr = args.mr_spec.split(',')
         for spec_mr in year_specs_mr:
             try:
-                if ':' not in spec_mr: logging.error(f"MR 规范 '{spec_mr}' 格式错误."); continue
-                year_s, rel_s = spec_mr.strip().split(':', 1)
+                spec_mr_clean = spec_mr.strip()
+                if args.mr_all_releases:
+                    year_s = spec_mr_clean.split(':', 1)[0]
+                    rel_s = ""
+                else:
+                    if ':' not in spec_mr_clean:
+                        logging.error(f"MR 规范 '{spec_mr_clean}' 格式错误.")
+                        continue
+                    year_s, rel_s = spec_mr_clean.split(':', 1)
+
                 year_v = int(year_s)
                 if not (2000 < year_v < 2100): raise ValueError("年份无效")
                 
                 rels_fetch = []
-                for group_mr in rel_s.split(';'):
-                    group_mr = group_mr.strip()
-                    if not group_mr: continue
-                    if '-' in group_mr:
-                        s, e = map(int, group_mr.split('-'))
-                        if s > e: raise ValueError(f"Release范围无效: {group_mr}")
-                        rels_fetch.extend([f"{i:02d}" for i in range(s, e + 1)])
-                    else:
-                         for r_str in group_mr.split('&'):
-                              r_str = r_str.strip()
-                              if r_str.isdigit() and 1 <= int(r_str) <= 99: rels_fetch.append(f"{int(r_str):02d}")
-                              else: logging.warning(f"跳过无效release: '{r_str}' in '{spec_mr}'")
+                if not args.mr_all_releases:
+                    for group_mr in rel_s.split(';'):
+                        group_mr = group_mr.strip()
+                        if not group_mr:
+                            continue
+                        if '-' in group_mr:
+                            s, e = map(int, group_mr.split('-'))
+                            if s > e:
+                                raise ValueError(f"Release范围无效: {group_mr}")
+                            rels_fetch.extend([f"{i:02d}" for i in range(s, e + 1)])
+                        else:
+                            for r_str in group_mr.split('&'):
+                                r_str = r_str.strip()
+                                if r_str.isdigit() and 1 <= int(r_str) <= 99:
+                                    rels_fetch.append(f"{int(r_str):02d}")
+                                else:
+                                    logging.warning(f"跳过无效release: '{r_str}' in '{spec_mr_clean}'")
                 
                 rels_fetch = sorted(list(set(rels_fetch)))
-                if not rels_fetch: logging.warning(f"'{spec_mr}'未解析出有效Release."); continue
+                if args.mr_all_releases:
+                    logging.info(f"下载 {year_v} Manual Runs 全量（所有release，团队: {team_to_use}）")
+                else:
+                    if not rels_fetch:
+                        logging.warning(f"'{spec_mr_clean}'未解析出有效Release.")
+                        continue
+                    logging.info(f"下载 {year_v} Manual Runs for releases: {rels_fetch} (团队: {team_to_use})")
 
-                logging.info(f"下载 {year_v} Manual Runs for releases: {rels_fetch} (团队: {team_to_use})")
-                for rel_num in rels_fetch:
-                    rel_name = f"R-{str(year_v)[-2:]}-{rel_num}"
-                    logging.info(f"  下载 {rel_name}...")
-                    q_mr = f'"(run_team_000_udf={{name=\'{team_to_use}\'}});(release={{name=\'{rel_name}\'}})"'
-                    mr_data = fetch_octane_data_parallel(
-                        session_active, EP_MANUALRUN, DEFAULT_F_MANUALRUN, q_mr,
+                def _persist_release_runs(rel_name, rel_data):
+                    rel_num_local = rel_name.split('-')[-1] if '-' in rel_name else rel_name
+                    fn_mr = f"R{str(year_v)[-2:]}{rel_num_local}"
+                    mr_output_file = os.path.join(mr_output_path, f"{fn_mr}.json")
+
+                    if not args.skip_mr_relations:
+                        relation_cache = _load_relation_cache_from_mr_file(mr_output_file)
+                        rel_data = enrich_manual_runs_with_relations(
+                            session_active,
+                            rel_data,
+                            max_workers=max(1, args.mr_rel_workers),
+                            chunk_size=max(10, args.mr_rel_chunk_size),
+                            refresh_mode=args.mr_rel_mode,
+                            relation_cache=relation_cache,
+                        )
+
+                    if store_targets:
+                        for store_name, store_obj in store_targets:
+                            try:
+                                if args.legacy_schema:
+                                    store_obj.upsert_payload(
+                                        kind="manual_runs",
+                                        team=team_to_use,
+                                        year=year_v,
+                                        spec=rel_name,
+                                        payload={"data": rel_data},
+                                    )
+                                    logging.info(f"  [{store_name}] 已保存旧表: {len(rel_data)} 条 manual runs ({rel_name})")
+                                else:
+                                    try:
+                                        count = store_obj.upsert_manual_runs_batch(
+                                            manual_runs=rel_data,
+                                            year=year_v,
+                                            spec=rel_name,
+                                        )
+                                        logging.info(f"  [{store_name}] 已保存优化表: {count} 条 manual runs ({rel_name})")
+                                    except Exception as e_opt:
+                                        logging.error(f"  [{store_name}] 保存优化表失败 ({rel_name}): {e_opt}")
+                            except Exception as e_db_write:
+                                logging.error(f"[{store_name}] 写入 manual_runs {rel_name} 失败: {e_db_write}")
+
+                    if not args.skip_file_output:
+                        save_data(rel_data, fn_mr, mr_output_path, args.save_csv, args.save_excel)
+
+                if args.mr_download_mode == "per-year":
+                    rel_names = [f"R-{str(year_v)[-2:]}-{rel_num}" for rel_num in rels_fetch]
+                    if args.mr_all_releases:
+                        q_mr_year = f'"(run_team_000_udf={{name=\'{team_to_use}\'}})"'
+                        logging.info(f"  按年聚合全量下载 {year_v}（不限定release）")
+                    else:
+                        rel_expr = "||".join([f"(release={{name='{rn}'}})" for rn in rel_names])
+                        q_mr_year = f'"(run_team_000_udf={{name=\'{team_to_use}\'}});({rel_expr})"'
+                        logging.info(f"  按年聚合下载 {year_v}，release数={len(rel_names)}")
+
+                    mr_data_year = fetch_octane_data_parallel(
+                        session_active, EP_MANUALRUN, DEFAULT_F_MANUALRUN, q_mr_year,
                         limit_per_page=args.limit_per_page,
                         max_workers=args.max_concurrent_requests
                     )
-                    if mr_data: # Only save if data is found
-                        # 与 downloader7 保持一致：R2501.json (移除 team 后缀)
-                        fn_mr = f"R{str(year_v)[-2:]}{rel_num}"
-                        if store_targets:
-                            for store_name, store_obj in store_targets:
-                                try:
-                                    if args.legacy_schema:
-                                        store_obj.upsert_payload(
-                                            kind="manual_runs",
-                                            team=team_to_use,
-                                            year=year_v,
-                                            spec=rel_name,
-                                            payload={"data": mr_data},
-                                        )
-                                        logging.info(f"  [{store_name}] 已保存旧表: {len(mr_data)} 条 manual runs")
-                                    else:
-                                        try:
-                                            count = store_obj.upsert_manual_runs_batch(
-                                                manual_runs=mr_data,
-                                                year=year_v,
-                                                spec=rel_name,
-                                            )
-                                            logging.info(f"  [{store_name}] 已保存优化表: {count} 条 manual runs")
-                                        except Exception as e_opt:
-                                            logging.error(f"  [{store_name}] 保存优化表失败: {e_opt}")
-                                except Exception as e_db_write:
-                                    logging.error(f"[{store_name}] 写入 manual_runs {rel_name} 失败: {e_db_write}")
-                        if not args.skip_file_output:
-                            save_data(mr_data, fn_mr, mr_output_path, args.save_csv, args.save_excel)
-                    else:
-                        logging.info(f"  {rel_name} (团队: {team_to_use}) 无数据.")
+
+                    if not mr_data_year:
+                        logging.info(f"  {year_v} 年 Manual Runs (团队: {team_to_use}) 无数据.")
+                        continue
+
+                    release_map = {rn: [] for rn in rel_names}
+                    unknown_release = 0
+                    for run_item in mr_data_year:
+                        rel_obj = run_item.get("release") if isinstance(run_item.get("release"), dict) else {}
+                        rel_name = rel_obj.get("name") if isinstance(rel_obj, dict) else None
+                        if args.mr_all_releases and rel_name:
+                            release_map.setdefault(rel_name, [])
+
+                        if rel_name in release_map:
+                            release_map[rel_name].append(run_item)
+                        else:
+                            unknown_release += 1
+
+                    logging.info(f"  {year_v} 年聚合下载完成: 总计 {len(mr_data_year)} 条, 未识别release数据 {unknown_release} 条")
+
+                    for rel_name, rel_data in release_map.items():
+                        if not rel_data:
+                            logging.info(f"  {rel_name} (团队: {team_to_use}) 无数据.")
+                            continue
+                        _persist_release_runs(rel_name, rel_data)
+                else:
+                    for rel_num in rels_fetch:
+                        rel_name = f"R-{str(year_v)[-2:]}-{rel_num}"
+                        logging.info(f"  下载 {rel_name}...")
+                        q_mr = f'"(run_team_000_udf={{name=\'{team_to_use}\'}});(release={{name=\'{rel_name}\'}})"'
+                        mr_data = fetch_octane_data_parallel(
+                            session_active, EP_MANUALRUN, DEFAULT_F_MANUALRUN, q_mr,
+                            limit_per_page=args.limit_per_page,
+                            max_workers=args.max_concurrent_requests
+                        )
+                        if not mr_data:
+                            logging.info(f"  {rel_name} (团队: {team_to_use}) 无数据.")
+                            continue
+                        _persist_release_runs(rel_name, mr_data)
             except ValueError as e_mr_val: logging.error(f"解析 MR 规范 '{spec_mr}' 出错: {e_mr_val}")
             except Exception as e_mr_exc: logging.error(f"处理 MR 规范 '{spec_mr}' 时未知错误: {e_mr_exc}")
     elif args.skip_mr: logging.info("跳过 Manual Runs 下载.")

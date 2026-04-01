@@ -4,12 +4,17 @@
 生成Excel和HTML格式报告
 """
 
-import json
-import pandas as pd
 import os
-from collections import Counter, defaultdict
+import argparse
+import json
+import re
 import sqlite3
+from collections import Counter
 from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
+from octane_db import default_db_path
 
 # 设置pandas显示选项
 pd.set_option('display.max_columns', None)
@@ -19,18 +24,60 @@ print("="*80)
 print("📊 2024 vs 2025 完整KPI分析（含MR数据）")
 print("="*80)
 
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate 2024 vs 2025 KPI report (Excel + HTML)")
+    parser.add_argument(
+        "--output-xlsx",
+        default="kpi_report_2024_2025.xlsx",
+        help="Output Excel path (relative to repo root by default)",
+    )
+    parser.add_argument(
+        "--output-html",
+        default="kpi_report_2024_2025.html",
+        help="Output HTML path (relative to repo root by default)",
+    )
+    parser.add_argument(
+        "--html-template",
+        default="",
+        help="Optional static HTML template path; when set, output HTML will copy this template",
+    )
+    return parser.parse_args()
+
+
+def to_repo_path(path_value: str) -> Path:
+    path_obj = Path(path_value)
+    return path_obj if path_obj.is_absolute() else (REPO_ROOT / path_obj)
+
+
+def series_value(df: pd.DataFrame, year: str, column: str, default=0):
+    if df.empty or column not in df.columns or '年份' not in df.columns:
+        return default
+    filtered = df[df['年份'] == year]
+    if filtered.empty:
+        return default
+    value = filtered.iloc[0][column]
+    return value if pd.notna(value) else default
+
+
+args = parse_args()
+
 # ==================== 1. 加载MR数据 ====================
 print("\n1. 加载MR数据...")
 
 def load_mr_data(year_prefix):
     """加载指定年份的MR数据"""
-    mr_files = [f for f in os.listdir('mr') if f.startswith(year_prefix) and f.endswith('.json')]
+    mr_dir = REPO_ROOT / 'mr'
+    mr_files = [f for f in os.listdir(mr_dir) if f.startswith(year_prefix) and f.endswith('.json')]
     mr_files.sort()
 
     all_mr = []
     for fname in mr_files:
         try:
-            with open(f'mr/{fname}') as f:
+            with open(mr_dir / fname, encoding='utf-8') as f:
                 data = json.load(f)
             if isinstance(data, list):
                 for mr in data:
@@ -196,7 +243,8 @@ df_defect_link = pd.DataFrame(defect_link_summary)
 # ==================== 6. 加载Defect数据 ====================
 print("\n6. 加载Defect数据分析...")
 
-conn = sqlite3.connect('database/local_data.db')
+DEFAULT_DB_PATH = default_db_path(str(REPO_ROOT))
+conn = sqlite3.connect(DEFAULT_DB_PATH)
 
 def extract_reporting_class(raw_json):
     try:
@@ -212,6 +260,23 @@ def extract_phase(raw_json):
         return data.get('phase', {}).get('name', '')
     except:
         return ''
+
+
+def normalize_phase_value(phase):
+    s = str(phase or '').strip().lower()
+    if '_' in s:
+        base, tail = s.rsplit('_', 1)
+        if tail in {'critical', 'high', 'medium', 'low', 's1', 's2', 's3', 's4'}:
+            s = base
+    return s
+
+
+def phase_matches(phase, target):
+    p = normalize_phase_value(phase)
+    t = normalize_phase_value(target)
+    if not p or not t:
+        return False
+    return (p == t) or p.startswith(t) or (t in p)
 
 def extract_blocking_reason(raw_json):
     try:
@@ -253,6 +318,8 @@ print("\n7. 缺陷严重程度分析（基于reporting_class_udf）")
 print("-"*60)
 
 severity_summary = []
+cwa_total_by_year = {}
+severity_stats_by_year = {}
 for year, df in [("2024", df_defect_2024), ("2025", df_defect_2025)]:
     print(f"\n{year}年:")
 
@@ -298,7 +365,7 @@ for year, df in [("2024", df_defect_2024), ("2025", df_defect_2025)]:
             stats['other'] += 1
 
         # 06-Concluded
-        if phase == '06-Concluded':
+        if phase_matches(phase, '06-Concluded'):
             stats['concluded_06'] += 1
 
     print(f"  BI-4及以下: {stats['bi4_count']} ({stats['bi4_count']/len(df)*100:.1f}%)")
@@ -306,6 +373,7 @@ for year, df in [("2024", df_defect_2024), ("2025", df_defect_2025)]:
     print(f"  🟠 Preventing Maturity: {stats['preventing_maturity']}")
     print(f"  🟡 Showstopper Candidate: {stats['showstopper_candidate']}")
     print(f"  ✅ 06-Concluded: {stats['concluded_06']}")
+    severity_stats_by_year[year] = stats
 
     severity_summary.append({
         '年份': year,
@@ -330,12 +398,13 @@ for year, df in [("2024", df_defect_2024), ("2025", df_defect_2025)]:
 
     for idx, row in df.iterrows():
         phase = extract_phase(row['raw_json'])
-        if phase == '09-Concluded without action':
+        if phase_matches(phase, '09-Concluded without action'):
             cwa_total += 1
             reason = extract_blocking_reason(row['raw_json'])
             cwa_reasons[reason or 'Unknown/Empty'] += 1
 
     print(f"\n{year}年 (CWA总数: {cwa_total}):")
+    cwa_total_by_year[year] = cwa_total
     print(f"  {'Blocking Reason':<40} {'数量':<8} {'占CWA比':<8}")
     print(f"  {'-'*60}")
 
@@ -381,6 +450,8 @@ if len(df_ecu) > 0:
     df_ecu_pivot['变化'] = df_ecu_pivot.get('2025', 0) - df_ecu_pivot.get('2024', 0)
     df_ecu_pivot = df_ecu_pivot.sort_values('2025', ascending=False)
     print(df_ecu_pivot.head(10).to_string())
+else:
+    df_ecu_pivot = pd.DataFrame(columns=['2024', '2025', '变化'])
 
 # 车型缺陷对比
 print("\n车型缺陷分布:")
@@ -406,9 +477,15 @@ df_model_defect = pd.DataFrame(model_defect_comparison)
 if len(df_model_defect) > 0:
     df_model_pivot = df_model_defect.pivot(index='车型', columns='年份', values='缺陷数').fillna(0).astype(int)
     df_model_pivot['变化'] = df_model_pivot.get('2025', 0) - df_model_pivot.get('2024', 0)
-    df_model_pivot['变化率'] = ((df_model_pivot.get('2025', 0) - df_model_pivot.get('2024', 0)) / df_model_pivot.get('2024', 1) * 100).round(0).fillna(0).astype(int)
+    baseline_2024 = pd.to_numeric(df_model_pivot.get('2024', 0), errors='coerce')
+    current_2025 = pd.to_numeric(df_model_pivot.get('2025', 0), errors='coerce')
+    safe_baseline = baseline_2024.replace(0, float('nan'))
+    rate = ((current_2025 - baseline_2024) / safe_baseline * 100)
+    df_model_pivot['变化率'] = pd.to_numeric(rate, errors='coerce').fillna(0).round(0).astype(int)
     df_model_pivot = df_model_pivot.sort_values('2025', ascending=False)
     print(df_model_pivot.head(15).to_string())
+else:
+    df_model_pivot = pd.DataFrame(columns=['2024', '2025', '变化', '变化率'])
 
 conn.close()
 
@@ -417,18 +494,19 @@ print("\n" + "="*80)
 print("10. 生成Excel报告...")
 print("="*80)
 
-output_file = 'kpi_report_2024_2025.xlsx'
+output_file = to_repo_path(args.output_xlsx)
+output_file.parent.mkdir(parents=True, exist_ok=True)
 
-with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+with pd.ExcelWriter(str(output_file), engine='openpyxl') as writer:
     # Sheet 1: 概览
     overview_data = {
         '指标': ['缺陷总数', 'MR测试执行', 'DTSV_China发现缺陷', '测试通过率', '真实缺陷解决率(06-Concluded)'],
         '2024年': [len(df_defect_2024), len(df_mr_2024), len(df_defect_2024),
-                   f"{(df_mr_summary[df_mr_summary['年份']=='2024']['Passed'].values[0]/len(df_mr_2024)*100):.1f}%" if len(df_mr_2024)>0 else 'N/A',
-                   f"{(df_severity[df_severity['年份']=='2024']['06-Concluded'].values[0]/len(df_defect_2024)*100):.1f}%"],
+                   f"{(series_value(df_mr_summary, '2024', 'Passed', 0)/len(df_mr_2024)*100):.1f}%" if len(df_mr_2024)>0 else 'N/A',
+                   f"{(series_value(df_severity, '2024', '06-Concluded', 0)/len(df_defect_2024)*100):.1f}%" if len(df_defect_2024)>0 else 'N/A'],
         '2025年': [len(df_defect_2025), len(df_mr_2025), len(df_defect_2025)-47,
-                   f"{(df_mr_summary[df_mr_summary['年份']=='2025']['Passed'].values[0]/len(df_mr_2025)*100):.1f}%",
-                   f"{(df_severity[df_severity['年份']=='2025']['06-Concluded'].values[0]/len(df_defect_2025)*100):.1f}%"]
+                   f"{(series_value(df_mr_summary, '2025', 'Passed', 0)/len(df_mr_2025)*100):.1f}%" if len(df_mr_2025)>0 else 'N/A',
+                   f"{(series_value(df_severity, '2025', '06-Concluded', 0)/len(df_defect_2025)*100):.1f}%" if len(df_defect_2025)>0 else 'N/A']
     }
     df_overview = pd.DataFrame(overview_data)
     df_overview.to_excel(writer, sheet_name='1-概览', index=False)
@@ -461,169 +539,210 @@ print(f"✅ Excel报告已生成: {output_file}")
 
 # ==================== 11. 生成HTML报告 ====================
 print("\n11. 生成HTML报告...")
+def table_html(df: pd.DataFrame, max_rows: int | None = None) -> str:
+    if df is None or df.empty:
+        return '<div class="empty">暂无可展示数据</div>'
+    show_df = df.head(max_rows) if max_rows else df
+    return show_df.to_html(index=False, classes='table', border=0)
+
+
+def trend_value(new_value: int, old_value: int) -> str:
+    if old_value == 0:
+        return "N/A"
+    return f"{((new_value-old_value)/old_value*100):+.1f}%"
+
+
+def _replace_once(text: str, pattern: str, replacement: str) -> str:
+    return re.sub(pattern, replacement, text, count=1, flags=re.S)
+
+
+def render_updated_template_html(template_text: str) -> str:
+    mr24 = int(len(df_mr_2024))
+    mr25 = int(len(df_mr_2025))
+    defect24 = int(len(df_defect_2024))
+    defect25 = int(len(df_defect_2025))
+
+    pass24 = int(series_value(df_mr_summary, '2024', 'Passed', 0))
+    pass25 = int(series_value(df_mr_summary, '2025', 'Passed', 0))
+    fail24 = int(series_value(df_mr_summary, '2024', 'Failed', 0))
+    fail25 = int(series_value(df_mr_summary, '2025', 'Failed', 0))
+    ra24 = int(series_value(df_mr_summary, '2024', 'Requires Attention', 0))
+    ra25 = int(series_value(df_mr_summary, '2025', 'Requires Attention', 0))
+    link24 = int(series_value(df_defect_link, '2024', '关联缺陷数', 0))
+    link25 = int(series_value(df_defect_link, '2025', '关联缺陷数', 0))
+
+    pass_rate24 = (pass24 / mr24 * 100) if mr24 else 0
+    pass_rate25 = (pass25 / mr25 * 100) if mr25 else 0
+    fail_rate24 = (fail24 / mr24 * 100) if mr24 else 0
+    fail_rate25 = (fail25 / mr25 * 100) if mr25 else 0
+    ra_rate24 = (ra24 / mr24 * 100) if mr24 else 0
+    ra_rate25 = (ra25 / mr25 * 100) if mr25 else 0
+    link_exec_rate24 = (link24 / mr24 * 100) if mr24 else 0
+    link_exec_rate25 = (link25 / mr25 * 100) if mr25 else 0
+    link_def_rate24 = (link24 / defect24 * 100) if defect24 else 0
+    link_def_rate25 = (link25 / defect25 * 100) if defect25 else 0
+
+    ss24 = int(series_value(df_severity, '2024', 'Showstopper Confirmed', 0))
+    ss25 = int(series_value(df_severity, '2025', 'Showstopper Confirmed', 0))
+    pm24 = int(series_value(df_severity, '2024', 'Preventing Maturity', 0))
+    pm25 = int(series_value(df_severity, '2025', 'Preventing Maturity', 0))
+    sc24 = int(series_value(df_severity, '2024', 'Showstopper Candidate', 0))
+    sc25 = int(series_value(df_severity, '2025', 'Showstopper Candidate', 0))
+    hm24 = int(severity_stats_by_year.get('2024', {}).get('homologation', 0))
+    hm25 = int(severity_stats_by_year.get('2025', {}).get('homologation', 0))
+
+    cwa_map_2024 = {str(r.get('Blocking Reason', '')): int(r.get('数量', 0)) for r in df_cwa[df_cwa['年份'] == '2024'].to_dict('records')} if not df_cwa.empty else {}
+    cwa_map_2025 = {str(r.get('Blocking Reason', '')): int(r.get('数量', 0)) for r in df_cwa[df_cwa['年份'] == '2025'].to_dict('records')} if not df_cwa.empty else {}
+    cwa_total24 = int(cwa_total_by_year.get('2024', 0))
+    cwa_total25 = int(cwa_total_by_year.get('2025', 0))
+
+    html = template_text
+
+    # Header cards
+    html = _replace_once(html, r'(<div class="k">2024 执行总量</div><div class="v">)([^<]*)(</div>)', rf'\g<1>{mr24:,}\g<3>')
+    html = _replace_once(html, r'(<div class="k">2025 执行总量</div><div class="v">)([^<]*)(</div>)', rf'\g<1>{mr25:,}\g<3>')
+    html = _replace_once(html, r'(<div class="k">2025 执行总量</div><div class="v">[^<]*</div><div class="chg up">)([^<]*)(</div>)', rf'\g<1>{trend_value(mr25, mr24)}\g<3>')
+    html = _replace_once(html, r'(<div class="k">2024 缺陷总量</div><div class="v">)([^<]*)(</div>)', rf'\g<1>{defect24:,}\g<3>')
+    html = _replace_once(html, r'(<div class="k">2025 缺陷总量</div><div class="v">)([^<]*)(</div>)', rf'\g<1>{defect25:,}\g<3>')
+    html = _replace_once(html, r'(<div class="k">2025 缺陷总量</div><div class="v">[^<]*</div><div class="chg up">)([^<]*)(</div>)', rf'\g<1>{trend_value(defect25, defect24)}\g<3>')
+
+    # A1 summary table
+    html = _replace_once(html, r'<tr><td>执行总量</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>执行总量</td><td>{mr24:,}</td><td>{mr25:,}</td><td>{mr25-mr24:+,}（{trend_value(mr25, mr24)}）</td></tr>')
+    html = _replace_once(html, r'<tr><td>Pass率</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>Pass率</td><td>{pass24:,}（{pass_rate24:.2f}%）</td><td>{pass25:,}（{pass_rate25:.2f}%）</td><td>{(pass_rate25-pass_rate24):+.2f}pp</td></tr>')
+    html = _replace_once(html, r'<tr><td>Failed率</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>Failed率</td><td>{fail24:,}（{fail_rate24:.2f}%）</td><td>{fail25:,}（{fail_rate25:.2f}%）</td><td>{(fail_rate25-fail_rate24):+.2f}pp</td></tr>')
+    html = _replace_once(html, r'<tr><td>Blocked率（Requires Attention）</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>Blocked率（Requires Attention）</td><td>{ra24:,}（{ra_rate24:.2f}%）</td><td>{ra25:,}（{ra_rate25:.2f}%）</td><td>{(ra_rate25-ra_rate24):+.2f}pp</td></tr>')
+    html = _replace_once(html, r'<tr><td>关联缺陷数</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>关联缺陷数</td><td>{link24:,}（占执行{link_exec_rate24:.2f}%，占缺陷{link_def_rate24:.2f}%）</td><td>{link25:,}（占执行{link_exec_rate25:.2f}%，占缺陷{link_def_rate25:.2f}%）</td><td>{link25-link24:+,}（{(link_def_rate25-link_def_rate24):+.2f}pp，占缺陷）</td></tr>')
+
+    # B1 defect summary table
+    html = _replace_once(html, r'<tr><td>缺陷总量</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>缺陷总量</td><td>{defect24:,}</td><td>{defect25:,}</td><td>{defect25-defect24:+,}（{trend_value(defect25, defect24)}）</td></tr>')
+    html = _replace_once(html, r'<tr><td>Showstopper Confirmed</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>Showstopper Confirmed</td><td>{ss24:,}（{(ss24/defect24*100 if defect24 else 0):.2f}%）</td><td>{ss25:,}（{(ss25/defect25*100 if defect25 else 0):.2f}%）</td><td>{ss25-ss24:+,}（{((ss25/defect25*100 if defect25 else 0)-(ss24/defect24*100 if defect24 else 0)):+.2f}pp）</td></tr>')
+    html = _replace_once(html, r'<tr><td>Preventing Maturity Grade</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>Preventing Maturity Grade</td><td>{pm24:,}（{(pm24/defect24*100 if defect24 else 0):.2f}%）</td><td>{pm25:,}（{(pm25/defect25*100 if defect25 else 0):.2f}%）</td><td>{pm25-pm24:+,}（{((pm25/defect25*100 if defect25 else 0)-(pm24/defect24*100 if defect24 else 0)):+.2f}pp）</td></tr>')
+    html = _replace_once(html, r'<tr><td>Showstopper Candidate</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>Showstopper Candidate</td><td>{sc24:,}（{(sc24/defect24*100 if defect24 else 0):.2f}%）</td><td>{sc25:,}（{(sc25/defect25*100 if defect25 else 0):.2f}%）</td><td>{sc25-sc24:+,}（{((sc25/defect25*100 if defect25 else 0)-(sc24/defect24*100 if defect24 else 0)):+.2f}pp）</td></tr>')
+    html = _replace_once(html, r'<tr><td>Homologation</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>', f'<tr><td>Homologation</td><td>{hm24:,}（{(hm24/defect24*100 if defect24 else 0):.2f}%）</td><td>{hm25:,}（{(hm25/defect25*100 if defect25 else 0):.2f}%）</td><td>{hm25-hm24:+,}（{((hm25/defect25*100 if defect25 else 0)-(hm24/defect24*100 if defect24 else 0)):+.2f}pp）</td></tr>')
+
+    # B2 CWA table rows (top reasons + total row)
+    for reason in [
+        'Child (Duplicate)',
+        'Expected behaviour',
+        'Management decision',
+        'Not reproducible',
+        'Additional Information necessary',
+        'Further traces necessary',
+        'User Error',
+        'Function not implemented/testable yet',
+        'Invalid Testcase',
+        'Tolerated',
+    ]:
+        c24 = int(cwa_map_2024.get(reason, 0))
+        c25 = int(cwa_map_2025.get(reason, 0))
+        p24 = (c24 / cwa_total24 * 100) if cwa_total24 else 0
+        p25 = (c25 / cwa_total25 * 100) if cwa_total25 else 0
+        html = _replace_once(
+            html,
+            rf'<tr><td>{re.escape(reason)}</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>',
+            f'<tr><td>{reason}</td><td>{c24:,}</td><td>{c25:,}</td><td>{p24:.2f}%</td><td>{p25:.2f}%</td></tr>'
+        )
+
+    html = _replace_once(
+        html,
+        r'<tr><td>Total（DTSV CWA）</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td><td>[^<]*</td></tr>',
+        f'<tr><td>Total（DTSV CWA）</td><td>{cwa_total24:,}</td><td>{cwa_total25:,}</td><td>{(cwa_total24/defect24*100 if defect24 else 0):.2f}%</td><td>{(cwa_total25/defect25*100 if defect25 else 0):.2f}%</td></tr>'
+    )
+
+    return html
+
+
+execution_change = trend_value(len(df_mr_2025), len(df_mr_2024))
+html_file = to_repo_path(args.output_html)
+html_file.parent.mkdir(parents=True, exist_ok=True)
 
 html_content = f"""
 <!DOCTYPE html>
-<html>
+<html lang=\"zh-CN\">
 <head>
-    <meta charset="UTF-8">
-    <title>2024 vs 2025 KPI对比报告</title>
-    <style>
-        body {{
-            font-family: 'Microsoft YaHei', Arial, sans-serif;
-            margin: 40px;
-            background: #f5f5f5;
-        }}
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            padding: 40px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{
-            color: #1a5490;
-            border-bottom: 3px solid #1a5490;
-            padding-bottom: 15px;
-        }}
-        h2 {{
-            color: #2c5aa0;
-            margin-top: 30px;
-            border-left: 4px solid #2c5aa0;
-            padding-left: 15px;
-        }}
-        h3 {{
-            color: #444;
-            margin-top: 25px;
-        }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }}
-        th {{
-            background: #2c5aa0;
-            color: white;
-            padding: 12px;
-            text-align: left;
-        }}
-        td {{
-            padding: 10px 12px;
-            border-bottom: 1px solid #ddd;
-        }}
-        tr:hover {{
-            background: #f0f4f8;
-        }}
-        .metric {{
-            display: inline-block;
-            background: #e8f4fc;
-            padding: 15px 25px;
-            margin: 10px;
-            border-radius: 8px;
-            border-left: 4px solid #2c5aa0;
-        }}
-        .metric-value {{
-            font-size: 28px;
-            font-weight: bold;
-            color: #1a5490;
-        }}
-        .metric-label {{
-            font-size: 14px;
-            color: #666;
-        }}
-        .positive {{
-            color: #27ae60;
-        }}
-        .negative {{
-            color: #e74c3c;
-        }}
-        .warning {{
-            color: #f39c12;
-        }}
-        .insights {{
-            background: #fffbeb;
-            border-left: 4px solid #f59e0b;
-            padding: 15px 20px;
-            margin: 20px 0;
-        }}
-        .footer {{
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-            color: #999;
-            font-size: 12px;
-        }}
-    </style>
+  <meta charset=\"UTF-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+  <title>2024 vs 2025 KPI Analysis Report</title>
+  <style>
+    *{{box-sizing:border-box}}
+    body{{margin:0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"Microsoft YaHei\",sans-serif;background:#f3f5f8;color:#1f2937}}
+    .wrap{{max-width:1400px;margin:24px auto;padding:0 16px}}
+    .header{{background:linear-gradient(135deg,#0f2e5f,#1e4f9b);color:#fff;border-radius:14px;padding:24px 28px}}
+    .header h1{{margin:0 0 8px 0;font-size:28px}}
+    .header .sub{{opacity:.92;font-size:14px}}
+    .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px}}
+    .card{{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:12px}}
+    .k{{font-size:12px;opacity:.9}}
+    .v{{font-size:24px;font-weight:700;margin-top:4px}}
+    .section{{margin-top:18px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}}
+    h2{{margin:0 0 10px 0;font-size:20px;color:#0f2e5f}}
+    h3{{margin:10px 0;font-size:16px;color:#0f2e5f}}
+    .table{{width:100%;border-collapse:collapse;font-size:13px}}
+    .table th,.table td{{border:1px solid #e5e7eb;padding:8px 10px;text-align:left;vertical-align:top}}
+    .table th{{background:#eef2ff}}
+    .empty{{padding:14px;border:1px dashed #cbd5e1;border-radius:10px;color:#64748b;background:#f8fafc}}
+    .insight{{background:#fffbeb;border-left:4px solid #f59e0b;padding:10px 12px;border-radius:8px;margin-top:10px}}
+    .footer{{margin:20px 0 10px;color:#6b7280;font-size:12px}}
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>📊 2024 vs 2025 综合KPI对比报告</h1>
-        <p>生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-
-        <h2>一、核心指标概览</h2>
-        <div>
-            <div class="metric">
-                <div class="metric-value">{len(df_defect_2024):,}</div>
-                <div class="metric-label">2024年缺陷总数</div>
-            </div>
-            <div class="metric">
-                <div class="metric-value">{len(df_defect_2025):,}</div>
-                <div class="metric-label">2025年缺陷总数</div>
-            </div>
-            <div class="metric">
-                <div class="metric-value {('positive' if len(df_mr_2025) > len(df_mr_2024) else 'negative')}">{((len(df_mr_2025)-len(df_mr_2024))/len(df_mr_2024)*100):+.1f}%</div>
-                <div class="metric-label">MR执行同比增长</div>
-            </div>
-        </div>
-
-        <h2>二、MR执行质量对比</h2>
-        {df_mr_summary.to_html(index=False, classes='data-table')}
-
-        <h2>三、Project覆盖对比（Top 10）</h2>
-        {df_project_summary.head(20).to_html(index=False, classes='data-table')}
-
-        <h2>四、车型覆盖对比</h2>
-        {df_model_comparison.head(15).to_html(index=False, classes='data-table')}
-
-        <h2>五、缺陷严重程度对比</h2>
-        {df_severity.to_html(index=False, classes='data-table')}
-
-        <h2>六、ECU缺陷分布对比（Top 10）</h2>
-        {df_ecu_pivot.head(10).to_html(classes='data-table')}
-
-        <h2>七、车型缺陷分布对比</h2>
-        {df_model_pivot.head(15).to_html(classes='data-table')}
-
-        <div class="insights">
-            <h3>💡 关键洞察</h3>
-            <ul>
-                <li>✅ <b>测试执行大幅增长</b>: 2025年MR执行较2024年增长{((len(df_mr_2025)-len(df_mr_2024))/len(df_mr_2024)*100):.1f}%</li>
-                <li>✅ <b>Preventing Maturity下降</b>: 阻成熟度问题减少26.8% (298→218)</li>
-                <li>⚠️ <b>Showstopper Confirmed增长</b>: 最严重级别缺陷增长10.9% (641→711)</li>
-                <li>⚠️ <b>真实解决率下降</b>: 06-Concluded占比从35.7%降至30.7%</li>
-                <li>📊 <b>ECU高度集中</b>: IDCEVO-25占50%缺陷，需专项改进</li>
-            </ul>
-        </div>
-
-        <h2>八、建议行动</h2>
-        <ol>
-            <li><b>【紧急】</b> Showstopper Confirmed增长10.9%，需专项攻关</li>
-            <li><b>【关注】</b> Showstopper Candidate激增26.7%，加强预防</li>
-            <li><b>【改进】</b> 真实解决率下降5pp，优化闭环效率</li>
-            <li><b>【监控】</b> customer noticed缺陷激增265%，关注用户体验</li>
-            <li><b>【保持】</b> Preventing Maturity下降26.8%，延续良好趋势</li>
-            <li><b>【聚焦】</b> IDCEVO-25占50%缺陷，建议专项质量改进</li>
-        </ol>
-
-        <div class="footer">
-            数据来源: defect/, mr/, database/local_data.db | 分析工具: Python Pandas
-        </div>
+  <div class=\"wrap\">
+    <div class=\"header\">
+      <h1>2024 vs 2025 KPI Analysis Report</h1>
+      <div class=\"sub\">生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
+      <div class=\"grid\">
+        <div class=\"card\"><div class=\"k\">2024 执行总量</div><div class=\"v\">{len(df_mr_2024):,}</div></div>
+        <div class=\"card\"><div class=\"k\">2025 执行总量</div><div class=\"v\">{len(df_mr_2025):,}</div></div>
+        <div class=\"card\"><div class=\"k\">2024 缺陷总量</div><div class=\"v\">{len(df_defect_2024):,}</div></div>
+        <div class=\"card\"><div class=\"k\">2025 缺陷总量</div><div class=\"v\">{len(df_defect_2025):,}</div></div>
+      </div>
     </div>
+
+    <div class=\"section\">
+      <h2>A. 测试类指标</h2>
+      <h3>A1. 核心指标概览</h3>
+      {table_html(df_mr_summary)}
+      <h3>A2. Project覆盖</h3>
+      {table_html(df_project_summary, 30)}
+      <h3>A3. 车型覆盖</h3>
+      {table_html(df_model_comparison, 30)}
+      <h3>A4. 测试执行与缺陷关联</h3>
+      {table_html(df_defect_link)}
+    </div>
+
+    <div class=\"section\">
+      <h2>B. 缺陷类指标</h2>
+      <h3>B1. 严重等级概览</h3>
+      {table_html(df_severity)}
+      <h3>B2. CWA Blocking Reason（Top 15）</h3>
+      {table_html(df_cwa, 15)}
+      <h3>B3. ECU分布（Top 15）</h3>
+      {table_html(df_ecu_pivot.reset_index(), 15)}
+      <h3>B4. 车型缺陷分布（Top 20）</h3>
+      {table_html(df_model_pivot.reset_index(), 20)}
+    </div>
+
+    <div class=\"section\">
+      <h2>C. 关键洞察</h2>
+      <div class=\"insight\">MR执行量同比变化: <strong>{execution_change}</strong></div>
+      <div class=\"insight\">Showstopper Confirmed: 2024={int(series_value(df_severity, '2024', 'Showstopper Confirmed', 0)):,}, 2025={int(series_value(df_severity, '2025', 'Showstopper Confirmed', 0)):,}</div>
+      <div class=\"insight\">Preventing Maturity: 2024={int(series_value(df_severity, '2024', 'Preventing Maturity', 0)):,}, 2025={int(series_value(df_severity, '2025', 'Preventing Maturity', 0)):,}</div>
+    </div>
+
+        <div class=\"footer\">数据来源: mr/, database/{Path(DEFAULT_DB_PATH).name} | 生成脚本: report/kpi_analysis_2024_2025.py</div>
+  </div>
 </body>
 </html>
 """
 
-html_file = 'kpi_report_2024_2025.html'
+# Keep original UI while refreshing values: use template-first mode.
+template_path = to_repo_path(args.html_template.strip()) if args.html_template.strip() else (REPO_ROOT / 'kpi_report_2024_2025.html')
+if template_path.exists():
+    html_content = render_updated_template_html(template_path.read_text(encoding='utf-8'))
+    print(f"ℹ️ 使用模板并注入最新数据: {template_path}")
+else:
+    print(f"⚠️ 未找到模板文件，改用动态HTML: {template_path}")
+
 with open(html_file, 'w', encoding='utf-8') as f:
     f.write(html_content)
 

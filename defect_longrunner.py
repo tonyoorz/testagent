@@ -20,12 +20,28 @@ df = enrich_ddf_with_master_info(df)
 LONG_RUNNER_WEEKS_THRESHOLD = 3  # 3周为长跑票据阈值
 
 # 解决状态的定义 (根据您的描述)
-RESOLVED_PHASES = ['06-Concluded', '09-Concluded without action', '10-Closed']  # 解决了的状态
-TESTING_PHASES = ['00-Draft', '01-New', '02-In Pre-Analysis', '08-In Verification', '09-Concluded without action', '06-Concluded', '10-Closed']  # 测试处理周期内
-DEVELOPMENT_PHASES = [
-    '03-In Analysis', '04-In Progress', '05-In Testing',
-    '07-In Review', '07-In Pre-Verification'
-]  # 开发处理周期内
+RESOLVED_PHASES = {'06-concluded', '09-concluded without action', '10-closed'}  # 解决了的状态
+TESTING_PHASES = {'00-draft', '01-new', '02-in pre-analysis', '08-in verification', '09-concluded without action', '06-concluded', '10-closed'}  # 测试处理周期内
+DEVELOPMENT_PHASES = {
+    '03-in analysis', '04-in progress', '05-in testing',
+    '07-in review', '07-in pre-verification'
+}  # 开发处理周期内
+
+
+def _normalize_phase_text(phase_value):
+    s = str(phase_value or '').strip().lower()
+    if '_' in s:
+        base, tail = s.rsplit('_', 1)
+        if tail in {'critical', 'high', 'medium', 'low', 's1', 's2', 's3', 's4'}:
+            s = base
+    return s
+
+
+def _is_resolved_phase(phase_value):
+    s = _normalize_phase_text(phase_value)
+    if not s:
+        return False
+    return (s in RESOLVED_PHASES) or ('conclud' in s) or ('resolv' in s) or ('clos' in s) or ('fix' in s) or ('结案' in s)
 
 def calculate_ticket_age_days(creation_time):
     """计算票据从创建到现在的天数"""
@@ -44,7 +60,7 @@ def calculate_ticket_age_days(creation_time):
 def is_long_runner(row):
     """判断是否为长跑票据"""
     # 如果状态是已解决的，则不是长跑票据
-    if row['status_phase'] in RESOLVED_PHASES:
+    if _is_resolved_phase(row.get('status_phase')):
         return False
     
     # 计算天数，超过3周(21天)认为是长跑票据
@@ -67,9 +83,10 @@ def get_long_runner_severity(row):
 
 def get_phase_category(phase):
     """获取阶段分类"""
-    if phase in TESTING_PHASES:
+    phase_norm = _normalize_phase_text(phase)
+    if phase_norm in TESTING_PHASES:
         return "测试处理周期"
-    elif phase in DEVELOPMENT_PHASES:
+    elif phase_norm in DEVELOPMENT_PHASES:
         return "开发处理周期"
     else:
         return "其他"

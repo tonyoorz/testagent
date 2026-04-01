@@ -1665,19 +1665,26 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
             for sheet_name in writer.sheet_names:
                 print(f"正在处理工作表: {sheet_name}...")
                 try:
-                    df_map = pd.read_excel(excel_file, sheet_name=sheet_name)
+                    # 仅读取映射所需列，显著降低启动阶段Excel解析开销
+                    df_map = writer.parse(
+                        sheet_name=sheet_name,
+                        usecols=lambda c: str(c).strip().lower() in {'top_aida', 'fv'},
+                        dtype=str,
+                    )
                 except Exception as read_err:
                     print(f"警告: 读取工作表 '{sheet_name}' 时出错: {read_err}。跳过此工作表。")
                     continue
 
-                required_map_cols = ['project', 'top_aida', 'fv']
-                if not all(col in df_map.columns for col in required_map_cols):
-                    print(f"警告: 工作表 '{sheet_name}' 缺少必要的列（需要 'project', 'top_aida', 'fv'）。跳过此工作表。")
+                col_lookup = {str(col).strip().lower(): col for col in df_map.columns}
+                if 'top_aida' not in col_lookup or 'fv' not in col_lookup:
+                    print(f"警告: 工作表 '{sheet_name}' 缺少必要的列（需要 'top_aida', 'fv'）。跳过此工作表。")
                     continue
 
                 fv_col = f"fv_{sheet_name}"
-                df_map = df_map.rename(columns={'fv': fv_col})
-                df_subset = df_map[['top_aida', fv_col]].drop_duplicates(subset=['top_aida'])
+                df_subset = df_map[[col_lookup['top_aida'], col_lookup['fv']]].rename(
+                    columns={col_lookup['top_aida']: 'top_aida', col_lookup['fv']: fv_col}
+                )
+                df_subset = df_subset.drop_duplicates(subset=['top_aida'])
 
                 # 确保连接键 top_aida 类型一致
                 ddf['top_aida'] = ddf['top_aida'].astype(str)
@@ -1781,10 +1788,15 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
         try:
             # 建立完整的AIDA-FV映射字典（包含模糊匹配）
             comprehensive_aida_fv_map = {}
+            fv_xls = pd.ExcelFile(excel_file)
             
             for sheet_name in ['IDCevo', 'IDC', 'MGU', 'App', 'RSU']:
                 try:
-                    df_map = pd.read_excel(excel_file, sheet_name=sheet_name)
+                    df_map = fv_xls.parse(
+                        sheet_name=sheet_name,
+                        usecols=lambda c: str(c).strip().lower() in {'top_aida', 'fv', 'aida_english'},
+                        dtype=str,
+                    )
                     if 'top_aida' in df_map.columns and 'fv' in df_map.columns:
                         for _, row in df_map.iterrows():
                             if pd.notna(row['top_aida']) and pd.notna(row['fv']):
@@ -2372,6 +2384,52 @@ SEVERITY_COLORS = {
 
 CHART_HEIGHT = 600
 
+
+def _normalize_phase_text(phase_value) -> str:
+    """规范化状态文本，兼容 dict 值和带严重度后缀的状态。"""
+    if isinstance(phase_value, dict):
+        phase_value = phase_value.get('name') or phase_value.get('full_name') or ''
+    s = str(phase_value or '').strip().lower()
+    if not s:
+        return ''
+    # 常见形态：06-Concluded_Medium / 09-Concluded without action_High
+    if '_' in s:
+        base, tail = s.rsplit('_', 1)
+        if tail in {'critical', 'high', 'medium', 'low', 's1', 's2', 's3', 's4'}:
+            s = base
+    return s
+
+
+def _is_resolved_phase(phase_value) -> bool:
+    """判断是否属于关闭/已解决状态，兼容中英文与同义写法。"""
+    s = _normalize_phase_text(phase_value)
+    if not s:
+        return False
+    if s in {
+        '06-concluded',
+        '09-concluded without action',
+        '10-closed',
+        'closed',
+        'resolved',
+        'fixed',
+        'done',
+        'completed',
+        'concluded',
+        'concluded without action',
+    }:
+        return True
+    return (
+        ('conclud' in s)
+        or ('resolv' in s)
+        or ('clos' in s)
+        or ('fix' in s)
+        or ('complet' in s)
+        or ('结案' in s)
+        or ('已关闭' in s)
+        or ('已解决' in s)
+        or ('已修复' in s)
+    )
+
 def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None, pus=None):
     """
     通用筛选函数，支持多选筛选
@@ -2400,6 +2458,7 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
         if "09-concluded without action (child)" in statuses:
             # 创建普通状态列表（移除特殊状态）
             normal_statuses = [s for s in statuses if s != "09-concluded without action (child)"]
+            phase_norm = filtered['status_phase'].apply(_normalize_phase_text)
             
             # 创建新的子票筛选条件：
             # 1. 票据是Child类型
@@ -2407,7 +2466,7 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
             # 3. 主票的状态不是09、06、10
             child_mask = (
                 (filtered['parent_child'] == 'Child') &
-                (filtered['status_phase'].isin(['09-Concluded without action', '01-New']))
+                (phase_norm.isin(['09-concluded without action', '01-new']))
             )
             
             # 进一步检查这些子票的主票状态
@@ -2423,13 +2482,19 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
                         master_df = pd.json_normalize(master_data)
                         
                         # 检查主票是否为需要排除的状态
-                        excluded_master_statuses = ['06-Concluded', '09-Concluded without action', '10-Rejected']
+                        excluded_master_statuses = ['10-rejected']
                         if 'phase.name' in master_df.columns:
-                            # 使用phase.name字段
-                            excluded_masters = master_df[master_df['phase.name'].isin(excluded_master_statuses)]['id'].astype(str).tolist()
+                            # 使用phase.name字段（兼容concluded类状态）
+                            excluded_masters = master_df[
+                                master_df['phase.name'].apply(_is_resolved_phase)
+                                | master_df['phase.name'].astype(str).str.strip().str.lower().isin(excluded_master_statuses)
+                            ]['id'].astype(str).tolist()
                         elif 'status' in master_df.columns:
                             # 备用：使用status字段
-                            excluded_masters = master_df[master_df['status'].isin(excluded_master_statuses)]['id'].astype(str).tolist()
+                            excluded_masters = master_df[
+                                master_df['status'].apply(_is_resolved_phase)
+                                | master_df['status'].astype(str).str.strip().str.lower().isin(excluded_master_statuses)
+                            ]['id'].astype(str).tolist()
                         else:
                             excluded_masters = []
                         
@@ -2442,7 +2507,12 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
             # 合并筛选条件
             if normal_statuses:
                 # 有其他正常状态，需要与子票合并
-                normal_mask = filtered['status_phase'].isin(normal_statuses)
+                normal_status_norm = {
+                    _normalize_phase_text(s)
+                    for s in normal_statuses
+                    if _normalize_phase_text(s)
+                }
+                normal_mask = phase_norm.isin(normal_status_norm)
                 combined_mask = normal_mask | child_mask
                 filtered = filtered[combined_mask]
             else:
@@ -2450,7 +2520,13 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
                 filtered = filtered[child_mask]
         else:
             # 没有特殊状态，使用常规筛选
-            filtered = filtered[filtered['status_phase'].isin(statuses)]
+            selected_status_norm = {
+                _normalize_phase_text(s)
+                for s in statuses
+                if _normalize_phase_text(s)
+            }
+            phase_norm = filtered['status_phase'].apply(_normalize_phase_text)
+            filtered = filtered[phase_norm.isin(selected_status_norm)]
     if pus and len(pus) > 0:
         filtered = filtered[filtered['pu'].isin(pus)]
         
@@ -2815,16 +2891,27 @@ def load_test_data():
 
             for sheet_name in writer.sheet_names:
                 print(f"正在处理工作表: {sheet_name}...")
-                df_map = pd.read_excel(excel_file, sheet_name=sheet_name)
-                # 检查映射文件是否包含必要列
-                required_map_cols = ['project', 'top_aida', 'fv']
-                if not all(col in df_map.columns for col in required_map_cols):
-                    print(f"警告: 工作表 '{sheet_name}' 缺少必要的列（需要 'project', 'top_aida', 'fv'）。跳过此工作表。")
+                try:
+                    # 仅读取映射所需列，避免全量解析导致启动变慢
+                    df_map = writer.parse(
+                        sheet_name=sheet_name,
+                        usecols=lambda c: str(c).strip().lower() in {'top_aida', 'fv'},
+                        dtype=str,
+                    )
+                except Exception as read_err:
+                    print(f"警告: 读取工作表 '{sheet_name}' 时出错: {read_err}。跳过此工作表。")
+                    continue
+
+                col_lookup = {str(col).strip().lower(): col for col in df_map.columns}
+                if 'top_aida' not in col_lookup or 'fv' not in col_lookup:
+                    print(f"警告: 工作表 '{sheet_name}' 缺少必要的列（需要 'top_aida', 'fv'）。跳过此工作表。")
                     continue
 
                 fv_col = f"fv_{sheet_name}" # 为每个 sheet 的 fv 创建临时唯一列名
-                df_map = df_map.rename(columns={'fv': fv_col})
-                df_subset = df_map[['top_aida', fv_col]].drop_duplicates(subset=['top_aida'])
+                df_subset = df_map[[col_lookup['top_aida'], col_lookup['fv']]].rename(
+                    columns={col_lookup['top_aida']: 'top_aida', col_lookup['fv']: fv_col}
+                )
+                df_subset = df_subset.drop_duplicates(subset=['top_aida'])
 
                 # 确保连接键 top_aida 类型一致
                 tdf['top_aida'] = tdf['top_aida'].astype(str)
@@ -2877,10 +2964,15 @@ def load_test_data():
         try:
             # 建立完整的AIDA-FV映射字典（包含模糊匹配）
             comprehensive_aida_fv_map = {}
+            fv_xls = pd.ExcelFile(excel_file)
             
             for sheet_name in ['IDCevo', 'IDC', 'MGU', 'App', 'RSU']:
                 try:
-                    df_map = pd.read_excel(excel_file, sheet_name=sheet_name)
+                    df_map = fv_xls.parse(
+                        sheet_name=sheet_name,
+                        usecols=lambda c: str(c).strip().lower() in {'top_aida', 'fv', 'aida_english'},
+                        dtype=str,
+                    )
                     if 'top_aida' in df_map.columns and 'fv' in df_map.columns:
                         for _, row in df_map.iterrows():
                             if pd.notna(row['top_aida']) and pd.notna(row['fv']):
@@ -3120,8 +3212,6 @@ def calculate_processing_cycle_days(defect_id, status_phase, creation_time, hist
     try:
         import pandas as pd
         
-        RESOLVED_PHASES = ['06-Concluded', '09-Concluded without action', '10-Closed']
-        
         if pd.isna(creation_time):
             return 0
         
@@ -3131,7 +3221,7 @@ def calculate_processing_cycle_days(defect_id, status_phase, creation_time, hist
         
         current_dt = pd.Timestamp.now()
         
-        if status_phase in RESOLVED_PHASES:
+        if _is_resolved_phase(status_phase):
             resolved_time = get_resolved_time_from_history(defect_id, history_dir)
             if resolved_time:
                 resolved_dt = pd.to_datetime(resolved_time)
@@ -3166,13 +3256,11 @@ def get_resolved_time_from_history(defect_id, history_dir="history"):
             
         entries.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
         
-        RESOLVED_PHASES = ['06-Concluded', '09-Concluded without action', '10-Closed']
-        
         for entry in entries:
             if entry.get('action') == 'update' and 'change_set' in entry:
                 for change in entry['change_set']:
                     if change.get('field_name') == 'phase':
-                        if change.get('value_text') in RESOLVED_PHASES:
+                        if _is_resolved_phase(change.get('value_text')):
                             return entry.get('timestamp')
                             
         return None
