@@ -67,9 +67,10 @@ class SemanticIntentDetector:
             "最近趋势如何？", "缺陷增长了吗？", "历史走势",
             "本周新增多少缺陷？", "月度趋势分析", "时间变化",
             "缺陷数量在上升吗？", "过去一个月的趋势",
+            "缺陷流转历史", "状态变更记录", "defect status history",
             "trend analysis", "over time", "historical trend",
             "growth pattern", "weekly trend", "monthly change",
-            "趋势", "变化", "增长", "走势", "历史"
+            "趋势", "变化", "增长", "走势", "历史", "流转历史", "状态变更"
         ],
         'summary': [
             "总结一下", "当前整体情况", "数据概览",
@@ -90,9 +91,10 @@ class SemanticIntentDetector:
             "测试覆盖率如何？", "通过率怎么样？", "失败测试分析",
             "哪些测试失败了？", "测试执行情况", "测试趋势",
             "测试效率", "测试质量",
+            "测试用例执行情况", "testcase execution status", "test cases execution",
             "test coverage", "pass rate", "failure analysis",
             "test execution", "test results", "testing trend",
-            "测试", "覆盖率", "通过率", "失败", "执行"
+            "测试", "覆盖率", "通过率", "失败", "执行", "测试用例", "testcase", "test cases"
         ],
         'dashboard': [
             "看板指标", "KPI数据", "关键指标",
@@ -307,12 +309,12 @@ class SemanticIntentDetector:
         scores = {}
 
         keyword_patterns = {
-            'trend': ['trend', 'change', 'evolution', 'over time', 'history', '趋势', '变化', '演变', '历史', '增长', '走势'],
+            'trend': ['trend', 'change', 'evolution', 'over time', 'history', 'status history', 'change history', 'change log', '趋势', '变化', '演变', '历史', '增长', '走势', '流转历史', '状态变更', '状态流转', '变更记录'],
             'risk': ['risk', 'critical', 'severe', 'topissue', 'high priority', '风险', '严重', '高优先级', '紧急'],
             'comparison': ['compare', 'versus', 'vs', 'difference', 'between', '对比', '比较', '差异', 'vs'],
             'summary': ['summary', 'overview', 'total', 'overall', '总结', '概览', '整体', '概况'],
             'quality': ['quality', 'age', 'transfer', 'complexity', '质量', '年龄', '转移', '复杂度', '效率'],
-            'test': ['test', 'coverage', 'pass', 'fail', '测试', '覆盖率', '通过', '失败', '执行'],
+            'test': ['test', 'coverage', 'pass', 'fail', 'testcase', 'testcases', 'test case', 'test cases', '测试', '测试用例', '用例', '覆盖率', '通过', '失败', '执行'],
             'dashboard': ['dashboard', 'kpi', 'metrics', '看板', '指标', '图表', '汇总'],
             'matrix': ['matrix', '1a', '1b', '矩阵', '象限', '分布'],
             'cross': ['cross', 'correlation', 'associate', '关联', '综合', '交叉', '对比'],

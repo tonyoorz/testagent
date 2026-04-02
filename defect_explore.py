@@ -3507,16 +3507,23 @@ def render_content(tab):
                     style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}
                 ),
                 style={
-                    'height': 'calc(100vh - 155px)',
-                    'minHeight': '680px',
+                    'height': '100%',
+                    'minHeight': '0',
                     'backgroundColor': 'white',
                     'border': '1px solid #e5e7eb',
                     'borderRadius': '12px',
                     'boxShadow': '0 2px 10px rgba(0,0,0,0.08)',
-                    'overflow': 'hidden'
+                    'overflow': 'hidden',
+                    'display': 'flex',
+                    'flexDirection': 'column'
                 }
             )
-        ])
+        ], style={
+            'height': 'calc(100vh - 150px)',
+            'minHeight': '0',
+            'display': 'flex',
+            'flexDirection': 'column'
+        })
     elif tab == 'tab-defect-high-runner':
         # High Complexity Defect Analysis Tab
         # Prepare data

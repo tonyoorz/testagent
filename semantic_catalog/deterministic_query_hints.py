@@ -30,11 +30,172 @@ _ZH_SKIP_CONTAINS = [
     "业务关注", "关注", "相关区域", "我们业务",
 ]
 
+_MANUAL_RUN_DIRECT_TERMS = (
+    "manual run",
+    "manual runs",
+    "testrun",
+    "test run",
+    "测试执行",
+    "测试运行",
+    "测试覆盖",
+    "测试覆盖率",
+    "覆盖率",
+    "通过率",
+    "执行状态",
+    "run status",
+    "execution status",
+    "pass rate",
+    "test frequency",
+    "blocked",
+    "failed",
+    "passed",
+    "requires attention",
+    "测试用例执行",
+    "测试用例执行情况",
+    "用例执行",
+    "用例执行情况",
+    "testcase execution",
+    "testcases execution",
+    "test case execution",
+    "test cases execution",
+    "case execution",
+)
+
+_MANUAL_RUN_CONTEXT_TERMS = (
+    "测试",
+    "用例",
+    "测试用例",
+    "testcase",
+    "testcases",
+    "test case",
+    "test cases",
+    "manual run",
+    "manual runs",
+)
+
+_MANUAL_RUN_EXECUTION_TERMS = (
+    "执行",
+    "执行情况",
+    "执行状态",
+    "执行进度",
+    "运行情况",
+    "通过情况",
+    "execution",
+    "run status",
+    "execution status",
+    "execution progress",
+    "execution summary",
+)
+
+_MANUAL_RUN_PERSON_TERMS = (
+    "测试人员",
+    "测试员",
+    "tester",
+    "testers",
+    "run by",
+    "run_by",
+    "author",
+)
+
+_MANUAL_RUN_CASE_TERMS = (
+    "用例",
+    "测试用例",
+    "testcase",
+    "testcases",
+    "test case",
+    "test cases",
+    "case",
+    "cases",
+)
+
+_MANUAL_RUN_ENTITY_SKIP_TERMS = {
+    "test",
+    "tests",
+    "case",
+    "cases",
+    "testcase",
+    "testcases",
+    "execution",
+    "status",
+    "run",
+    "runs",
+    "manual",
+    "coverage",
+    "pass",
+    "rate",
+    "summary",
+    "summarize",
+}
+
+_HISTORY_DIRECT_TERMS = (
+    "history",
+    "历史",
+    "阶段变化",
+    "phase",
+    "phase history",
+    "status history",
+    "change history",
+    "change log",
+    "transition history",
+    "state transition",
+    "流转历史",
+    "状态流转",
+    "状态变更",
+    "变更记录",
+    "处理历史",
+    "生命周期",
+)
+
+_HISTORY_ENTITY_SKIP_TERMS = {
+    "history",
+    "phase",
+    "status",
+    "change",
+    "changes",
+    "record",
+    "records",
+    "transition",
+}
+
+_HISTORY_ZH_SKIP_TERMS = (
+    "历史",
+    "流转历史",
+    "状态流转",
+    "状态变更",
+    "变更记录",
+    "状态变更记录",
+    "阶段变化",
+)
+
+
+def _contains_any(text: str, terms: tuple) -> bool:
+    return any(term in text for term in terms)
+
+
+def _is_manual_run_question(question_text: str) -> bool:
+    q = (question_text or "").lower()
+    if _contains_any(q, _MANUAL_RUN_DIRECT_TERMS):
+        return True
+    if _contains_any(q, _MANUAL_RUN_CONTEXT_TERMS) and _contains_any(q, _MANUAL_RUN_EXECUTION_TERMS):
+        return True
+    return (
+        _contains_any(q, _MANUAL_RUN_PERSON_TERMS)
+        and _contains_any(q, _MANUAL_RUN_CASE_TERMS)
+        and _contains_any(q, _MANUAL_RUN_EXECUTION_TERMS)
+    )
+
+
+def _is_history_question(question_text: str) -> bool:
+    q = (question_text or "").lower()
+    return _contains_any(q, _HISTORY_DIRECT_TERMS)
+
 
 # Shared deterministic intent hints for runtime and regression to prevent rule drift.
 def build_deterministic_query_hints(question: str, columns: Iterable[str]) -> Dict[str, Any]:
     q = str(question or "")
     ql = q.lower()
+    manual_run_question = _is_manual_run_question(q)
+    history_question = _is_history_question(q)
 
     en_tokens = re.findall(r"[A-Za-z][A-Za-z0-9_\-]{1,}", q)
     zh_tokens = re.findall(r"[\u4e00-\u9fff]{2,8}", q)
@@ -47,6 +208,10 @@ def build_deterministic_query_hints(question: str, columns: Iterable[str]) -> Di
             continue
         if len(tl) <= 1:
             continue
+        if manual_run_question and tl in _MANUAL_RUN_ENTITY_SKIP_TERMS:
+            continue
+        if history_question and tl in _HISTORY_ENTITY_SKIP_TERMS:
+            continue
         entity_tokens.append(token)
 
     for token in zh_tokens:
@@ -55,6 +220,10 @@ def build_deterministic_query_hints(question: str, columns: Iterable[str]) -> Di
         if token in _ZH_SKIP_EXACT:
             continue
         if any(k in token for k in _ZH_SKIP_CONTAINS):
+            continue
+        if manual_run_question and any(k in token for k in ["测试用例", "用例执行", "执行情况", "执行状态", "测试执行"]):
+            continue
+        if history_question and any(k in token for k in _HISTORY_ZH_SKIP_TERMS):
             continue
         entity_tokens.append(token)
 
@@ -93,9 +262,7 @@ def build_deterministic_query_hints(question: str, columns: Iterable[str]) -> Di
     ])
     wants_trend = any(k in ql for k in ["趋势", "trend", "走势", "变化", "周", "月"])
     wants_efficiency = any(k in ql for k in ["效率", "efficiency", "修复", "关闭率", "通过率", "处理时长", "时效"])
-    wants_test_coverage = any(k in ql for k in [
-        "测试覆盖", "覆盖率", "pass rate", "test frequency", "通过率", "执行状态", "run status", "blocked", "requires attention",
-    ])
+    wants_test_coverage = manual_run_question
     wants_recommendation = any(k in ql for k in ["建议", "recommend", "改进", "优化", "improve", "复盘", "对策"])
 
     wants_analysis = bool(

@@ -201,6 +201,90 @@ class TaskPlanner:
         except Exception as exc:
             logger.debug(f"Smart tool selector feedback skipped: {exc}")
 
+    def _is_empty_tool_output(self, result: Dict[str, Any]) -> bool:
+        if not isinstance(result, dict):
+            return False
+        if result.get("success") is not True:
+            return False
+        payload = result.get("result")
+        if payload is None:
+            return True
+        if isinstance(payload, dict):
+            rows = payload.get("rows")
+            if isinstance(rows, list) and len(rows) == 0:
+                return True
+            data = payload.get("data")
+            if isinstance(data, list) and len(data) == 0:
+                return True
+            count = payload.get("count")
+            if isinstance(count, (int, float)) and int(count) == 0:
+                return True
+        if isinstance(payload, list) and len(payload) == 0:
+            return True
+        return False
+
+    def _build_replan_steps(
+        self,
+        step: Dict[str, Any],
+        result: Dict[str, Any],
+        context: Optional[Dict[str, Any]],
+        replan_depth: int,
+    ) -> List[Dict[str, Any]]:
+        enabled = str(os.getenv("AGENT_REPLAN_ENABLED", "1") or "1").strip().lower() not in {"0", "false", "no"}
+        if not enabled:
+            return []
+
+        try:
+            max_replans = int(os.getenv("AGENT_MAX_REPLANS", "1") or 1)
+        except Exception:
+            max_replans = 1
+        max_replans = max(0, max_replans)
+        if replan_depth >= max_replans:
+            return []
+
+        if not isinstance(result, dict):
+            return []
+
+        failed_tool = str((step or {}).get("tool") or "").strip()
+        if not failed_tool or failed_tool == "statistical_summary":
+            return []
+
+        params = dict((step or {}).get("params") or {})
+        dataset = params.get("dataset") or (context or {}).get("primary_dataset")
+        replan_steps: List[Dict[str, Any]] = []
+
+        failed = result.get("success") is False
+        empty_success = self._is_empty_tool_output(result)
+
+        if not failed and not empty_success:
+            return []
+
+        error_text = str(result.get("error") or "")
+        schema_like_error = bool(re.search(r"column|schema|field|列|字段|参数", error_text, flags=re.IGNORECASE))
+        tools = (getattr(self.tool_executor, "tools", {}) or {}) if hasattr(self.tool_executor, "tools") else {}
+
+        if failed and schema_like_error and ("describe_dataset" in tools) and failed_tool != "describe_dataset":
+            desc_params = {"dataset": dataset} if dataset else {}
+            replan_steps.append(
+                {
+                    "step": len(replan_steps) + 1,
+                    "tool": "describe_dataset",
+                    "description": "重规划：先读取数据集结构，修复字段/参数不匹配",
+                    "params": desc_params,
+                }
+            )
+
+        summary_params = {"dataset": dataset} if dataset else {}
+        replan_steps.append(
+            {
+                "step": len(replan_steps) + 1,
+                "tool": "statistical_summary",
+                "description": "重规划：失败/空结果后回退到统计摘要，保证返回可解释结果",
+                "params": summary_params,
+            }
+        )
+        return replan_steps
+
     def plan(self, query: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """规划任务步骤"""
         steps = []
@@ -253,7 +337,8 @@ class TaskPlanner:
             return None
 
         wants_semantic = any(k in q for k in ["口径", "定义", "字段", "含义", "怎么计算", "如何计算", "calculation", "definition", "metric"])
-        if (os.getenv("AGENT_SEMANTIC_CATALOG_ENABLED") != "1" and wants_semantic) and (
+        semantic_catalog_enabled = (os.getenv("AGENT_SEMANTIC_CATALOG_ENABLED", "1") or "1").strip().lower() not in {"0", "false", "no", "off"}
+        if (semantic_catalog_enabled and wants_semantic) and (
             hasattr(self.tool_executor, "tools") and ("consult_semantic_catalog" in (self.tool_executor.tools or {}))
         ):
             steps.append(
@@ -887,6 +972,7 @@ class TaskPlanner:
         data: Union[pd.DataFrame, Dict[str, pd.DataFrame]],
         context: Optional[Dict[str, Any]] = None,
         progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+        _replan_depth: int = 0,
     ) -> List[Dict[str, Any]]:
         """执行计划"""
         results = []
@@ -1005,6 +1091,48 @@ class TaskPlanner:
                     )
                 except Exception:
                     pass
+
+            replan_steps = self._build_replan_steps(
+                step=step,
+                result=result if isinstance(result, dict) else {},
+                context=context,
+                replan_depth=_replan_depth,
+            )
+            if replan_steps:
+                if progress_cb:
+                    try:
+                        progress_cb(
+                            {
+                                "event": "replan",
+                                "step_index": idx,
+                                "total_steps": total_steps,
+                                "failed_tool": tool_name,
+                                "replan_depth": _replan_depth + 1,
+                                "replan_tools": [s.get("tool") for s in replan_steps],
+                            }
+                        )
+                    except Exception:
+                        pass
+                child_results = self.execute_plan(
+                    replan_steps,
+                    data,
+                    context=context,
+                    progress_cb=progress_cb,
+                    _replan_depth=_replan_depth + 1,
+                )
+                for item in child_results:
+                    trace = item.get("trace") if isinstance(item, dict) else None
+                    if not isinstance(trace, dict):
+                        continue
+                    gate = trace.get("gate") if isinstance(trace.get("gate"), dict) else {}
+                    if gate.get("action") in {None, "", "none"}:
+                        gate["action"] = "replan_child"
+                    gate.setdefault("reason", f"from:{tool_name}")
+                    trace["gate"] = gate
+                    trace["replan_depth"] = _replan_depth + 1
+                results.extend(child_results)
+                break
+
             if validation_enabled and gate.get("action") == "stop":
                 has_success = any(isinstance(item.get("result"), dict) and item["result"].get("success") for item in results)
                 if (not has_success) and tool_name != "statistical_summary" and primary_dataset:

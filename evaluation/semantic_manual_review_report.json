@@ -1,0 +1,317 @@
+{
+  "generated_at": "2026-03-30T16:44:57.789123",
+  "db_path": "database/local_data_rebuilt.db",
+  "rules_path": "semantic_catalog/business_rules.json",
+  "question_count": 15,
+  "validation": {
+    "rule_count": 16,
+    "duplicate_ids": [],
+    "invalid_items": []
+  },
+  "rule_hit_frequency": {
+    "br_analysis_intent_fallback": 15,
+    "br_defect_critical_classification_default": 15,
+    "br_field_mapping_defect_core": 15,
+    "br_matrix_extraction_and_order": 15,
+    "br_test_status_normalization": 15,
+    "br_test_week_definition": 15,
+    "br_tester_intent_resolution": 15,
+    "br_topissue_risk_score_non_linear": 15,
+    "br_classification_and_domain_extraction": 14,
+    "br_risk_analysis_coverage_formula": 12,
+    "br_risk_analysis_level_threshold": 12,
+    "br_test_frequency_pass_rate_definition": 11,
+    "br_year_inference_from_test_week": 4,
+    "br_status_field_priority_extraction": 3,
+    "br_test_week_status_priority": 3,
+    "br_topissue_child_master_score_selection": 1
+  },
+  "never_hit_rules": [],
+  "questions": [
+    {
+      "question": "请基于缺陷趋势和测试效率给出改进建议",
+      "hit_rule_ids": [
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请看TopIssue风险和关闭率趋势",
+      "hit_rule_ids": [
+        "br_topissue_risk_score_non_linear",
+        "br_topissue_child_master_score_selection",
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请分析DTSV团队高风险缺陷趋势",
+      "hit_rule_ids": [
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请看IDCEVO项目近16周缺陷关闭率",
+      "hit_rule_ids": [
+        "br_year_inference_from_test_week",
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请统计本月各状态缺陷分布",
+      "hit_rule_ids": [
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请看提票人Wei Yang相关缺陷趋势",
+      "hit_rule_ids": [
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请看G70相关缺陷走势并给建议",
+      "hit_rule_ids": [
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请看NA6高风险缺陷周趋势",
+      "hit_rule_ids": [
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请分析测试覆盖率和高风险AIDA并给改进建议",
+      "hit_rule_ids": [
+        "br_risk_analysis_coverage_formula",
+        "br_classification_and_domain_extraction",
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请看DTSV团队测试通过率趋势并给建议",
+      "hit_rule_ids": [
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请看执行状态中Blocked和Failed周趋势",
+      "hit_rule_ids": [
+        "br_test_status_normalization",
+        "br_test_week_status_priority",
+        "br_status_field_priority_extraction",
+        "br_test_week_definition",
+        "br_year_inference_from_test_week",
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请比较Passed与Failed周变化",
+      "hit_rule_ids": [
+        "br_test_status_normalization",
+        "br_test_week_status_priority",
+        "br_status_field_priority_extraction",
+        "br_year_inference_from_test_week",
+        "br_test_frequency_pass_rate_definition",
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请看requires attention趋势",
+      "hit_rule_ids": [
+        "br_test_status_normalization",
+        "br_test_week_status_priority",
+        "br_status_field_priority_extraction",
+        "br_analysis_intent_fallback",
+        "br_year_inference_from_test_week",
+        "br_tester_intent_resolution",
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_classification_and_domain_extraction"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请看AIDA维度缺陷状态分布",
+      "hit_rule_ids": [
+        "br_risk_analysis_coverage_formula",
+        "br_classification_and_domain_extraction",
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    },
+    {
+      "question": "请给出当前数据库里最需要优先处理的问题趋势",
+      "hit_rule_ids": [
+        "br_defect_critical_classification_default",
+        "br_field_mapping_defect_core",
+        "br_matrix_extraction_and_order",
+        "br_topissue_risk_score_non_linear",
+        "br_test_week_definition",
+        "br_tester_intent_resolution",
+        "br_analysis_intent_fallback",
+        "br_classification_and_domain_extraction",
+        "br_risk_analysis_coverage_formula",
+        "br_risk_analysis_level_threshold",
+        "br_test_status_normalization",
+        "br_test_frequency_pass_rate_definition"
+      ],
+      "hit_rule_count": 12,
+      "unknown_rule_ids": []
+    }
+  ]
+}

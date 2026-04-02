@@ -7,6 +7,7 @@ Create a personal Copilot skill named `obsidian` that helps with three recurring
 - Knowledge capture and structured note consolidation
 - Worklog creation for daily progress, meetings, and action items
 - Export bridging from repository artifacts into Obsidian-friendly Markdown
+- Summary-only Copilot conversation export into Obsidian-friendly Markdown when the content is available in the current session or local machine cache
 
 The skill should prefer writing directly into the user's Obsidian vault, while also keeping a mirrored export copy inside this repository for traceability and reuse.
 
@@ -29,6 +30,7 @@ The skill should prefer writing directly into the user's Obsidian vault, while a
 3. Support both direct vault writing and repository-side mirrored exports.
 4. Handle unavailable network storage gracefully without blocking note creation.
 5. Keep the skill independent from Obsidian plugins so it works with plain Markdown files.
+6. Restrict Copilot conversation export to summary-only, machine-local accessible content and avoid unsupported full-history claims.
 
 ## Non-Goals
 
@@ -37,6 +39,8 @@ The skill should prefer writing directly into the user's Obsidian vault, while a
 3. Editing arbitrary existing notes beyond controlled append behavior.
 4. Requiring any Obsidian community plugin to function.
 5. Replacing project documentation or source-of-truth files inside the repository.
+6. Exporting raw Copilot process chatter such as chain-of-thought, tool traces, retries, or intermediate drafts.
+7. Claiming account-wide full-history conversation sync across machines or cloud-only history.
 
 ## Output Model
 
@@ -81,6 +85,9 @@ Required frontmatter fields:
 - `summary`
 - `related_topics`
 - `vault_path`
+- `vault_status`
+- `mirror_path`
+- `generated_by`
 
 Required body sections:
 
@@ -109,11 +116,16 @@ Required frontmatter fields:
 - `type`
 - `date`
 - `tags`
+- `source_repo`
+- `source_path`
 - `project`
 - `participants`
 - `status`
 - `next_actions`
 - `vault_path`
+- `vault_status`
+- `mirror_path`
+- `generated_by`
 
 Required body sections:
 
@@ -133,6 +145,7 @@ Use for:
 - exporting repository notes into vault format
 - transforming analysis outputs into Obsidian-ready Markdown
 - converting AI-generated summaries into persistent notes
+- exporting summary-only Copilot conversation takeaways into persistent notes
 - bridging prompt or documentation assets into the vault
 
 Required frontmatter fields:
@@ -145,6 +158,9 @@ Required frontmatter fields:
 - `source_path`
 - `export_reason`
 - `vault_path`
+- `vault_status`
+- `mirror_path`
+- `generated_by`
 
 Required body sections:
 
@@ -156,6 +172,43 @@ Required body sections:
 - `## Source`
 - `## Links`
 
+## Conversation Export Boundary
+
+This boundary applies only to conversation-derived `export` notes. Generic repository-to-vault export notes remain supported elsewhere in the skill.
+
+Copilot conversation export in this skill is summary-only.
+
+It should sync only converged content such as:
+
+- conclusions
+- decisions
+- action items
+- curated evidence
+- final summaries
+- user-facing takeaways
+
+It must explicitly exclude:
+
+- chain-of-thought
+- route reasoning
+- tool calls
+- tool arguments
+- progress heartbeats
+- retries
+- partial intermediate drafts
+- other execution traces
+
+Supported scope:
+
+- current conversation content that is available in the active session
+- locally cached Copilot sessions available on this machine
+
+Unsupported scope:
+
+- full account-wide history
+- conversations from other machines
+- cloud-only history that is not exposed through local files or supported APIs
+
 ## Naming Rules
 
 ### File names
@@ -163,6 +216,8 @@ Required body sections:
 - Knowledge: `YYYY-MM-DD-topic.md`
 - Worklog: `YYYY-MM-DD-worklog.md`
 - Export: `YYYY-MM-DD-source-export.md`
+- Current-session conversation export: `YYYY-MM-DD-copilot-current-session-export.md`
+- Local-cache conversation export: `YYYY-MM-DD-copilot-cache-<session-folder-name>-export.md` after Windows-safe slug normalization
 
 ### Safety rules
 
@@ -181,14 +236,18 @@ title: ""
 type: knowledge
 date: 2026-04-01
 tags: []
-source_repo: TPMDashbaord
+source_repo: ""
 source_path: ""
 vault_path: ""
+vault_status: written
+mirror_path: ""
 generated_by: copilot-obsidian-skill
 ---
 ```
 
 The `type` value changes between `knowledge`, `worklog`, and `export`.
+
+`source_repo` should reflect the actual source repository or system. `vault_status` should be `written` when the vault copy succeeds and `unavailable` when only the mirror copy is written. In mirror-only fallback mode, `vault_path` should keep the intended vault target path and `mirror_path` should record the actual mirror file path.
 
 ## Triggering Model
 
@@ -205,6 +264,7 @@ The skill should be discoverable for requests that indicate note creation, conso
 - `export to Obsidian`
 - `generate vault markdown`
 - `sync to vault`
+- `sync current Copilot conversation summary to Obsidian`
 - `整理成 Obsidian 笔记`
 - `沉淀知识`
 - `总结成笔记`
@@ -213,6 +273,7 @@ The skill should be discoverable for requests that indicate note creation, conso
 - `工作记录`
 - `导出到 Obsidian`
 - `同步到 vault`
+- `导出 Copilot 对话总结`
 
 ### Should not trigger for
 
@@ -226,7 +287,7 @@ The skill should be discoverable for requests that indicate note creation, conso
 The skill should follow this decision flow:
 
 1. Classify the request as `knowledge`, `worklog`, or `export`.
-2. Build the target filename from the current date and topic.
+2. Build the target filename using the per-type rules: knowledge uses `YYYY-MM-DD-<topic-slug>.md`, worklog uses `YYYY-MM-DD-worklog.md`, and export uses `YYYY-MM-DD-<source-slug>-export.md`.
 3. Render standardized frontmatter.
 4. Render the body template for the selected type.
 5. Attempt to write the primary vault copy first.
@@ -251,7 +312,7 @@ If the network vault path is unavailable:
 
 1. Do not fail the whole workflow.
 2. Write only the repository mirror copy.
-3. Add a visible note near the top of the body stating `vault unavailable, export-only fallback`.
+3. Add a visible note near the top of the body stating `vault unavailable, mirror-only storage fallback`.
 4. Return that the export succeeded but direct vault write did not.
 
 ### Invalid file name input
@@ -301,6 +362,7 @@ After implementation, verify these scenarios:
 4. Vault path unavailable fallback.
 5. Existing file append behavior.
 6. Unsafe title sanitization.
+7. Summary-only conversation export filtering for current-session or machine-local cached content only.
 
 ## Open Decisions Resolved In This Spec
 

@@ -36,6 +36,15 @@ from agent.core.tool_executor import (
     ToolExecutor as ExtractedToolExecutor,
     ToolExecutorWithRetry as ExtractedToolExecutorWithRetry,
 )
+from agent.core.conversation_runtime import (
+    init_analysis_trace,
+    resolve_execution_mode,
+    serialize_plan_trace,
+)
+from agent.core.agentic_runtime import (
+    build_tool_specs,
+    run_agentic_loop,
+)
 
 from analysis_utils import (
     compute_defect_explore_kpis,
@@ -2481,9 +2490,49 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         question = str(kwargs.get("question") or "").strip()
         if not question:
             return {"success": False, "tool": self.name, "error": "question 不能为空"}
-        normalized_question, business_hints = _augment_question_with_business_hints(question)
         limit = int(kwargs.get("limit") or 200)
         table = str(kwargs.get("table") or "").strip()
+        incoming_semantic_hints = kwargs.get("semantic_hints") if isinstance(kwargs.get("semantic_hints"), dict) else {}
+
+        semantic_adapter: Dict[str, Any] = {}
+        semantic_hints: Dict[str, Any] = dict(incoming_semantic_hints or {})
+        try:
+            from semantic_catalog.term_adapter import adapt_question_with_semantic_terms, is_semantic_catalog_enabled, merge_semantic_hints
+
+            if is_semantic_catalog_enabled():
+                semantic_adapter = adapt_question_with_semantic_terms(
+                    question=question,
+                    table_name=table,
+                    db_path=self._db_path,
+                    prefer_db=True,
+                )
+                semantic_hints = merge_semantic_hints(semantic_hints, semantic_adapter.get("semantic_hints"))
+        except Exception as e:
+            logger.debug(f"semantic term adapter skipped: {e}")
+
+        normalized_question, business_hints = _augment_question_with_business_hints(question)
+        if semantic_hints:
+            business_hints["semantic_term_hints"] = semantic_hints
+            mapped_dimensions = semantic_adapter.get("mapped_dimensions") if isinstance(semantic_adapter, dict) else []
+            matched_rule_ids = semantic_adapter.get("matched_rule_ids") if isinstance(semantic_adapter, dict) else []
+            if isinstance(mapped_dimensions, list) and mapped_dimensions:
+                business_hints["semantic_mapped_dimensions"] = mapped_dimensions[:10]
+            if isinstance(matched_rule_ids, list) and matched_rule_ids:
+                business_hints["semantic_rule_ids"] = matched_rule_ids[:20]
+
+            semantic_tokens: List[str] = []
+            if semantic_hints.get("wants_aida_dist"):
+                semantic_tokens.append("aida")
+            if semantic_hints.get("wants_showstopper"):
+                semantic_tokens.append("showstopper")
+            if semantic_hints.get("wants_showstopper_candidate"):
+                semantic_tokens.append("candidate")
+            month_number = semantic_hints.get("month_number")
+            if isinstance(month_number, int) and 1 <= month_number <= 12:
+                semantic_tokens.append(f"month={month_number:02d}")
+            if semantic_tokens:
+                normalized_question = f"{normalized_question}\n\nsemantic_terms: {' '.join(sorted(set(semantic_tokens)))}"
+
         now = time.time()
 
         cache_key = f"{question}||{table or '*'}"
@@ -2541,9 +2590,11 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
 
         semantic_context = ""
         try:
+            from semantic_catalog.term_adapter import is_semantic_catalog_enabled
             from semantic_catalog.runtime import build_semantic_context
 
-            semantic_context = build_semantic_context(question=question, db_path=self._db_path, max_each=6)
+            if is_semantic_catalog_enabled():
+                semantic_context = build_semantic_context(question=normalized_question, db_path=self._db_path, max_each=6)
         except Exception as e:
             logger.debug(f"build_semantic_context skipped: {e}")
 
@@ -2558,6 +2609,11 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             "question": question,
             "normalized_question": normalized_question,
             "business_hints": business_hints,
+            "semantic_term_hints": semantic_hints,
+            "semantic_term_adapter": {
+                "mapped_dimensions": (semantic_adapter.get("mapped_dimensions") if isinstance(semantic_adapter, dict) else []) or [],
+                "matched_rule_ids": (semantic_adapter.get("matched_rule_ids") if isinstance(semantic_adapter, dict) else []) or [],
+            },
             "schema": schema,
             "db_profile": profile,
             "semantic_context": semantic_context,
@@ -3591,7 +3647,7 @@ class IntelligentContextManager:
 
     def __init__(self):
         self.intent_patterns = {
-            'trend': ['趋势', '变化', '增长', '下降', 'trend', 'change'],
+            'trend': ['趋势', '变化', '增长', '下降', '历史', '流转历史', '状态变更', '状态流转', 'trend', 'change', 'history', 'status history', 'change history'],
             'risk': ['风险', '高风险', '危险', 'risk', 'critical'],
             'comparison': ['对比', '比较', '差异', 'vs', 'compare', 'difference'],
             'summary': ['总结', '概览', '总体', 'summary', 'overview', 'kpi', '指标', '卡片'],
@@ -3606,9 +3662,9 @@ class IntelligentContextManager:
             'aida': ['aida', '功能', '模块', 'feature', 'service', 'services', 'call services'],
             'fv': ['fv', '版本', 'release', '交付版本', 'feature team', 'feature_team', 'feature-team', '功能团队', '责任团队'],
             'domain': ['solution cluster', 'domain', 'cluster', '解决簇', '解决群', 'solution_cluster'],
-            'test': ['测试', 'test', 'run', 'case', 'coverage', '执行', '通过率', '失败率', '测', '测挂', '测失败', '回归', '测试情况', '测试状态'],
-            'case': ['case', 'testcase', 'test case', '用例', 'case容易', 'case出错', '容易出错'],
-            'execution': ['执行情况', '执行状态', '通过情况', 'pass', 'passed', 'fail', 'failed', 'error', 'blocked', '状态', 'run_status', '失败', '挂', '挂了', '成功率'],
+            'test': ['测试', 'test', 'run', 'case', 'cases', 'testcase', 'testcases', 'test case', 'test cases', 'coverage', '执行', '通过率', '失败率', '测', '测挂', '测失败', '回归', '测试情况', '测试状态', '测试用例'],
+            'case': ['case', 'cases', 'testcase', 'testcases', 'test case', 'test cases', '用例', '测试用例', 'case容易', 'case出错', '容易出错'],
+            'execution': ['执行', '执行情况', '执行状态', '执行概览', '通过情况', 'execution', 'pass', 'passed', 'fail', 'failed', 'error', 'blocked', '状态', 'run_status', '失败', '挂', '挂了', '成功率'],
             'cross': ['关联', '相关性', '联动', '交叉', 'correlate', 'relationship'],
             'tester': ['tester', '测试人员', '测试员', '发现人', '谁发现', '谁报', '谁提', '提交人', '报告人', 'reporter', 'found by', 'owner'],
             'wordcloud': ['词云', 'wordcloud', '关键词', '高频词', '热词'],
@@ -5173,7 +5229,8 @@ class _LegacyTaskPlanner:
             return None
 
         wants_semantic = any(k in q for k in ["口径", "定义", "字段", "含义", "怎么计算", "如何计算", "calculation", "definition", "metric"])
-        if (os.getenv("AGENT_SEMANTIC_CATALOG_ENABLED") != "1" and wants_semantic) and (
+        semantic_catalog_enabled = (os.getenv("AGENT_SEMANTIC_CATALOG_ENABLED", "1") or "1").strip().lower() not in {"0", "false", "no", "off"}
+        if (semantic_catalog_enabled and wants_semantic) and (
             hasattr(self.tool_executor, 'tools') and ('consult_semantic_catalog' in (self.tool_executor.tools or {}))
         ):
             steps.append({
@@ -6113,8 +6170,29 @@ class IntelligentAgent:
         # 1. 保存用户消息到记忆
         self.memory.add_message('user', question)
 
+        analysis_question = str(question or "").strip()
+        semantic_term_adapter: Dict[str, Any] = {}
+        semantic_term_hints: Dict[str, Any] = {}
+        try:
+            from semantic_catalog.term_adapter import adapt_question_with_semantic_terms, is_semantic_catalog_enabled
+
+            if is_semantic_catalog_enabled():
+                db_path = getattr(self.tool_executor, "_db_path", None)
+                semantic_term_adapter = adapt_question_with_semantic_terms(
+                    question=analysis_question,
+                    db_path=db_path,
+                    table_name="",
+                    prefer_db=bool(db_path),
+                )
+                semantic_term_hints = dict(semantic_term_adapter.get("semantic_hints") or {})
+                normalized_question = str(semantic_term_adapter.get("normalized_question") or "").strip()
+                if normalized_question:
+                    analysis_question = normalized_question
+        except Exception as sem_err:
+            logger.debug(f"semantic term adapter skipped: {sem_err}")
+
         # 1.5 低置信度意图提前澄清，减少无效工具调用和不必要的SQL生成。
-        early_intents, early_confidence, clarification = self.context_manager.analyze_intent_with_confidence(question)
+        early_intents, early_confidence, clarification = self.context_manager.analyze_intent_with_confidence(analysis_question)
 
         # 对“仅补充槽位”的追问（如“IDCevo 本季度”）自动继承最近一条明确意图。
         if early_intents == ['general']:
@@ -6156,7 +6234,11 @@ class IntelligentAgent:
             })
 
         # 2. 准备上下文
-        context, prepared_data = self.context_manager.prepare_context(question, data)
+        context, prepared_data = self.context_manager.prepare_context(analysis_question, data)
+        if semantic_term_adapter:
+            context["semantic_term_adapter"] = semantic_term_adapter
+        if semantic_term_hints:
+            context["semantic_term_hints"] = semantic_term_hints
         if progress_cb:
             try:
                 progress_cb(
@@ -6172,9 +6254,7 @@ class IntelligentAgent:
         validation_enabled = os.getenv("AGENT_VALIDATION_ENABLED", "0") == "1"
         # 默认启用 agentic（若LLM可用），可通过 AGENT_AGENTIC_ENABLED=0 显式关闭。
         agentic_enabled = (os.getenv("AGENT_AGENTIC_ENABLED", "1") != "0") and (self.tool_executor._llm is not None)
-        mode = str(os.getenv("AGENT_MODE", "agentic") or "agentic").strip().lower()
-        if mode not in {"rule", "agentic", "hybrid"}:
-            mode = "agentic"
+        requested_mode = str(os.getenv("AGENT_MODE", "agentic") or "agentic").strip().lower()
 
         # ACCESSCODE 内网模板链路已在非流式调用中验证更稳定，但 function-calling 兼容性不稳定。
         # 在该链路下优先使用 hybrid，避免 agentic 每轮都因响应结构差异失败后再降级。
@@ -6187,22 +6267,28 @@ class IntelligentAgent:
         except Exception:
             internal_template_route = False
 
-        if mode == "agentic" and internal_template_route:
+        if requested_mode == "agentic" and internal_template_route:
             logger.info("检测到ACCESSCODE内网模板链路，自动切换为hybrid模式以提升稳定性")
-            mode = "hybrid"
+        mode = resolve_execution_mode(
+            requested_mode=requested_mode,
+            agentic_enabled=agentic_enabled,
+            internal_template_route=internal_template_route,
+        )
+        analysis_trace = init_analysis_trace(
+            mode=mode,
+            validation_enabled=validation_enabled,
+            internal_template_route=internal_template_route,
+        )
 
-        if (not agentic_enabled) and mode == "agentic":
-            mode = "rule"
-        analysis_trace: Dict[str, Any] = {
-            "mode": mode,
-            "validation_enabled": bool(validation_enabled),
-            "plan": [],
-            "execution": [],
-        }
-        if internal_template_route:
-            analysis_trace["llm_route"] = "internal_template"
+        semantic_catalog_enabled = False
+        try:
+            from semantic_catalog.term_adapter import is_semantic_catalog_enabled
 
-        if os.getenv("AGENT_SEMANTIC_CATALOG_ENABLED") == "1":
+            semantic_catalog_enabled = is_semantic_catalog_enabled()
+        except Exception:
+            semantic_catalog_enabled = (os.getenv("AGENT_SEMANTIC_CATALOG_ENABLED", "1") or "1").strip().lower() not in {"0", "false", "no", "off"}
+
+        if semantic_catalog_enabled:
             try:
                 from semantic_catalog.runtime import build_semantic_context
 
@@ -6217,7 +6303,7 @@ class IntelligentAgent:
                     cols = [str(c) for c in prepared_data.columns.tolist()]
                 db_path = getattr(self.tool_executor, "_db_path", None)
                 context["semantic_context"] = build_semantic_context(
-                    question=question, dashboard=dashboard, dataframe_columns=cols, max_each=6, db_path=db_path
+                    question=analysis_question, dashboard=dashboard, dataframe_columns=cols, max_each=6, db_path=db_path
                 )
             except Exception as e:
                 context["semantic_context"] = f"语义目录加载失败: {e}"
@@ -6230,153 +6316,27 @@ class IntelligentAgent:
             exec_rows = []
             try:
                 llm = self.tool_executor._llm
-                tools_schema = self.tool_executor.get_tool_schema() or {}
                 if not llm or not getattr(llm, "client", None):
                     raise RuntimeError("agentic 模式缺少可用 LLM client")
-
-                def _to_json_schema(params: Any) -> Dict[str, Any]:
-                    props: Dict[str, Any] = {}
-                    if not isinstance(params, dict):
-                        return {"type": "object", "properties": {}, "additionalProperties": True}
-                    type_map = {
-                        "string": "string",
-                        "integer": "integer",
-                        "number": "number",
-                        "boolean": "boolean",
-                        "array": "array",
-                        "object": "object",
-                    }
-                    for pname, pdef in params.items():
-                        if not isinstance(pdef, dict):
-                            props[str(pname)] = {"type": "string"}
-                            continue
-                        ptype = type_map.get(str(pdef.get("type") or "string").lower(), "string")
-                        item: Dict[str, Any] = {"type": ptype}
-                        if pdef.get("description"):
-                            item["description"] = str(pdef.get("description"))
-                        if isinstance(pdef.get("enum"), list) and pdef.get("enum"):
-                            item["enum"] = list(pdef.get("enum"))
-                        if ptype == "array" and isinstance(pdef.get("items"), dict):
-                            item["items"] = dict(pdef.get("items"))
-                        props[str(pname)] = item
-                    return {"type": "object", "properties": props, "additionalProperties": True}
-
-                tool_specs = []
-                for tname, ts in tools_schema.items():
-                    ts = ts if isinstance(ts, dict) else {}
-                    tool_specs.append(
-                        {
-                            "type": "function",
-                            "function": {
-                                "name": str(tname),
-                                "description": str(ts.get("description") or ""),
-                                "parameters": _to_json_schema(ts.get("parameters") or {}),
-                            },
-                        }
-                    )
-
-                sys_prompt = "你是数据分析助手。你必须基于工具返回的真实结果逐步决策；当信息足够时直接给最终结论。"
-                if context.get("data_summary"):
-                    sys_prompt += "\n\n数据摘要:\n" + str(context.get("data_summary"))
-
-                messages = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": question}]
-                used = 0
-                final_text = ""
-                stop_reason = ""
-
-                for it in range(1, max_iters + 1):
-                    resp = llm.client.chat.completions.create(
-                        model=getattr(llm, "model", None),
-                        messages=messages,
-                        tools=tool_specs,
-                        temperature=0.1,
-                    )
-                    choices = getattr(resp, "choices", None)
-                    if not choices:
-                        raise RuntimeError("LLM响应缺少choices（可能是网关异常、鉴权失败或上下文被服务端拒绝）")
-
-                    first_choice = choices[0] if isinstance(choices, list) else None
-                    if first_choice is None:
-                        raise RuntimeError("LLM响应choices[0]为空")
-
-                    msg = getattr(first_choice, "message", None)
-                    if msg is None:
-                        raise RuntimeError("LLM响应缺少message")
-
-                    content = str(getattr(msg, "content", "") or "").strip()
-                    if content:
-                        final_text = content
-
-                    tool_calls = list(getattr(msg, "tool_calls", None) or [])
-                    if not tool_calls:
-                        stop_reason = "model_final_answer"
-                        break
-
-                    tool_feedback_lines = [f"第{it}轮工具执行结果："]
-                    for tc in tool_calls:
-                        tname = str(getattr(getattr(tc, "function", None), "name", "") or "").strip()
-                        arg_text = str(getattr(getattr(tc, "function", None), "arguments", "") or "").strip()
-                        if not tname:
-                            continue
-                        if used >= tool_call_max:
-                            exec_rows.append({"iter": it, "tool": tname, "success": False, "error": "工具调用预算已用尽"})
-                            tool_feedback_lines.append(f"- {tname}: 失败，原因=工具调用预算已用尽")
-                            stop_reason = "tool_budget_exhausted"
-                            continue
-
-                        used += 1
-                        try:
-                            args = json.loads(arg_text) if arg_text else {}
-                        except Exception:
-                            args = {}
-
-                        t0 = time.perf_counter()
-                        out = self.tool_executor.execute_tool(tname, prepared_data, **(args if isinstance(args, dict) else {}))
-                        ms = int((time.perf_counter() - t0) * 1000)
-                        ok = bool(isinstance(out, dict) and out.get("success") is True)
-                        err = (out.get("error") if isinstance(out, dict) else None)
-                        exec_rows.append(
-                            {
-                                "iter": it,
-                                "tool": tname,
-                                "dataset": (args or {}).get("dataset") if isinstance(args, dict) else None,
-                                "params": args if isinstance(args, dict) else {},
-                                "duration_ms": ms,
-                                "success": ok,
-                                "error": err,
-                            }
-                        )
-
-                        preview = ""
-                        if isinstance(out, dict):
-                            if ok:
-                                r = out.get("result")
-                                if isinstance(r, dict):
-                                    preview = ", ".join([str(k) for k in list(r.keys())[:6]])
-                                elif isinstance(r, list):
-                                    preview = f"rows={len(r)}"
-                                else:
-                                    preview = str(r)[:180]
-                            else:
-                                preview = str(err or "工具失败")[:180]
-                        else:
-                            preview = str(out)[:180]
-
-                        status_text = "成功" if ok else "失败"
-                        tool_feedback_lines.append(f"- {tname}: {status_text}; 摘要={preview}")
-
-                    # 把环境真实反馈注入下一轮决策
-                    messages.append({"role": "user", "content": "\n".join(tool_feedback_lines) + "\n请基于以上真实结果继续：若信息足够请直接给结论，否则继续调用工具。"})
-
-                    if stop_reason == "tool_budget_exhausted":
-                        break
-
-                if not stop_reason:
-                    stop_reason = "max_iterations_reached"
-
-                if not final_text:
-                    success_cnt = sum(1 for r in exec_rows if r.get("success"))
-                    final_text = f"已完成工具执行（成功 {success_cnt}/{len(exec_rows)}），但未产出最终自然语言结论。"
+                tools_schema = self.tool_executor.get_tool_schema() or {}
+                tool_specs = build_tool_specs(tools_schema)
+                agentic_result = run_agentic_loop(
+                    llm_client=llm.client,
+                    llm_model=getattr(llm, "model", None),
+                    tool_specs=tool_specs,
+                    question=analysis_question,
+                    data_summary=str(context.get("data_summary") or ""),
+                    execute_tool=lambda tool_name, args: self.tool_executor.execute_tool(
+                        tool_name,
+                        prepared_data,
+                        **(args if isinstance(args, dict) else {}),
+                    ),
+                    tool_call_max=tool_call_max,
+                    max_iters=max_iters,
+                )
+                exec_rows = list(agentic_result.get("execution_rows") or [])
+                stop_reason = str(agentic_result.get("stop_reason") or "")
+                final_text = str(agentic_result.get("final_text") or "")
 
                 analysis_trace["execution"] = exec_rows
                 analysis_trace["agentic_stop_reason"] = stop_reason
@@ -6426,7 +6386,7 @@ class IntelligentAgent:
             }
 
         # 4. 获取相关知识
-        knowledge_context = self.knowledge_base.get_knowledge_context(question)
+        knowledge_context = self.knowledge_base.get_knowledge_context(analysis_question)
 
         # 5. 规划任务（若用户刚确认，则复用待确认计划）
         plan = None
@@ -6436,7 +6396,7 @@ class IntelligentAgent:
                 plan = reused_plan
             self._pending_execution_confirmation = None
         if plan is None:
-            plan = self.task_planner.plan(question, context)
+            plan = self.task_planner.plan(analysis_question, context)
 
         if (not confirmed_now) and self._should_require_step_confirmation(plan, context):
             self._pending_execution_confirmation = {
@@ -6444,15 +6404,7 @@ class IntelligentAgent:
                 "plan": plan,
                 "created_at": time.time(),
             }
-            analysis_trace["plan"] = [
-                {
-                    "step": int(s.get("step") or 0),
-                    "tool": s.get("tool"),
-                    "description": s.get("description"),
-                    "params": dict(s.get("params") or {}),
-                }
-                for s in (plan or [])
-            ]
+            analysis_trace["plan"] = serialize_plan_trace(plan)
             context["analysis_trace"] = analysis_trace
             return self._normalize_response_payload(
                 {
@@ -6480,15 +6432,7 @@ class IntelligentAgent:
                 )
             except Exception:
                 pass
-        analysis_trace["plan"] = [
-            {
-                "step": int(s.get("step") or 0),
-                "tool": s.get("tool"),
-                "description": s.get("description"),
-                "params": dict(s.get("params") or {}),
-            }
-            for s in (plan or [])
-        ]
+        analysis_trace["plan"] = serialize_plan_trace(plan)
 
         # 6. 执行计划
         execution_results = self.task_planner.execute_plan(plan, prepared_data, context=context, progress_cb=progress_cb)

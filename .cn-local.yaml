@@ -1,0 +1,13 @@
+﻿name: Local CN Config
+version: 1.0.0
+schema: v1
+models:
+  - name: glm-proxy
+    provider: openai
+    model: glm-5
+    apiBase: http://127.0.0.1:8000/v1
+    apiKey: glm-local-key
+    roles:
+      - chat
+      - edit
+      - apply

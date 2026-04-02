@@ -40,6 +40,17 @@ from agent.core.harness_router import (
     resolve_harness_route,
     should_load_local_data,
 )
+from agent.core.deterministic_sql_service import (
+    build_deterministic_sql,
+    extract_query_hints,
+    guess_target_table,
+)
+from agent.core.sql_runtime_service import (
+    compute_total_count,
+    execute_query_with_fix,
+    execute_sql_rows,
+    sanitize_select_sql,
+)
 from duplicate_issue_finder import extract_hints, get_or_build_index
 from octane_db import default_db_path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -393,6 +404,299 @@ def cleanup_stale_streaming_data(max_age_seconds: int = 300):
     
     return len(stale_tasks)
 
+
+def _timeline_event_limit() -> int:
+    try:
+        return max(20, int(os.getenv("CHAT_UI_MAX_TRACE_EVENTS", "80") or 80))
+    except Exception:
+        return 80
+
+
+def _normalize_event_status(status: Any) -> str:
+    text = str(status or "info").strip().lower()
+    if text in {"running", "ok", "warn", "error", "fallback", "info"}:
+        return text
+    return "info"
+
+
+def _sanitize_event_details(details: Any) -> Any:
+    if details in (None, "", [], {}):
+        return {}
+    if isinstance(details, (str, int, float, bool)):
+        return details
+    if isinstance(details, list):
+        cleaned: List[Any] = []
+        for item in details[:20]:
+            cleaned.append(_sanitize_event_details(item))
+        return [item for item in cleaned if item not in (None, "", [], {})]
+    if isinstance(details, dict):
+        cleaned_dict: Dict[str, Any] = {}
+        for key, value in list(details.items())[:20]:
+            normalized = _sanitize_event_details(value)
+            if normalized in (None, "", [], {}):
+                continue
+            cleaned_dict[str(key)] = normalized
+        return cleaned_dict
+    return str(details)
+
+
+def _format_event_details_text(details: Any) -> str:
+    normalized = _sanitize_event_details(details)
+    if normalized in (None, "", [], {}):
+        return ""
+    if isinstance(normalized, str):
+        return normalized.strip()
+    if isinstance(normalized, dict):
+        lines: List[str] = []
+        for key, value in normalized.items():
+            if isinstance(value, (dict, list)):
+                lines.append(f"{key}:")
+                lines.append(json.dumps(value, ensure_ascii=False, indent=2))
+            else:
+                lines.append(f"{key}: {value}")
+        return "\n".join([line for line in lines if line]).strip()
+    return json.dumps(normalized, ensure_ascii=False, indent=2)
+
+
+def append_stream_event_to_store(
+    stream_entry: Dict[str, Any],
+    *,
+    kind: str,
+    title: str,
+    status: str = "info",
+    summary: str = "",
+    details: Optional[Any] = None,
+    event_ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    if not isinstance(stream_entry, dict):
+        return {}
+
+    events = stream_entry.get("events")
+    if not isinstance(events, list):
+        events = []
+        stream_entry["events"] = events
+
+    ts = float(event_ts if event_ts is not None else time.time())
+    event = {
+        "id": f"evt_{int(ts * 1000)}_{len(events) + 1}",
+        "ts": ts,
+        "kind": str(kind or "info").strip() or "info",
+        "title": str(title or "事件").strip() or "事件",
+        "status": _normalize_event_status(status),
+        "summary": str(summary or "").strip(),
+        "details": _sanitize_event_details(details),
+    }
+    events.append(event)
+    limit = _timeline_event_limit()
+    if len(events) > limit:
+        del events[:-limit]
+    return event
+
+
+def append_stream_event(task_id: str, **event_kwargs: Any) -> Dict[str, Any]:
+    with streaming_lock:
+        stream_entry = streaming_data.setdefault(str(task_id or ""), {})
+        event = append_stream_event_to_store(stream_entry, **event_kwargs)
+        stream_entry["last_update"] = time.time()
+        return event
+
+
+def _format_elapsed_label(event_ts: Any, started_at: Any) -> str:
+    try:
+        event_value = float(event_ts or 0)
+        started_value = float(started_at or 0)
+    except Exception:
+        return ""
+    if event_value <= 0 or started_value <= 0:
+        return ""
+    elapsed = max(0.0, event_value - started_value)
+    return f"+{elapsed:.1f}s"
+
+
+def build_timeline_view_models(stream_data: Dict[str, Any], now_ts: Optional[float] = None) -> List[Dict[str, Any]]:
+    if not isinstance(stream_data, dict):
+        return []
+
+    started_at = stream_data.get("started_at") or 0
+    events = stream_data.get("events")
+    if not isinstance(events, list):
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for raw_event in events:
+        if not isinstance(raw_event, dict):
+            continue
+        kind = str(raw_event.get("kind") or "info").strip().lower() or "info"
+        status = _normalize_event_status(raw_event.get("status"))
+        details_text = _format_event_details_text(raw_event.get("details"))
+        rows.append(
+            {
+                "id": str(raw_event.get("id") or ""),
+                "kind": kind,
+                "status": status,
+                "title": str(raw_event.get("title") or "事件").strip() or "事件",
+                "summary": str(raw_event.get("summary") or "").strip(),
+                "details_text": details_text,
+                "elapsed_label": _format_elapsed_label(raw_event.get("ts"), started_at),
+                "expanded": bool(status in {"error", "warn", "fallback"} or kind in {"error", "fallback", "evidence_gap"}),
+            }
+        )
+    return rows
+
+
+def build_terminal_timeline_event(stream_data: Dict[str, Any], now_ts: Optional[float] = None) -> Dict[str, Any]:
+    if not isinstance(stream_data, dict):
+        return {}
+
+    status = str(stream_data.get("status") or "").strip().lower()
+    event_ts = float(now_ts if now_ts is not None else time.time())
+    response = str(stream_data.get("response") or "").strip()
+    error_text = str(stream_data.get("error") or "").strip()
+
+    if status == "completed" and response:
+        return {
+            "id": f"evt_terminal_{int(event_ts * 1000)}",
+            "kind": "final_answer",
+            "status": "ok",
+            "title": "最终回答已生成",
+            "summary": f"输出 {len(response)} 字",
+            "details_text": response[:400],
+            "elapsed_label": _format_elapsed_label(event_ts, stream_data.get("started_at") or 0),
+            "expanded": False,
+        }
+
+    if status == "error" and error_text:
+        return {
+            "id": f"evt_terminal_{int(event_ts * 1000)}",
+            "kind": "error",
+            "status": "error",
+            "title": "执行失败",
+            "summary": error_text,
+            "details_text": error_text,
+            "elapsed_label": _format_elapsed_label(event_ts, stream_data.get("started_at") or 0),
+            "expanded": True,
+        }
+
+    return {}
+
+
+def infer_summary_evidence_gaps(question: str, sql_used: str, rows: List[Dict[str, Any]], table_name: str) -> List[str]:
+    question_text = str(question or "").strip()
+    question_lower = question_text.lower()
+    sql_text = str(sql_used or "").strip().lower()
+
+    sample_columns = set()
+    for row in (rows or [])[:3]:
+        if isinstance(row, dict):
+            sample_columns.update([str(key) for key in row.keys()])
+
+    gaps: List[str] = []
+
+    if not rows:
+        gaps.append("当前查询没有返回结果，无法据此回答问题。")
+
+    feature_like_columns = {
+        "feature",
+        "features",
+        "function",
+        "function_name",
+        "module",
+        "service",
+        "component",
+        "aida",
+        "aida_english",
+        "top_aida",
+        "domain",
+    }
+    detail_like_columns = feature_like_columns | {"defect_id", "id", "name", "title", "ticket_id", "test_name"}
+    asks_feature_breakdown = any(token in question_lower for token in ["功能", "feature", "features", "模块", "module", "service", "aida"])
+    asks_detail_list = any(token in question_lower for token in ["哪些", "明细", "列表", "detail", "details", "which"])
+    asks_showstopper = any(token in question_lower for token in ["showstopper candidate", "showstopper"])
+    aggregate_sql = ("group by" in sql_text) or any(token in sql_text for token in ["count(", "sum(", "avg(", "round("])
+
+    if asks_feature_breakdown and not (sample_columns & feature_like_columns):
+        gaps.append("结果中不包含功能维度字段，无法回答“都是哪些功能”。")
+
+    if asks_detail_list and aggregate_sql and not (sample_columns & detail_like_columns):
+        gaps.append("当前 SQL 返回的是聚合结果而非明细记录，无法回答对象列表类问题。")
+
+    if asks_showstopper and "showstopper" not in sql_text:
+        gaps.append("当前查询未显式筛选 showstopper candidate，统计口径可能不匹配。")
+
+    deduped: List[str] = []
+    seen = set()
+    for gap in gaps:
+        key = gap.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(gap)
+    return deduped
+
+
+def build_stream_reasoning_content(stream_data: Dict[str, Any], now_ts: Optional[float] = None) -> str:
+    """Build a compact, de-duplicated reasoning block for streaming UI updates."""
+    if not isinstance(stream_data, dict):
+        return ""
+
+    def _non_empty_lines(text: Any) -> List[str]:
+        out: List[str] = []
+        for raw in str(text or "").splitlines():
+            line = str(raw or "").strip()
+            if line:
+                out.append(line)
+        return out
+
+    route_reasoning = str(stream_data.get("route_reasoning") or "").strip()
+    live_reasoning_lines = _non_empty_lines(stream_data.get("reasoning") or "")
+    if len(live_reasoning_lines) > 8:
+        live_reasoning_lines = live_reasoning_lines[-8:]
+    progress_hint = str(stream_data.get("progress") or "").strip()
+
+    summary_trace = stream_data.get("summary_trace") if isinstance(stream_data.get("summary_trace"), dict) else {}
+    trace_stage = str(summary_trace.get("stage") or "").strip()
+    execution_path = summary_trace.get("execution_path") if isinstance(summary_trace.get("execution_path"), list) else []
+    execution_path_text = " > ".join([str(x) for x in execution_path if x]) if execution_path else ""
+
+    blocks: List[str] = []
+    if route_reasoning:
+        blocks.append(route_reasoning)
+    if live_reasoning_lines:
+        blocks.append("\n".join(live_reasoning_lines))
+    if progress_hint:
+        blocks.append(f"进度: {progress_hint}")
+    if trace_stage:
+        blocks.append(f"阶段: {trace_stage}")
+    if execution_path_text:
+        blocks.append(f"路径: {execution_path_text}")
+
+    try:
+        started_at = float(stream_data.get("started_at") or 0)
+    except Exception:
+        started_at = 0
+    status = str(stream_data.get("status") or "").strip().lower()
+    if started_at > 0 and status == "processing":
+        ts = float(now_ts if now_ts is not None else time.time())
+        elapsed_seconds = int(max(0, ts - started_at))
+        blocks.append(f"耗时: {elapsed_seconds}s")
+
+    seen = set()
+    merged_lines: List[str] = []
+    for block in blocks:
+        for line in _non_empty_lines(block):
+            key = line.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged_lines.append(line)
+
+    if not merged_lines:
+        return ""
+    if len(merged_lines) > 14:
+        merged_lines = merged_lines[-14:]
+
+    return "\n".join([f"- {line}" for line in merged_lines]).strip()
+
 class EnhancedAIChatManager:
     """增强版 AI Chat Manager - 集成智能 Agent 能力"""
 
@@ -549,7 +853,8 @@ class EnhancedAIChatManager:
 
     def process_with_agent(self, question: str, data: pd.DataFrame,
                           conversation_history: List = None,
-                          conversation_state: Optional[Dict] = None) -> Dict[str, Any]:
+                          conversation_state: Optional[Dict] = None,
+                          progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
         """
         使用智能 Agent 处理问题
 
@@ -587,7 +892,12 @@ class EnhancedAIChatManager:
                     logger.warning(f"Entity resolution failed: {e}")
 
             # 使用智能 Agent 处理
-            result = self.intelligent_agent.process(resolved_question, data, conversation_history)
+            result = self.intelligent_agent.process(
+                resolved_question,
+                data,
+                conversation_history,
+                progress_cb=progress_cb,
+            )
 
             # 更新对话状态
             if self.entity_tracker and conversation_state is not None:
@@ -1028,7 +1338,7 @@ class EnhancedAIChatManager:
                 ],
                 style={
                     'flex': '1 1 auto',
-                    'minHeight': '180px',
+                    'minHeight': '0',
                     'overflowY': 'auto',
                     'border': '1px solid #ddd',
                     'padding': '10px',
@@ -1150,7 +1460,7 @@ class EnhancedAIChatManager:
                     html.Label([
                         dcc.Checklist(
                             id=f'{chat_id_prefix}-show-reasoning',
-                            options=[{'label': ' 显示AI思考过程', 'value': 'show'}],
+                            options=[{'label': ' 显示执行细节', 'value': 'show'}],
                             value=['show'],
                             style={'fontSize': '12px'}
                         )
@@ -1181,7 +1491,16 @@ class EnhancedAIChatManager:
                 'backgroundColor': '#f8f9fa',
                 'borderRadius': '4px'
             })
-        ], style={'width': '100%', 'height': '100%', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px', 'padding': '12px'})
+        ], style={
+            'width': '100%',
+            'height': '100%',
+            'minHeight': '0',
+            'display': 'flex',
+            'flexDirection': 'column',
+            'gap': '6px',
+            'padding': '12px',
+            'boxSizing': 'border-box'
+        })
 
         return interface
 
@@ -1269,6 +1588,117 @@ class EnhancedAIChatManager:
                 return messages
             return messages[-max_store_messages:]
 
+        def _timeline_status_meta(status: str) -> Dict[str, str]:
+            mapping = {
+                'running': {'label': '进行中', 'bg': '#eef4ff', 'fg': '#1d4ed8', 'border': '#bfdbfe'},
+                'ok': {'label': '完成', 'bg': '#e8f7ee', 'fg': '#0f7a42', 'border': '#b7e1c2'},
+                'warn': {'label': '注意', 'bg': '#fff7e6', 'fg': '#b7791f', 'border': '#f6d58a'},
+                'error': {'label': '失败', 'bg': '#fdeaea', 'fg': '#c0392b', 'border': '#f5b7b1'},
+                'fallback': {'label': '回退', 'bg': '#eef2ff', 'fg': '#4338ca', 'border': '#c7d2fe'},
+                'info': {'label': '事件', 'bg': '#f3f4f6', 'fg': '#4b5563', 'border': '#d1d5db'},
+            }
+            return mapping.get(str(status or 'info').strip().lower(), mapping['info'])
+
+        def _render_timeline_content(event_rows: Any):
+            if not isinstance(event_rows, list):
+                return html.Div()
+
+            blocks = []
+            for event in event_rows:
+                if not isinstance(event, dict):
+                    continue
+                meta = _timeline_status_meta(event.get('status'))
+                title = str(event.get('title') or '事件').strip() or '事件'
+                elapsed = str(event.get('elapsed_label') or '').strip()
+                summary = str(event.get('summary') or '').strip()
+                details_text = str(event.get('details_text') or '').strip()
+                expanded = bool(event.get('expanded'))
+
+                card_children: List[Any] = [
+                    html.Div([
+                        html.Div([
+                            html.Span(elapsed, style={
+                                'fontSize': '11px',
+                                'color': '#6b7280',
+                                'minWidth': '52px'
+                            }),
+                            html.Span(title, style={
+                                'fontSize': '13px',
+                                'fontWeight': '600',
+                                'color': '#1f2937'
+                            }),
+                        ], style={
+                            'display': 'flex',
+                            'alignItems': 'center',
+                            'gap': '8px',
+                            'flex': '1'
+                        }),
+                        html.Span(meta['label'], style={
+                            'fontSize': '11px',
+                            'fontWeight': '600',
+                            'padding': '2px 8px',
+                            'borderRadius': '999px',
+                            'backgroundColor': meta['bg'],
+                            'color': meta['fg'],
+                            'border': f"1px solid {meta['border']}"
+                        })
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'space-between',
+                        'gap': '10px'
+                    })
+                ]
+
+                if summary:
+                    card_children.append(html.Div(summary, style={
+                        'fontSize': '12px',
+                        'lineHeight': '1.5',
+                        'color': '#4b5563',
+                        'marginTop': '6px',
+                        'whiteSpace': 'pre-line'
+                    }))
+
+                if details_text:
+                    card_children.append(
+                        html.Details([
+                            html.Summary('详情', style={
+                                'fontSize': '12px',
+                                'color': '#4b5563',
+                                'cursor': 'pointer',
+                                'marginTop': '8px'
+                            }),
+                            html.Pre(details_text, style={
+                                'whiteSpace': 'pre-wrap',
+                                'fontSize': '11px',
+                                'lineHeight': '1.45',
+                                'color': '#374151',
+                                'backgroundColor': '#f9fafb',
+                                'border': '1px solid #e5e7eb',
+                                'borderRadius': '8px',
+                                'padding': '8px',
+                                'marginTop': '6px',
+                                'marginBottom': '0'
+                            })
+                        ], open=expanded)
+                    )
+
+                blocks.append(
+                    html.Div(card_children, style={
+                        'padding': '10px 12px',
+                        'backgroundColor': 'white',
+                        'borderRadius': '10px',
+                        'border': f"1px solid {meta['border']}",
+                        'boxShadow': '0 1px 2px rgba(15, 23, 42, 0.04)'
+                    })
+                )
+
+            return html.Div(blocks, style={
+                'display': 'flex',
+                'flexDirection': 'column',
+                'gap': '8px'
+            })
+
         def render_chat_history(chat_messages: List[Dict[str, Any]]):
             chat_history_children = []
             messages = _trim_chat_messages(chat_messages or [])
@@ -1311,11 +1741,11 @@ class EnhancedAIChatManager:
                 elif msg.get("role") == "assistant":
                     msg_type = msg.get("type")
                     if msg_type == "reasoning":
-                        icon_class = "fas fa-brain"
-                        icon_color = "#f39c12"
                         bg_color = "#fef9e7"
                         border_color = "#f4d03f"
-                        title = "AI思考"
+                    elif msg_type == "timeline":
+                        bg_color = "#f8fafc"
+                        border_color = "#dbe7f3"
                     elif msg_type == "error":
                         icon_class = "fas fa-exclamation-triangle"
                         icon_color = "#e74c3c"
@@ -1341,28 +1771,55 @@ class EnhancedAIChatManager:
                     }
                     if msg_type == "reasoning":
                         content_style.update({
-                            'maxHeight': '7em',
+                            'maxHeight': '8.5em',
                             'overflowY': 'auto',
                             'fontSize': '12px',
-                            'lineHeight': '1.2em'
+                            'lineHeight': '1.35em',
+                            'paddingLeft': '0'
                         })
 
-                    chat_history_children.append(
-                        html.Div([
+                    if msg_type == "reasoning":
+                        chat_history_children.append(
                             html.Div([
-                                html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
-                                html.Span(title, style={'fontWeight': 'bold', 'color': icon_color})
-                            ], style={'marginBottom': '5px'}),
-                            html.Div(msg.get("content", ""), style=content_style)
-                        ], style={
-                            'padding': '12px',
-                            'backgroundColor': bg_color,
-                            'borderRadius': '8px',
-                            'margin': '8px 0',
-                            'border': f'1px solid {border_color}',
-                            'marginRight': '20px'
-                        })
-                    )
+                                html.Div(msg.get("content", ""), style=content_style)
+                            ], style={
+                                'padding': '12px',
+                                'backgroundColor': bg_color,
+                                'borderRadius': '8px',
+                                'margin': '8px 0',
+                                'border': f'1px solid {border_color}',
+                                'marginRight': '20px'
+                            })
+                        )
+                    elif msg_type == "timeline":
+                        chat_history_children.append(
+                            html.Div([
+                                _render_timeline_content(msg.get("content"))
+                            ], style={
+                                'padding': '0',
+                                'backgroundColor': bg_color,
+                                'borderRadius': '8px',
+                                'margin': '8px 0',
+                                'marginRight': '20px'
+                            })
+                        )
+                    else:
+                        chat_history_children.append(
+                            html.Div([
+                                html.Div([
+                                    html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
+                                    html.Span(title, style={'fontWeight': 'bold', 'color': icon_color})
+                                ], style={'marginBottom': '5px'}),
+                                html.Div(msg.get("content", ""), style=content_style)
+                            ], style={
+                                'padding': '12px',
+                                'backgroundColor': bg_color,
+                                'borderRadius': '8px',
+                                'margin': '8px 0',
+                                'border': f'1px solid {border_color}',
+                                'marginRight': '20px'
+                            })
+                        )
             return chat_history_children
 
         def start_agent_streaming(task_id: str, question: str, current_data: Any,
@@ -1370,6 +1827,121 @@ class EnhancedAIChatManager:
                       conversation_state: Optional[Dict[str, Any]]):
             def worker():
                 heartbeat_running = {"on": True}
+                reasoning_lines: List[str] = []
+
+                def _append_timeline_event(kind: str, title: str, status: str = "info",
+                                           summary: str = "", details: Optional[Any] = None) -> None:
+                    append_stream_event(
+                        task_id,
+                        kind=kind,
+                        title=title,
+                        status=status,
+                        summary=summary,
+                        details=details,
+                    )
+
+                def _append_reasoning(line: str) -> None:
+                    text = str(line or "").strip()
+                    if not text:
+                        return
+                    reasoning_lines.append(text)
+                    with streaming_lock:
+                        streaming_data.setdefault(task_id, {})
+                        streaming_data[task_id]['reasoning'] = "\n".join(reasoning_lines[-10:])
+                        streaming_data[task_id]['last_update'] = time.time()
+
+                def _on_agent_progress(event: Dict[str, Any]) -> None:
+                    if not isinstance(event, dict):
+                        return
+                    event_name = str(event.get("event") or "").strip().lower()
+                    if event_name == "context_ready":
+                        dataset = event.get("primary_dataset") or "-"
+                        intents = event.get("intents") or []
+                        intents_text = ", ".join([str(x) for x in intents if x]) if isinstance(intents, list) else ""
+                        _append_reasoning(f"上下文: dataset={dataset}; intents={intents_text or '-'}")
+                        _append_timeline_event(
+                            kind="context_ready",
+                            title="上下文准备完成",
+                            status="ok",
+                            summary=f"dataset={dataset}; intents={intents_text or '-'}",
+                            details={
+                                "dataset": dataset,
+                                "intents": intents if isinstance(intents, list) else intents_text,
+                            },
+                        )
+                    elif event_name == "planned":
+                        tools = event.get("tools") or []
+                        tools_text = " -> ".join([str(t) for t in tools if t]) if isinstance(tools, list) else ""
+                        total = int(event.get("total_steps") or 0)
+                        _append_reasoning(f"计划: {tools_text}" if tools_text else f"计划: {total} 步")
+                        _append_timeline_event(
+                            kind="plan_created",
+                            title="执行计划已生成",
+                            status="ok",
+                            summary=tools_text if tools_text else f"共 {total} 步",
+                            details={
+                                "tools": tools if isinstance(tools, list) else tools_text,
+                                "total_steps": total,
+                            },
+                        )
+                    elif event_name == "tool_start":
+                        tool = event.get("tool") or "unknown_tool"
+                        step_idx = int(event.get("step_index") or 0)
+                        total = int(event.get("total_steps") or 0)
+                        _append_reasoning(f"调用工具: {tool} ({step_idx}/{total})")
+                        _append_timeline_event(
+                            kind="tool_start",
+                            title=f"开始工具调用: {tool}",
+                            status="running",
+                            summary=f"步骤 {step_idx}/{total}" if total else "开始执行",
+                            details={
+                                "tool": tool,
+                                "step_index": step_idx,
+                                "total_steps": total,
+                            },
+                        )
+                    elif event_name == "tool_end":
+                        tool = event.get("tool") or "unknown_tool"
+                        ok = bool(event.get("success"))
+                        duration_ms = int(event.get("duration_ms") or 0)
+                        err = str(event.get("error") or "").strip()
+                        suffix = "ok" if ok else (f"err: {err}" if err else "err")
+                        _append_reasoning(f"工具结果: {tool} [{suffix}] {duration_ms}ms")
+                        _append_timeline_event(
+                            kind="tool_result",
+                            title=f"工具返回: {tool}",
+                            status="ok" if ok else "error",
+                            summary=(f"成功，耗时 {duration_ms}ms" if ok else (err or f"失败，耗时 {duration_ms}ms")),
+                            details={
+                                "tool": tool,
+                                "success": ok,
+                                "duration_ms": duration_ms,
+                                "error": err,
+                            },
+                        )
+                    elif event_name == "replan":
+                        failed_tool = event.get("failed_tool") or "-"
+                        tools = event.get("replan_tools") or []
+                        tools_text = " -> ".join([str(t) for t in tools if t]) if isinstance(tools, list) else "-"
+                        _append_reasoning(f"重规划: {failed_tool} -> {tools_text}")
+                        _append_timeline_event(
+                            kind="replan",
+                            title="执行计划已调整",
+                            status="warn",
+                            summary=f"{failed_tool} -> {tools_text}",
+                            details={
+                                "failed_tool": failed_tool,
+                                "replan_tools": tools if isinstance(tools, list) else tools_text,
+                            },
+                        )
+                    elif event_name == "synthesize":
+                        _append_reasoning("正在汇总结论...")
+                        _append_timeline_event(
+                            kind="llm_phase",
+                            title="正在汇总结论",
+                            status="running",
+                            summary="模型正在整理最终回答",
+                        )
 
                 def heartbeat():
                     while heartbeat_running["on"]:
@@ -1391,17 +1963,22 @@ class EnhancedAIChatManager:
                             'chunk_buffer': '',
                             'last_update': time.time()
                         })
-                        streaming_data[task_id]['reasoning'] = "初始化: 准备数据与上下文"
+                    _append_timeline_event(
+                        kind="llm_phase",
+                        title="Agent 执行已启动",
+                        status="running",
+                        summary="准备数据、上下文与工具计划",
+                    )
+                    _append_reasoning("初始化: 准备数据与上下文")
 
-                    with streaming_lock:
-                        streaming_data[task_id]['reasoning'] = "处理中: 规划任务与执行工具"
-                        streaming_data[task_id]['last_update'] = time.time()
+                    _append_reasoning("处理中: 规划任务与执行工具")
 
                     result = self.process_with_agent(
                         question,
                         current_data,
                         conversation_history,
                         conversation_state=conversation_state,
+                        progress_cb=_on_agent_progress,
                     )
                     if not result.get('success'):
                         raise RuntimeError(result.get('text') or result.get('error') or "智能Agent执行失败")
@@ -1456,9 +2033,19 @@ class EnhancedAIChatManager:
                             lines.append(f"记忆: short={st}, long={lt}, used={len(used)}")
                     reasoning_text = "\n".join([x for x in lines if x]).strip()
                     if reasoning_text:
-                        with streaming_lock:
-                            streaming_data[task_id]['reasoning'] = reasoning_text
-                            streaming_data[task_id]['last_update'] = time.time()
+                        for line in reasoning_text.splitlines():
+                            _append_reasoning(line)
+
+                    _append_timeline_event(
+                        kind="llm_phase",
+                        title="正在组织最终回答",
+                        status="running",
+                        summary=f"工具数 {len(result.get('tools_used', []) or [])}",
+                        details={
+                            "tools_used": result.get('tools_used', []),
+                            "resolved_question": result.get('resolved_question'),
+                        },
+                    )
 
                     formatted = self._format_agent_message(
                         result.get('text', ''),
@@ -1482,6 +2069,16 @@ class EnhancedAIChatManager:
                         streaming_data[task_id]['last_update'] = time.time()
 
                 except Exception as e:
+                    _append_timeline_event(
+                        kind="error",
+                        title="Agent 执行失败",
+                        status="error",
+                        summary=str(e),
+                        details={
+                            "error": str(e),
+                            "reasoning_tail": reasoning_lines[-5:],
+                        },
+                    )
                     with streaming_lock:
                         streaming_data.setdefault(task_id, {})
                         streaming_data[task_id]['status'] = 'error'
@@ -1499,6 +2096,13 @@ class EnhancedAIChatManager:
             if chat_mode != "pure" and not self._has_data(current_data):
                 db_summary = _build_db_profile_summary(question)
                 if db_summary:
+                    append_stream_event(
+                        task_id,
+                        kind="fallback",
+                        title="切换为数据库概览",
+                        status="fallback",
+                        summary="当前无已加载数据，返回数据库结构摘要",
+                    )
                     with streaming_lock:
                         streaming_data.setdefault(task_id, {})
                         streaming_data[task_id]['status'] = 'completed'
@@ -1522,10 +2126,18 @@ class EnhancedAIChatManager:
                     content = str(msg.get('content', '')).strip()
                     if not content:
                         continue
-                    if msg.get('type') in {'stream_response', 'reasoning'}:
+                    if msg.get('type') in {'stream_response', 'reasoning', 'timeline'}:
                         continue
                     messages.append({"role": msg['role'], "content": content})
             messages.append({"role": "user", "content": question})
+
+            append_stream_event(
+                task_id,
+                kind="llm_phase",
+                title="直接模型回答已启动",
+                status="running",
+                summary=f"模式 {chat_mode}",
+            )
 
             self.chatbot.start_optimized_streaming_thread(
                 messages,
@@ -1618,17 +2230,6 @@ class EnhancedAIChatManager:
 
             threading.Thread(target=worker, daemon=True).start()
 
-        def _guess_target_table(question_text: str) -> str:
-            q = (question_text or "").lower()
-            if any(k in q for k in [
-                "manual run", "testrun", "测试执行", "测试运行", "覆盖率", "通过率", "执行状态",
-                "run status", "execution status", "blocked", "failed", "passed", "requires attention"
-            ]):
-                return "octane_manual_runs"
-            if any(k in q for k in ["history", "历史", "阶段变化", "phase"]):
-                return "octane_defect_histories"
-            return "octane_defects"
-
         def _stream_text_response(task_id: str, text: str, progress_text: str = '正在输出结果...'):
             chunk_size = 90
             content = str(text or "").strip()
@@ -1655,6 +2256,17 @@ class EnhancedAIChatManager:
                 return str(self.chatbot.chat_completion(messages, temperature=temperature, max_tokens=max_tokens) or "").strip()
             except Exception as e:
                 logger.warning(f"摘要模式LLM调用失败({stage_text}): {e}")
+                append_stream_event(
+                    task_id,
+                    kind="fallback",
+                    title=f"{stage_text}失败",
+                    status="fallback",
+                    summary=str(e),
+                    details={
+                        "stage": stage_text,
+                        "error": str(e),
+                    },
+                )
                 with streaming_lock:
                     streaming_data.setdefault(task_id, {})
                     streaming_data[task_id]['status'] = 'processing'
@@ -1662,323 +2274,6 @@ class EnhancedAIChatManager:
                     streaming_data[task_id]['llm_error'] = f"{stage_text}: {e}"
                     streaming_data[task_id]['last_update'] = time.time()
                 return ""
-
-        def _extract_query_hints(question: str, columns: List[str]) -> Dict[str, Any]:
-            q = str(question or "")
-            ql = q.lower()
-
-            # 识别可能的项目/团队关键字（例如 IDCEVO）
-            en_tokens = re.findall(r"[A-Za-z][A-Za-z0-9_\-]{1,}", q)
-            zh_tokens = re.findall(r"[\u4e00-\u9fff]{2,8}", q)
-            entity_tokens = []
-            stop_words = {
-                "aida", "ticket", "topissue", "issue", "defect", "summary", "agent", "sqlite",
-                "tester", "reporter", "owner", "team", "project", "status", "phase", "query",
-                "trend", "efficiency", "analysis", "analyze", "recommend", "recommendation", "improve", "optimization",
-                "passed", "failed", "blocked", "requires", "attention", "coverage", "frequency", "week", "monthly",
-                "please", "kindly", "thanks", "thank", "thx", "assistant", "copilot", "chatgpt", "sisi",
-                "matrix", "distribution", "severity", "priority"
-            }
-            for t in en_tokens:
-                tl = t.lower()
-                if tl in stop_words:
-                    continue
-                if len(tl) <= 1:
-                    continue
-                entity_tokens.append(t)
-            for t in zh_tokens:
-                if t.startswith("请"):
-                    continue
-                if t in {"您好", "你好", "请问", "麻烦", "谢谢", "辛苦"}:
-                    continue
-                if any(k in t for k in ["提票", "情况", "如何", "分析", "查询", "统计", "数据", "测试", "缺陷", "团队", "项目"]):
-                    continue
-                if any(k in t for k in [
-                    "建议", "改进", "优化", "趋势", "效率", "复盘", "对策", "提升", "比较", "执行状态",
-                    "通过率", "覆盖率", "关闭率", "周变化", "周趋势", "高风险", "数据库", "优先处理", "状态分布",
-                    "分布", "矩阵", "维度", "严重", "严重性", "等级", "占比", "比例", "问题"
-                ]):
-                    continue
-                entity_tokens.append(t)
-
-            # 去重并限制长度，避免生成过长 where 子句
-            dedup_tokens = []
-            seen = set()
-            for t in entity_tokens:
-                tl = str(t).strip().lower()
-                if not tl or tl in seen:
-                    continue
-                seen.add(tl)
-                dedup_tokens.append(str(t).strip())
-
-            wants_distribution = any(k in ql for k in ["分布", "distribution", "占比", "比例"])
-            wants_matrix = any(k in ql for k in ["矩阵", "matrix"])
-            wants_severity = any(k in ql for k in [
-                "严重性", "severity", "严重等级", "等级", "priority", "critical", "major", "minor", "s1", "s2", "s3"
-            ])
-            wants_matrix_severity = bool(wants_matrix or (wants_distribution and wants_severity))
-            wants_aida_dist = ("aida" in ql) or (wants_distribution and any(k in ql for k in ["领域", "模块", "domain"]))
-            wants_topissue = any(k in ql for k in [
-                "topissue", "top issue", "高风险", "high risk", "风险", "risk matrix", "风险矩阵", "1a", "1b", "1c", "1d", "1e"
-            ])
-            wants_detail = any(k in ql for k in ["详情", "详细", "detail", "ticket", "列表", "哪些"])
-            wants_tester = any(k in ql for k in ["提票", "提单", "报缺陷", "提交人", "报告人", "发现人", "测试员", "测试人员", "tester", "reporter", "found by", "found_by", "detected by", "detected_by"])
-            wants_trend = any(k in ql for k in ["趋势", "trend", "走势", "变化", "周", "月"])
-            wants_efficiency = any(k in ql for k in ["效率", "efficiency", "修复", "关闭率", "通过率", "处理时长", "时效"])
-            wants_test_coverage = any(k in ql for k in [
-                "测试覆盖", "覆盖率", "pass rate", "test frequency", "通过率", "执行状态", "run status", "blocked", "requires attention"
-            ])
-            wants_recommendation = any(k in ql for k in ["建议", "recommend", "改进", "优化", "improve", "复盘", "对策"])
-            wants_analysis = bool(
-                wants_trend
-                or wants_efficiency
-                or wants_recommendation
-                or wants_test_coverage
-                or wants_matrix_severity
-                or wants_aida_dist
-            )
-
-            return {
-                "entity_tokens": dedup_tokens[:6],
-                "wants_distribution": wants_distribution,
-                "wants_matrix": wants_matrix,
-                "wants_severity": wants_severity,
-                "wants_matrix_severity": wants_matrix_severity,
-                "wants_aida_dist": wants_aida_dist,
-                "wants_topissue": wants_topissue,
-                "wants_detail": wants_detail,
-                "wants_tester": wants_tester,
-                "wants_trend": wants_trend,
-                "wants_efficiency": wants_efficiency,
-                "wants_test_coverage": wants_test_coverage,
-                "wants_recommendation": wants_recommendation,
-                "wants_analysis": wants_analysis,
-                "columns": set(columns or []),
-            }
-
-        def _build_deterministic_sql(
-            question: str,
-            table_name: str,
-            columns: List[str],
-            entity_tokens_override: Optional[List[str]] = None,
-        ) -> str:
-            """规则化SQL生成：摘要模式默认走这里，避免LLM生成SQL卡住。"""
-            hints = _extract_query_hints(question, columns)
-            if entity_tokens_override is not None:
-                hints["entity_tokens"] = [
-                    str(t).strip()
-                    for t in (entity_tokens_override or [])
-                    if str(t).strip()
-                ][:6]
-            cols = hints["columns"]
-
-            def _esc_like(token: str) -> str:
-                return str(token or "").replace("'", "''")
-
-            def _coalesced_text_expr(col_name: str) -> str:
-                return f"COALESCE(NULLIF(TRIM(CAST({col_name} AS TEXT)), ''), '未标注')"
-
-            select_cols = []
-            for c in [
-                "defect_id", "id", "name", "project", "tproject", "team", "ecu",
-                "aida_english", "top_aida", "status_phase", "phase", "severity_group",
-                "tester", "detected_by", "reporter", "found_by", "author_name", "owner",
-                "topissue_display", "creation_time", "last_modified"
-            ]:
-                if c in cols:
-                    select_cols.append(c)
-
-            if not select_cols:
-                select_cols = list(columns[:10]) if columns else ["*"]
-
-            where_parts = []
-
-            if hints["wants_topissue"]:
-                if "topissue_display" in cols:
-                    where_parts.append("topissue_display IS NOT NULL AND CAST(topissue_display AS TEXT) <> ''")
-                elif "severity_group" in cols:
-                    where_parts.append("LOWER(CAST(severity_group AS TEXT)) IN ('critical','high','s1','s2')")
-
-            if hints["entity_tokens"]:
-                person_fields = [c for c in ["tester", "detected_by", "reporter", "found_by", "author_name", "owner"] if c in cols]
-                generic_fields = [c for c in ["project", "tproject", "team", "ecu", "name"] if c in cols]
-                searchable = person_fields if (hints.get("wants_tester") and person_fields) else (person_fields + generic_fields if person_fields else generic_fields)
-                for tok in hints["entity_tokens"]:
-                    tok_l = str(tok).strip().lower()
-                    if hints.get("wants_test_coverage") and tok_l in {
-                        "passed", "failed", "blocked", "requires", "attention", "status", "run", "test", "week"
-                    }:
-                        continue
-                    if searchable:
-                        safe_tok = _esc_like(tok)
-                        like_group = " OR ".join([f"LOWER(CAST({c} AS TEXT)) LIKE LOWER('%{safe_tok}%')" for c in searchable])
-                        where_parts.append(f"({like_group})")
-
-            where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
-
-            if hints.get("wants_aida_dist"):
-                aida_col = "aida_english" if "aida_english" in cols else ("top_aida" if "top_aida" in cols else "")
-                if aida_col:
-                    aida_expr = _coalesced_text_expr(aida_col)
-                    return (
-                        f"SELECT {aida_expr} AS aida, COUNT(*) AS defect_count "
-                        f'FROM "{table_name}" '
-                        f"{where_sql} "
-                        "GROUP BY 1 "
-                        "ORDER BY defect_count DESC "
-                        "LIMIT 20"
-                    )
-
-            if hints.get("wants_matrix_severity"):
-                matrix_col = next((c for c in ["topissue_display", "risk_zone", "risk_matrix"] if c in cols), "")
-                severity_col = next((c for c in ["severity_group", "severity", "severity_level", "priority"] if c in cols), "")
-
-                if matrix_col and severity_col:
-                    matrix_expr = _coalesced_text_expr(matrix_col)
-                    severity_expr = _coalesced_text_expr(severity_col)
-                    return (
-                        f"SELECT {matrix_expr} AS matrix_zone, "
-                        f"{severity_expr} AS severity, "
-                        "COUNT(*) AS defect_count "
-                        f'FROM "{table_name}" '
-                        f"{where_sql} "
-                        "GROUP BY 1, 2 "
-                        "ORDER BY defect_count DESC "
-                        "LIMIT 60"
-                    )
-
-                # 主缺陷表通常不含矩阵列，必要时联 defect_features 取 topissue_display。
-                if (not matrix_col) and severity_col and table_name == "octane_defects" and ("defect_id" in cols):
-                    matrix_expr = "COALESCE(NULLIF(TRIM(CAST(df.topissue_display AS TEXT)), ''), '未标注')"
-                    severity_expr = _coalesced_text_expr(f"d.{severity_col}")
-                    return (
-                        f"SELECT {matrix_expr} AS matrix_zone, "
-                        f"{severity_expr} AS severity, "
-                        "COUNT(*) AS defect_count "
-                        f'FROM "{table_name}" d '
-                        'LEFT JOIN "defect_features" df ON CAST(df.defect_id AS TEXT) = CAST(d.defect_id AS TEXT) '
-                        f"{where_sql} "
-                        "GROUP BY 1, 2 "
-                        "ORDER BY defect_count DESC "
-                        "LIMIT 60"
-                    )
-
-                if severity_col:
-                    severity_expr = _coalesced_text_expr(severity_col)
-                    return (
-                        f"SELECT {severity_expr} AS severity, COUNT(*) AS defect_count "
-                        f'FROM "{table_name}" '
-                        f"{where_sql} "
-                        "GROUP BY 1 "
-                        "ORDER BY defect_count DESC "
-                        "LIMIT 20"
-                    )
-
-                if matrix_col:
-                    matrix_expr = _coalesced_text_expr(matrix_col)
-                    return (
-                        f"SELECT {matrix_expr} AS matrix_zone, COUNT(*) AS defect_count "
-                        f'FROM "{table_name}" '
-                        f"{where_sql} "
-                        "GROUP BY 1 "
-                        "ORDER BY defect_count DESC "
-                        "LIMIT 20"
-                    )
-
-            if hints.get("wants_analysis"):
-                if hints.get("wants_test_coverage"):
-                    week_col = "test_week" if "test_week" in cols else ("creation_time" if "creation_time" in cols else "")
-                    status_col = "run_status" if "run_status" in cols else ("status" if "status" in cols else ("execution_status" if "execution_status" in cols else ""))
-                    if week_col and status_col:
-                        week_bucket_expr = week_col if week_col == "test_week" else f"strftime('%Y-W%W', {week_col})"
-                        status_text_expr = f"LOWER(CAST({status_col} AS TEXT))"
-                        passed_expr = (
-                            "SUM(CASE WHEN ("
-                            f"{status_text_expr} IN ('passed','pass') "
-                            f"OR {status_text_expr} LIKE 'pass%')"
-                            " THEN 1 ELSE 0 END)"
-                        )
-                        failed_expr = (
-                            "SUM(CASE WHEN ("
-                            f"{status_text_expr} IN ('failed','failure') "
-                            f"OR {status_text_expr} LIKE 'fail%')"
-                            " THEN 1 ELSE 0 END)"
-                        )
-                        blocked_expr = (
-                            "SUM(CASE WHEN ("
-                            f"{status_text_expr} IN ('blocked','requires attention','requires_attention','attention required') "
-                            f"OR {status_text_expr} LIKE '%block%' "
-                            f"OR {status_text_expr} LIKE '%require%attention%' "
-                            f"OR {status_text_expr} LIKE '%attention required%')"
-                            " THEN 1 ELSE 0 END)"
-                        )
-                        return (
-                            f"SELECT {week_bucket_expr} AS week, "
-                            "COUNT(*) AS run_count, "
-                            f"{passed_expr} AS passed_count, "
-                            f"{failed_expr} AS failed_count, "
-                            f"{blocked_expr} AS blocked_count, "
-                            f"ROUND(100.0 * {passed_expr} / NULLIF(COUNT(*), 0), 2) AS pass_rate "
-                            f'FROM "{table_name}" '
-                            f"{where_sql} "
-                            f"GROUP BY {week_bucket_expr} "
-                            "ORDER BY week DESC "
-                            "LIMIT 20"
-                        )
-
-                time_col = "creation_time" if "creation_time" in cols else ("last_modified" if "last_modified" in cols else "")
-                status_candidates = [c for c in ["status", "phase", "status_phase"] if c in cols]
-                status_col = status_candidates[0] if status_candidates else ""
-                status_text_expr = ""
-                if status_candidates:
-                    if len(status_candidates) == 1:
-                        status_text_expr = f"LOWER(CAST({status_candidates[0]} AS TEXT))"
-                    else:
-                        status_text_expr = f"LOWER(CAST(COALESCE({', '.join(status_candidates)}) AS TEXT))"
-                if time_col:
-                    closed_expr = "0"
-                    if status_text_expr:
-                        closed_expr = (
-                            "SUM(CASE WHEN ("
-                            f"{status_text_expr} IN ('closed','fixed','resolved','done','completed','concluded','concluded without action') "
-                            f"OR {status_text_expr} LIKE '%conclud%' "
-                            f"OR {status_text_expr} LIKE '%resolv%' "
-                            f"OR {status_text_expr} LIKE '%clos%' "
-                            f"OR {status_text_expr} LIKE '%fix%' "
-                            f"OR {status_text_expr} LIKE '%complet%' "
-                            f"OR {status_text_expr} LIKE '%已关闭%' "
-                            f"OR {status_text_expr} LIKE '%已解决%' "
-                            f"OR {status_text_expr} LIKE '%已修复%' "
-                            f"OR {status_text_expr} LIKE '%结案%')"
-                            " THEN 1 ELSE 0 END)"
-                        )
-                    where_with_time = where_parts + [f"{time_col} IS NOT NULL"]
-                    where_sql_analysis = " WHERE " + " AND ".join(where_with_time)
-                    return (
-                        f"SELECT strftime('%Y-W%W', {time_col}) AS week, "
-                        "COUNT(*) AS defect_count, "
-                        f"{closed_expr} AS closed_count, "
-                        f"ROUND(100.0 * {closed_expr} / NULLIF(COUNT(*), 0), 2) AS close_rate "
-                        f'FROM "{table_name}" '
-                        f"{where_sql_analysis} "
-                        "GROUP BY week "
-                        "ORDER BY week DESC "
-                        "LIMIT 16"
-                    )
-                if status_col:
-                    return (
-                        f"SELECT {status_col} AS status, COUNT(*) AS defect_count "
-                        f'FROM "{table_name}" '
-                        f"{where_sql} "
-                        f"GROUP BY {status_col} "
-                        "ORDER BY defect_count DESC "
-                        "LIMIT 12"
-                    )
-
-            order_col = "creation_time" if "creation_time" in cols else "last_modified" if "last_modified" in cols else None
-            order_sql = f" ORDER BY {order_col} DESC" if order_col else ""
-
-            return f'SELECT {", ".join(select_cols)} FROM "{table_name}"{where_sql}{order_sql} LIMIT 120'
 
         def _build_local_db_answer(question: str, table_name: str, sql_used: str,
                                    rows: List[Dict[str, Any]], note: str = "") -> str:
@@ -2166,6 +2461,9 @@ class EnhancedAIChatManager:
                 out_rows: List[Dict[str, Any]] = []
                 total_count: Optional[int] = None
                 business_explanation: Dict[str, Any] = {}
+                semantic_adapter: Dict[str, Any] = {}
+                semantic_hints: Dict[str, Any] = {}
+                normalized_question = str(question or "").strip()
                 stage = "init"
                 summary_sql_mode = "agent"
                 summary_row_limit = max(1, int((os.getenv("CHAT_SUMMARY_ROW_LIMIT", "120") or "120").strip() or "120"))
@@ -2177,51 +2475,16 @@ class EnhancedAIChatManager:
                 execution_path: List[str] = []
                 stage_events: List[str] = []
 
-                def _unwrap_sql_for_count(sql_text: str, table_name: str) -> str:
-                    s = str(sql_text or "").strip().rstrip(";")
-                    if not s:
-                        return f'SELECT * FROM "{table_name}"'
-                    # run_sqlite_query 会把 SQL 包成: SELECT * FROM (<inner>) AS _q LIMIT N
-                    m = re.match(r"^\s*SELECT\s+\*\s+FROM\s+\((.*)\)\s+AS\s+_q\s+LIMIT\s+\d+\s*$", s, flags=re.IGNORECASE | re.DOTALL)
-                    if m:
-                        s = str(m.group(1) or "").strip()
-                    s = re.sub(r"\s+LIMIT\s+\d+\s*$", "", s, flags=re.IGNORECASE)
-                    if not re.match(r"^\s*(select|with)\b", s, flags=re.IGNORECASE):
-                        return f'SELECT * FROM "{table_name}"'
-                    return s
-
-                def _compute_total_count(db_path: str, table_name: str, sql_text: str) -> Optional[int]:
-                    base_sql = _unwrap_sql_for_count(sql_text, table_name)
-                    count_sql = f"SELECT COUNT(*) AS total_count FROM ({base_sql}) AS _cnt"
-
-                    if tool_executor:
-                        try:
-                            c_out = tool_executor.execute_tool("run_sqlite_query", None, sql=count_sql, limit=1)
-                            if isinstance(c_out, dict) and c_out.get("success") is True:
-                                rs = c_out.get("result") or {}
-                                items = rs.get("rows") or []
-                                if isinstance(items, list) and items and isinstance(items[0], dict):
-                                    v = items[0].get("total_count")
-                                    if v is not None:
-                                        return int(v)
-                        except Exception:
-                            pass
-
-                    try:
-                        conn3 = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-                        cur3 = conn3.cursor()
-                        try:
-                            cur3.execute("PRAGMA query_only = ON")
-                        except Exception:
-                            pass
-                        cur3.execute(count_sql)
-                        one = cur3.fetchone()
-                        conn3.close()
-                        if one is not None:
-                            return int(one[0])
-                    except Exception:
-                        return None
-                    return None
+                def _append_db_event(kind: str, title: str, status: str = "info",
+                                     summary: str = "", details: Optional[Any] = None) -> None:
+                    append_stream_event(
+                        task_id,
+                        kind=kind,
+                        title=title,
+                        status=status,
+                        summary=summary,
+                        details=details,
+                    )
 
                 def _mark_stage(new_stage: str) -> None:
                     nonlocal stage
@@ -2229,10 +2492,49 @@ class EnhancedAIChatManager:
                     stage_events.append(f"{stage}@{int((time.time() - started_at) * 1000)}ms")
 
                 try:
+                    _append_db_event(
+                        kind="llm_phase",
+                        title="数据库摘要执行已启动",
+                        status="running",
+                        summary="准备数据库结构与查询计划",
+                    )
                     _mark_stage("open_db")
                     db_path = os.getenv("AGENT_SQLITE_DB_PATH") or default_db_path()
                     if not db_path or not os.path.exists(db_path):
                         raise RuntimeError(f"数据库文件不存在: {db_path}")
+
+                    try:
+                        from semantic_catalog.term_adapter import adapt_question_with_semantic_terms, is_semantic_catalog_enabled
+
+                        if is_semantic_catalog_enabled():
+                            semantic_adapter = adapt_question_with_semantic_terms(
+                                question=question,
+                                db_path=db_path,
+                                table_name="",
+                                prefer_db=True,
+                            )
+                            semantic_hints = dict(semantic_adapter.get("semantic_hints") or {})
+                            normalized_question = str(semantic_adapter.get("normalized_question") or question).strip() or str(question or "")
+
+                            mapped_dims = semantic_adapter.get("mapped_dimensions") or []
+                            matched_rules = semantic_adapter.get("matched_rule_ids") or []
+                            if semantic_hints or mapped_dims or matched_rules:
+                                _append_db_event(
+                                    kind="context_ready",
+                                    title="语义术语映射已应用",
+                                    status="ok",
+                                    summary=(
+                                        f"dimensions={len(mapped_dims)}; rules={len(matched_rules)}"
+                                    ),
+                                    details={
+                                        "normalized_question": normalized_question,
+                                        "semantic_hints": semantic_hints,
+                                        "mapped_dimensions": mapped_dims[:10],
+                                        "matched_rule_ids": matched_rules[:12],
+                                    },
+                                )
+                    except Exception as sem_err:
+                        logger.debug(f"语义术语映射失败，继续使用原始问题: {sem_err}")
 
                     with streaming_lock:
                         streaming_data.setdefault(task_id, {})
@@ -2241,7 +2543,7 @@ class EnhancedAIChatManager:
                         streaming_data[task_id]['last_update'] = time.time()
 
                     _mark_stage("load_schema")
-                    target_table = _guess_target_table(question)
+                    target_table = guess_target_table(normalized_question)
                     all_tables: List[str] = []
                     col_preview: List[str] = []
 
@@ -2300,6 +2602,18 @@ class EnhancedAIChatManager:
                         col_preview = columns[:30]
                         conn.close()
 
+                    _append_db_event(
+                        kind="context_ready",
+                        title="数据库上下文已加载",
+                        status="ok",
+                        summary=f"目标表 {target_table}; 预览列 {len(col_preview)} 个",
+                        details={
+                            "table": target_table,
+                            "columns": col_preview,
+                            "tables": all_tables[:10],
+                        },
+                    )
+
                     # 摘要模式优先走统一工具链，避免与Agent模式SQL行为漂移。
                     with streaming_lock:
                         streaming_data[task_id]['progress'] = '正在生成数据库查询(工具链优先)...'
@@ -2312,47 +2626,52 @@ class EnhancedAIChatManager:
 
                     # 优先复用统一工具链，避免摘要模式与 Agent 模式出现两套SQL行为漂移。
                     use_agent_sql = (os.getenv("CHAT_SUMMARY_SQL_USE_AGENT", "1") or "1").strip().lower() not in {"0", "false", "no"}
-                    if use_agent_sql and tool_executor:
+                    if use_agent_sql:
                         execution_path.append("sql_generate:tool")
-                        try:
-                            with streaming_lock:
-                                streaming_data[task_id]['progress'] = '正在通过Agent工具链生成SQL...'
-                                streaming_data[task_id]['last_update'] = time.time()
-                            agent_sql_out = tool_executor.execute_tool(
-                                "query_sqlite_with_fix",
-                                None,
-                                question=question,
-                                limit=summary_row_limit,
-                                table=target_table,
-                            )
-                            if isinstance(agent_sql_out, dict) and agent_sql_out.get("success") is True:
-                                rs = agent_sql_out.get("result") or {}
-                                sql = str(rs.get("generated_sql") or rs.get("sql") or "").strip()
-                                items = rs.get("rows") or []
-                                if isinstance(items, list):
-                                    out_rows = [r for r in items[:summary_row_limit] if isinstance(r, dict)]
-                                exp = rs.get("business_explanation")
-                                if isinstance(exp, dict):
-                                    business_explanation = exp
-                                tool_sql_succeeded = True
-                                summary_sql_mode = "agent"
-                        except Exception:
-                            local_fallback_reason = "query_sqlite_with_fix异常"
+                        with streaming_lock:
+                            streaming_data[task_id]['progress'] = '正在通过Agent工具链生成SQL...'
+                            streaming_data[task_id]['last_update'] = time.time()
+
+                        agent_query_out = execute_query_with_fix(
+                            question=normalized_question,
+                            table_name=target_table,
+                            row_limit=summary_row_limit,
+                            tool_executor=tool_executor,
+                            semantic_hints=semantic_hints,
+                        )
+                        if bool(agent_query_out.get("success")):
+                            sql = str(agent_query_out.get("sql") or "").strip()
+                            out_rows = list(agent_query_out.get("rows") or [])
+                            exp = agent_query_out.get("business_explanation")
+                            if isinstance(exp, dict):
+                                business_explanation = exp
+                            tool_sql_succeeded = True
+                            summary_sql_mode = "agent"
+                        else:
+                            local_fallback_reason = str(agent_query_out.get("error") or "query_sqlite_with_fix失败")
                             failure_category = _classify_summary_failure(stage, local_fallback_reason)
-                            pass
+                            _append_db_event(
+                                kind="fallback",
+                                title="Agent SQL 生成失败",
+                                status="fallback",
+                                summary=local_fallback_reason,
+                                details={
+                                    "table": target_table,
+                                    "mode": "agent",
+                                },
+                            )
 
                     if not out_rows and not sql:
                         execution_path.append("sql_generate:deterministic")
                         summary_sql_mode = "deterministic"
-                        sql = _build_deterministic_sql(question=question, table_name=target_table, columns=col_preview)
+                        sql = build_deterministic_sql(
+                            question=normalized_question,
+                            table_name=target_table,
+                            columns=col_preview,
+                            semantic_hints=semantic_hints,
+                        )
 
-                    sql_clean = sql.strip().rstrip(';')
-                    if not sql_clean:
-                        sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
-                    if not re.match(r"^\s*(select|with)\b", sql_clean, flags=re.IGNORECASE):
-                        sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
-                    if re.search(r"\b(insert|update|delete|drop|alter|truncate|attach|detach|pragma\s+write)\b", sql_clean, flags=re.IGNORECASE):
-                        sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
+                    sql_clean = sanitize_select_sql(sql_text=sql, table_name=target_table, default_limit=50)
 
                     with streaming_lock:
                         streaming_data[task_id]['progress'] = '正在执行数据库查询...'
@@ -2385,37 +2704,38 @@ class EnhancedAIChatManager:
                     if (not out_rows) and (not tool_sql_succeeded):
                         _mark_stage("run_sql_local_fallback")
                         execution_path.append("sql_run:local_fallback")
-                        # 本地最终兜底仍保留，但也走只读连接，不复用上游游标。
-                        try:
-                            conn2 = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-                            conn2.row_factory = sqlite3.Row
-                            cur2 = conn2.cursor()
-                            try:
-                                cur2.execute("PRAGMA query_only = ON")
-                            except Exception:
-                                pass
-                            try:
-                                cur2.execute(sql_clean)
-                                rows = cur2.fetchmany(200)
-                            except Exception:
-                                sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
-                                cur2.execute(sql_clean)
-                                rows = cur2.fetchmany(200)
-                            conn2.close()
-                        except Exception:
-                            rows = []
-
-                        out_rows = []
-                        for r in rows[:summary_row_limit]:
-                            try:
-                                d = dict(r) if r is not None else {}
-                            except Exception:
-                                d = {}
-                            out_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
+                        _append_db_event(
+                            kind="fallback",
+                            title="切换本地 SQL 执行",
+                            status="fallback",
+                            summary=local_fallback_reason or "工具执行不可用，改走本地只读查询",
+                            details={
+                                "table": target_table,
+                                "sql": sql_clean,
+                            },
+                        )
+                        local_out = execute_sql_rows(
+                            sql_text=sql_clean,
+                            db_path=db_path,
+                            table_name=target_table,
+                            row_limit=summary_row_limit,
+                            tool_executor=None,
+                        )
+                        if bool(local_out.get("success")):
+                            out_rows = list(local_out.get("rows") or [])
+                            sql_clean = str(local_out.get("sql") or sql_clean)
+                        else:
+                            local_fallback_reason = str(
+                                local_out.get("error")
+                                or local_fallback_reason
+                                or "本地SQL兜底失败"
+                            )
+                            if not failure_category:
+                                failure_category = _classify_summary_failure(stage, local_fallback_reason)
 
                     # 分析类问题若因噪声实体词导致零结果，先放宽实体词重试；仍为空则切换聚合模板再试一次。
                     if (not out_rows) and summary_sql_mode == "deterministic":
-                        retry_hints = _extract_query_hints(question, col_preview)
+                        retry_hints = extract_query_hints(normalized_question, col_preview, semantic_hints=semantic_hints)
                         analysis_like_intent = bool(
                             retry_hints.get("wants_analysis")
                             or retry_hints.get("wants_aida_dist")
@@ -2424,15 +2744,26 @@ class EnhancedAIChatManager:
                         if analysis_like_intent and (retry_hints.get("entity_tokens") or []):
                             _mark_stage("retry_broad_query")
                             execution_path.append("sql_retry:deterministic_broad")
+                            _append_db_event(
+                                kind="fallback",
+                                title="零结果后放宽过滤重试",
+                                status="fallback",
+                                summary="已移除实体词过滤，重新执行查询",
+                                details={
+                                    "entity_tokens": retry_hints.get("entity_tokens") or [],
+                                    "table": target_table,
+                                },
+                            )
                             with streaming_lock:
                                 streaming_data[task_id]['progress'] = '结果为空，正在放宽筛选重试...'
                                 streaming_data[task_id]['last_update'] = time.time()
 
-                            broad_sql = _build_deterministic_sql(
-                                question=question,
+                            broad_sql = build_deterministic_sql(
+                                question=normalized_question,
                                 table_name=target_table,
                                 columns=col_preview,
                                 entity_tokens_override=[],
+                                semantic_hints=semantic_hints,
                             )
                             broad_sql_clean = broad_sql.strip().rstrip(';')
                             if not broad_sql_clean or not re.match(r"^\s*(select|with)\b", broad_sql_clean, flags=re.IGNORECASE):
@@ -2440,39 +2771,15 @@ class EnhancedAIChatManager:
                             if re.search(r"\b(insert|update|delete|drop|alter|truncate|attach|detach|pragma\s+write)\b", broad_sql_clean, flags=re.IGNORECASE):
                                 broad_sql_clean = f'SELECT * FROM "{target_table}" LIMIT 50'
 
-                            retry_rows: List[Dict[str, Any]] = []
-                            if tool_executor:
-                                try:
-                                    retry_out = tool_executor.execute_tool("run_sqlite_query", None, sql=broad_sql_clean, limit=summary_row_limit)
-                                    if isinstance(retry_out, dict) and retry_out.get("success") is True:
-                                        retry_rs = retry_out.get("result") or {}
-                                        broad_sql_clean = str(retry_rs.get("sql") or broad_sql_clean)
-                                        retry_items = retry_rs.get("rows") or []
-                                        if isinstance(retry_items, list):
-                                            retry_rows = [r for r in retry_items[:summary_row_limit] if isinstance(r, dict)]
-                                except Exception:
-                                    retry_rows = []
-
-                            if not retry_rows:
-                                try:
-                                    conn_retry = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-                                    conn_retry.row_factory = sqlite3.Row
-                                    cur_retry = conn_retry.cursor()
-                                    try:
-                                        cur_retry.execute("PRAGMA query_only = ON")
-                                    except Exception:
-                                        pass
-                                    cur_retry.execute(broad_sql_clean)
-                                    retry_raw = cur_retry.fetchmany(200)
-                                    conn_retry.close()
-                                    for rr in retry_raw[:summary_row_limit]:
-                                        try:
-                                            d = dict(rr) if rr is not None else {}
-                                        except Exception:
-                                            d = {}
-                                        retry_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
-                                except Exception:
-                                    retry_rows = []
+                            retry_outcome = execute_sql_rows(
+                                sql_text=broad_sql_clean,
+                                db_path=db_path,
+                                table_name=target_table,
+                                row_limit=summary_row_limit,
+                                tool_executor=tool_executor,
+                            )
+                            retry_rows: List[Dict[str, Any]] = list(retry_outcome.get("rows") or [])
+                            broad_sql_clean = str(retry_outcome.get("sql") or broad_sql_clean)
 
                             # 放宽实体词后仍为空：再尝试一次通用聚合模板，避免分析问题直接返回无数据。
                             if (not retry_rows) and analysis_like_intent:
@@ -2511,42 +2818,29 @@ class EnhancedAIChatManager:
 
                                 if overview_sql:
                                     execution_path.append("sql_retry:deterministic_overview")
+                                    _append_db_event(
+                                        kind="fallback",
+                                        title="切换聚合模板重试",
+                                        status="fallback",
+                                        summary="零结果后改用聚合 SQL 模板",
+                                        details={
+                                            "table": target_table,
+                                            "sql": overview_sql,
+                                        },
+                                    )
                                     with streaming_lock:
                                         streaming_data[task_id]['progress'] = '结果仍为空，正在切换聚合模板重试...'
                                         streaming_data[task_id]['last_update'] = time.time()
 
-                                    if tool_executor:
-                                        try:
-                                            ov_out = tool_executor.execute_tool("run_sqlite_query", None, sql=overview_sql, limit=summary_row_limit)
-                                            if isinstance(ov_out, dict) and ov_out.get("success") is True:
-                                                ov_rs = ov_out.get("result") or {}
-                                                overview_sql = str(ov_rs.get("sql") or overview_sql)
-                                                ov_items = ov_rs.get("rows") or []
-                                                if isinstance(ov_items, list):
-                                                    retry_rows = [r for r in ov_items[:summary_row_limit] if isinstance(r, dict)]
-                                        except Exception:
-                                            retry_rows = []
-
-                                    if not retry_rows:
-                                        try:
-                                            conn_overview = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-                                            conn_overview.row_factory = sqlite3.Row
-                                            cur_overview = conn_overview.cursor()
-                                            try:
-                                                cur_overview.execute("PRAGMA query_only = ON")
-                                            except Exception:
-                                                pass
-                                            cur_overview.execute(overview_sql)
-                                            overview_raw = cur_overview.fetchmany(200)
-                                            conn_overview.close()
-                                            for rr in overview_raw[:summary_row_limit]:
-                                                try:
-                                                    d = dict(rr) if rr is not None else {}
-                                                except Exception:
-                                                    d = {}
-                                                retry_rows.append({k: d.get(k) for k in list(d.keys())[:18]})
-                                        except Exception:
-                                            retry_rows = []
+                                    overview_outcome = execute_sql_rows(
+                                        sql_text=overview_sql,
+                                        db_path=db_path,
+                                        table_name=target_table,
+                                        row_limit=summary_row_limit,
+                                        tool_executor=tool_executor,
+                                    )
+                                    retry_rows = list(overview_outcome.get("rows") or [])
+                                    overview_sql = str(overview_outcome.get("sql") or overview_sql)
 
                                     if retry_rows:
                                         broad_sql_clean = overview_sql
@@ -2559,13 +2853,63 @@ class EnhancedAIChatManager:
                                     if local_fallback_reason else "零结果后自动放宽实体词过滤重试成功"
                                 )
 
-                    total_count = _compute_total_count(db_path=db_path, table_name=target_table, sql_text=sql_clean)
+                    _append_db_event(
+                        kind="sql_generated",
+                        title="SQL 已生成",
+                        status="ok" if sql_clean else "warn",
+                        summary=f"模式 {summary_sql_mode}; 表 {target_table}",
+                        details={
+                            "sql": sql_clean,
+                            "mode": summary_sql_mode,
+                            "table": target_table,
+                        },
+                    )
+
+                    total_count = compute_total_count(
+                        db_path=db_path,
+                        table_name=target_table,
+                        sql_text=sql_clean,
+                        tool_executor=tool_executor,
+                    )
+
+                    _append_db_event(
+                        kind="sql_result",
+                        title="SQL 查询完成",
+                        status="ok" if out_rows else "warn",
+                        summary=(
+                            f"返回 {len(out_rows)} 行样本，总量 {total_count}"
+                            if total_count is not None else f"返回 {len(out_rows)} 行样本"
+                        ),
+                        details={
+                            "row_count": len(out_rows),
+                            "total_count": total_count,
+                            "table": target_table,
+                            "failure_category": failure_category,
+                            "execution_path": execution_path,
+                        },
+                    )
+
+                    evidence_gaps = infer_summary_evidence_gaps(question, sql_clean, out_rows, target_table)
+                    if evidence_gaps:
+                        _append_db_event(
+                            kind="evidence_gap",
+                            title="证据存在缺口",
+                            status="warn",
+                            summary=evidence_gaps[0],
+                            details=evidence_gaps,
+                        )
 
                     with streaming_lock:
                         streaming_data[task_id]['progress'] = '正在生成回答...'
                         streaming_data[task_id]['last_update'] = time.time()
 
                     _mark_stage("generate_answer")
+                    _append_db_event(
+                        kind="llm_phase",
+                        title="正在生成回答",
+                        status="running",
+                        summary=f"基于 {len(out_rows)} 行样本整理回答",
+                    )
                     ans_messages = [
                         {"role": "system", "content": "你是数据分析助手。基于SQL结果回答用户，先给结论，再给关键数据点；若样本不足要明确说明。"},
                         {"role": "user", "content": json.dumps({
@@ -2590,6 +2934,16 @@ class EnhancedAIChatManager:
 
                     # 第一次失败时，自动降采样重试，减少上下文负载造成的失败概率。
                     if not answer:
+                        _append_db_event(
+                            kind="fallback",
+                            title="答案生成失败，准备重试",
+                            status="fallback",
+                            summary="首轮回答失败，缩小样本后重试",
+                            details={
+                                "sample_count": len(out_rows),
+                                "retry_sample_count": min(len(out_rows), 30),
+                            },
+                        )
                         compact_rows = out_rows[:30]
                         retry_messages = [
                             {"role": "system", "content": "你是数据分析助手。请基于给定样本简洁回答，先结论后要点。"},
@@ -2617,6 +2971,16 @@ class EnhancedAIChatManager:
                         llm_err = ""
                         with streaming_lock:
                             llm_err = str((streaming_data.get(task_id) or {}).get('llm_error') or "").strip()
+                        _append_db_event(
+                            kind="fallback",
+                            title="大模型不可用，切换本地摘要",
+                            status="fallback",
+                            summary=llm_err or local_fallback_reason or "改用本地降级回答",
+                            details={
+                                "llm_error": llm_err,
+                                "fallback_reason": local_fallback_reason,
+                            },
+                        )
                         answer = _build_local_db_answer(
                             question=question,
                             table_name=target_table,
@@ -2675,6 +3039,18 @@ class EnhancedAIChatManager:
 
                 except Exception as e:
                     failure_category = _classify_summary_failure(stage, str(e))
+                    _append_db_event(
+                        kind="error",
+                        title="数据库摘要执行失败",
+                        status="error",
+                        summary=f"stage={stage}",
+                        details={
+                            "stage": stage,
+                            "error": str(e),
+                            "table": target_table,
+                            "sql": sql_clean,
+                        },
+                    )
                     fallback_text = _build_local_db_answer(
                         question=question,
                         table_name=target_table,
@@ -2753,7 +3129,7 @@ class EnhancedAIChatManager:
                 if "get_db_profile" not in tool_names:
                     return ""
 
-                table_name = _guess_target_table(question_text)
+                table_name = guess_target_table(question_text)
                 out = tool_executor.execute_tool("get_db_profile", None, table=table_name, top_n=5, sample_columns=12)
                 if not isinstance(out, dict) or out.get("success") is not True:
                     # 指定表失败时回退全库概览
@@ -2870,7 +3246,7 @@ class EnhancedAIChatManager:
                     content = str(msg.get('content', '')).strip()
                     if not content:
                         continue
-                    if msg.get('type') in {'stream_response', 'reasoning'}:
+                    if msg.get('type') in {'stream_response', 'reasoning', 'timeline'}:
                         continue
                     messages.append({"role": msg['role'], "content": content})
             messages.append({"role": "user", "content": question})
@@ -3042,10 +3418,23 @@ class EnhancedAIChatManager:
                     'route_trace': route_trace,
                     'response': '',
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'started_at': time.time(),
                     'progress': f"{route_trace.get('handler_label', 'AI')} 正在初始化...",
                     'chunk_buffer': '',
+                    'events': [],
                     'last_update': time.time()
                 }
+                append_stream_event_to_store(
+                    streaming_data[task_id],
+                    kind='route_decision',
+                    title='路由决策完成',
+                    status='ok',
+                    summary=(
+                        f"{route_trace.get('requested_mode_label', route_trace.get('requested_mode', '-'))} -> "
+                        f"{route_trace.get('handler_label', route_trace.get('handler', '-'))}"
+                    ),
+                    details=route_trace,
+                )
 
             chat_messages.append({
                 "role": "assistant",
@@ -3134,32 +3523,39 @@ class EnhancedAIChatManager:
 
             chat_messages = _trim_chat_messages(chat_messages or [])
             current_task_id = task_id
+            current_ts = time.time()
 
-            def _tail_lines(text: str, max_lines: int = 5) -> str:
-                raw_lines = (text or "").splitlines()
-                tail = raw_lines[-max_lines:] if raw_lines else []
-                return "\n".join(tail).strip()
+            reasoning_content = build_stream_reasoning_content(stream_data, now_ts=current_ts)
+            timeline_content = build_timeline_view_models(stream_data, now_ts=current_ts)
+            terminal_timeline_event = build_terminal_timeline_event(stream_data, now_ts=current_ts)
+            if terminal_timeline_event:
+                timeline_content = timeline_content + [terminal_timeline_event]
 
-            route_reasoning = stream_data.get('route_reasoning') or ''
-            live_reasoning = stream_data.get('reasoning') or ''
-            trimmed_live_reasoning = _tail_lines(live_reasoning, 5) if live_reasoning else ''
-            reasoning_content = "\n".join([x for x in [route_reasoning, trimmed_live_reasoning] if x]).strip()
-            if reasoning_content and show_reasoning and 'show' in (show_reasoning or []):
-                reasoning_index = -1
-                for i in range(len(chat_messages) - 1, -1, -1):
-                    if chat_messages[i].get('type') == 'reasoning' and chat_messages[i].get('task_id') == current_task_id:
-                        reasoning_index = i
-                        break
-                if reasoning_index == -1:
+            show_details = bool(show_reasoning and 'show' in (show_reasoning or []))
+            chat_messages = [
+                msg for msg in chat_messages
+                if not (
+                    msg.get('task_id') == current_task_id
+                    and msg.get('type') in {'reasoning', 'timeline'}
+                )
+            ]
+            if show_details:
+                if reasoning_content:
                     chat_messages.append({
                         "role": "assistant",
                         "type": "reasoning",
                         "task_id": current_task_id,
                         "agent_used": False,
-                        "content": f"💭 AI思考：\n{reasoning_content}"
+                        "content": reasoning_content
                     })
-                else:
-                    chat_messages[reasoning_index]["content"] = f"💭 AI思考：\n{reasoning_content}"
+                if timeline_content:
+                    chat_messages.append({
+                        "role": "assistant",
+                        "type": "timeline",
+                        "task_id": current_task_id,
+                        "agent_used": False,
+                        "content": timeline_content
+                    })
                 chat_messages = _trim_chat_messages(chat_messages)
 
             response_content = stream_data.get('response') or ''

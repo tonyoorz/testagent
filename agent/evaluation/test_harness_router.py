@@ -1,3 +1,5 @@
+import unittest
+
 from agent.core.harness_router import (
     HarnessRouteHandler,
     HarnessRouteRequest,
@@ -65,3 +67,24 @@ def test_pure_mode_never_loads_local_data():
     assert should_load_local_data(request) is False
     assert decision.handler == HarnessRouteHandler.LLM
     assert decision.llm_mode == "pure"
+
+
+class HarnessRouterRegressionTests(unittest.TestCase):
+    def test_known_issue_route_has_priority_unittest(self):
+        test_known_issue_route_has_priority()
+
+    def test_summary_advanced_query_uses_skill_when_data_available_unittest(self):
+        test_summary_advanced_query_uses_skill_when_data_available()
+
+    def test_summary_advanced_query_stays_database_direct_without_data_unittest(self):
+        test_summary_advanced_query_stays_database_direct_without_data()
+
+    def test_skill_mode_falls_back_to_llm_without_data_unittest(self):
+        test_skill_mode_falls_back_to_llm_without_data()
+
+    def test_pure_mode_never_loads_local_data_unittest(self):
+        test_pure_mode_never_loads_local_data()
+
+
+if __name__ == "__main__":
+    unittest.main()
