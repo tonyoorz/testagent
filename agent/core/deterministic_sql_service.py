@@ -213,9 +213,40 @@ _WEAK_QUERY_TERMS = (
     "如何改进",
 )
 
+_STRONG_STRUCTURED_QUERY_TERMS = (
+    "compare",
+    "comparison",
+    "vs",
+    "versus",
+    "count",
+    "counts",
+    "统计",
+    "数量",
+    "总数",
+    "多少",
+    "占比",
+    "比例",
+    "对比",
+    "比较",
+    "环比",
+    "同比",
+)
+
 
 def _contains_any(text: str, terms: tuple) -> bool:
     return any(term in text for term in terms)
+
+
+def _has_strong_structured_intent(question_text: str) -> bool:
+    q = str(question_text or "")
+    ql = q.lower()
+    if _contains_any(ql, _STRONG_STRUCTURED_QUERY_TERMS):
+        return True
+    if re.search(r"\btop\s*\d+\b", ql) or re.search(r"前\s*\d+", q):
+        return True
+    if re.search(r"\bby\s+(week|month|team|project|owner|tester)\b", ql):
+        return True
+    return False
 
 
 def _normalize_entity_token(token: Any) -> str:
@@ -505,6 +536,12 @@ def decide_query_execution_strategy(
     if any(term in ql for term in _WEAK_QUERY_TERMS):
         weak_signals.append("weak_keyword")
 
+    strong_structured_intent = _has_strong_structured_intent(q)
+    if strong_structured_intent:
+        structured_signals.append("strong_structured_intent")
+        # Recommendation words often appear in BI asks; don't let them demote clearly structured queries.
+        weak_signals = [sig for sig in weak_signals if sig != "recommendation_hint"]
+
     # Definition-like requests are usually weakly structured unless accompanied by strong metrics asks.
     if re.search(r"\bwhat\s+is\b", ql) or ("定义" in q):
         weak_signals.append("definition_style")
@@ -512,7 +549,9 @@ def decide_query_execution_strategy(
     structured_count = len(structured_signals)
     weak_count = len(weak_signals)
 
-    if structured_count > 0 and weak_count == 0:
+    if strong_structured_intent and structured_count > 0:
+        strategy = "deterministic_first"
+    elif structured_count > 0 and weak_count == 0:
         strategy = "deterministic_first"
     elif weak_count > 0 and structured_count == 0:
         strategy = "constrained_fallback"
@@ -524,6 +563,8 @@ def decide_query_execution_strategy(
     confidence = 0.45 + (0.1 * structured_count) - (0.12 * weak_count)
     if strategy == "deterministic_first":
         confidence = max(confidence, 0.65)
+        if strong_structured_intent:
+            confidence = max(confidence, 0.72)
     else:
         confidence = min(confidence, 0.55)
     confidence = max(0.05, min(0.95, confidence))
@@ -532,6 +573,7 @@ def decide_query_execution_strategy(
         "strategy": strategy,
         "confidence": round(confidence, 3),
         "prefer_deterministic": bool(strategy == "deterministic_first" and confidence >= 0.55),
+        "strong_structured_intent": bool(strong_structured_intent),
         "structured_signals": structured_signals,
         "weak_signals": weak_signals,
     }

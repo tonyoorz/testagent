@@ -28,6 +28,25 @@ class DeterministicSQLServiceTests(unittest.TestCase):
         self.assertEqual(decision.get("strategy"), "constrained_fallback")
         self.assertLess(float(decision.get("confidence") or 1.0), 0.6)
 
+    def test_summary_path_prefers_deterministic_for_compare_with_recommendation_phrase(self):
+        decision = decide_query_execution_strategy(
+            question="请比较G01和G02缺陷情况并给出建议",
+            columns=["project", "severity_group", "creation_time", "name"],
+        )
+
+        self.assertEqual(decision.get("strategy"), "deterministic_first")
+        self.assertTrue(bool(decision.get("strong_structured_intent")))
+        self.assertGreaterEqual(float(decision.get("confidence") or 0.0), 0.7)
+
+    def test_summary_path_prefers_deterministic_for_count_with_recommendation_phrase(self):
+        decision = decide_query_execution_strategy(
+            question="请统计本周P1缺陷数量并给建议",
+            columns=["severity_group", "creation_time", "name"],
+        )
+
+        self.assertEqual(decision.get("strategy"), "deterministic_first")
+        self.assertTrue(bool(decision.get("strong_structured_intent")))
+
     def test_guess_target_table_routes_execution_status_to_manual_runs(self):
         table = guess_target_table("请看执行状态中Blocked和Failed周趋势")
         self.assertEqual(table, "octane_manual_runs")
