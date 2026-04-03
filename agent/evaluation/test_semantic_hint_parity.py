@@ -1,10 +1,109 @@
 import unittest
+import json
+from unittest.mock import patch
 
 from agent.core.deterministic_sql_service import extract_query_hints
-from semantic_catalog.deterministic_query_hints import build_deterministic_query_hints
+from semantic_catalog.deterministic_query_hints import (
+    build_deterministic_query_hints,
+    load_query_registry,
+)
 
 
 class SemanticHintParityTests(unittest.TestCase):
+    def test_query_registry_load_failure_warns_and_falls_back(self):
+        with patch("semantic_catalog.deterministic_query_hints.Path.read_text", return_value="{bad-json"):
+            with self.assertLogs("semantic_catalog.deterministic_query_hints", level="WARNING") as captured:
+                registry = load_query_registry()
+
+        self.assertEqual(registry, {})
+        self.assertTrue(any("Failed to load query registry" in line for line in captured.output))
+
+    def test_query_registry_skips_malformed_and_type_mismatched_entries(self):
+        payload = {
+            "valid_family": {
+                "target_tables": ["octane_defects"],
+                "required_dimensions": ["team"],
+                "parameter_slots": {"year": "int"},
+                "output_contract": {"kind": "table"},
+                "constraints": {"limit": 100},
+            },
+            "missing_required_key": {
+                "target_tables": ["octane_defects"],
+                "required_dimensions": ["team"],
+                "parameter_slots": {"year": "int"},
+                "output_contract": {"kind": "table"},
+            },
+            "bad_target_tables": {
+                "target_tables": "octane_defects",
+                "required_dimensions": ["team"],
+                "parameter_slots": {"year": "int"},
+                "output_contract": {"kind": "table"},
+                "constraints": {"limit": 100},
+            },
+            "bad_required_dimensions": {
+                "target_tables": ["octane_defects"],
+                "required_dimensions": {"team": True},
+                "parameter_slots": {"year": "int"},
+                "output_contract": {"kind": "table"},
+                "constraints": {"limit": 100},
+            },
+            "bad_parameter_slots": {
+                "target_tables": ["octane_defects"],
+                "required_dimensions": ["team"],
+                "parameter_slots": ["year"],
+                "output_contract": {"kind": "table"},
+                "constraints": {"limit": 100},
+            },
+            "bad_output_contract": {
+                "target_tables": ["octane_defects"],
+                "required_dimensions": ["team"],
+                "parameter_slots": {"year": "int"},
+                "output_contract": ["table"],
+                "constraints": {"limit": 100},
+            },
+            "bad_constraints": {
+                "target_tables": ["octane_defects"],
+                "required_dimensions": ["team"],
+                "parameter_slots": {"year": "int"},
+                "output_contract": {"kind": "table"},
+                "constraints": ["limit"],
+            },
+        }
+
+        with patch(
+            "semantic_catalog.deterministic_query_hints.Path.read_text",
+            return_value=json.dumps(payload),
+        ):
+            registry = load_query_registry()
+
+        self.assertEqual(set(registry.keys()), {"valid_family"})
+
+    def test_query_registry_contains_required_families(self):
+        registry = load_query_registry()
+        required_families = {
+            "trend_by_week",
+            "risk_ranking",
+            "aida_distribution",
+            "tester_performance",
+            "test_execution",
+        }
+
+        self.assertTrue(required_families.issubset(set(registry.keys())))
+
+    def test_query_registry_entry_has_contract_keys(self):
+        registry = load_query_registry()
+        required_keys = {
+            "target_tables",
+            "required_dimensions",
+            "parameter_slots",
+            "output_contract",
+            "constraints",
+        }
+
+        for family_name, definition in registry.items():
+            with self.subTest(family=family_name):
+                self.assertTrue(required_keys.issubset(set(definition.keys())))
+
     def test_extract_query_hints_keeps_shared_core_flags_in_sync(self):
         cases = [
             ("请看执行状态中Blocked和Failed周趋势", ["test_week", "run_status", "owner"]),

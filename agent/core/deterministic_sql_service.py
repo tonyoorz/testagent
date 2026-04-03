@@ -3,6 +3,11 @@ from typing import Any, Dict, List, Optional
 
 from semantic_catalog.deterministic_query_hints import build_deterministic_query_hints
 
+try:
+    from semantic_catalog.term_adapter import build_unified_query_intent
+except Exception:
+    build_unified_query_intent = None  # type: ignore[assignment]
+
 
 _EN_STOP_WORDS = {
     "aida", "ticket", "topissue", "issue", "defect", "summary", "agent", "sqlite",
@@ -12,6 +17,13 @@ _EN_STOP_WORDS = {
     "passed", "failed", "blocked", "requires", "attention", "coverage", "frequency", "week", "monthly",
     "please", "kindly", "thanks", "thank", "thx", "assistant", "copilot", "chatgpt", "sisi",
     "matrix", "distribution", "severity", "priority",
+}
+
+_CONFIRMATION_REPLY_TERMS = {
+    "继续", "继续执行", "确认", "确认执行", "是", "好的", "好",
+    "ok", "yes", "y", "proceed", "continue",
+    "取消", "停止", "不执行", "算了", "否", "不要",
+    "no", "n", "cancel", "stop",
 }
 
 _MANUAL_RUN_DIRECT_TERMS = (
@@ -151,9 +163,71 @@ _HISTORY_ZH_SKIP_TERMS = (
     "阶段变化",
 )
 
+_STRUCTURED_QUERY_TERMS = (
+    "trend",
+    "distribution",
+    "top ",
+    "top-",
+    "top_",
+    "topn",
+    "top n",
+    "ranking",
+    "rank",
+    "pass rate",
+    "manual run",
+    "manual runs",
+    "matrix",
+    "aida",
+    "risk",
+    "test coverage",
+    "测试通过率",
+    "通过率",
+    "覆盖率",
+    "趋势",
+    "分布",
+    "排行",
+    "排名",
+    "top",
+    "矩阵",
+    "风险",
+    "测试覆盖",
+)
+
+_WEAK_QUERY_TERMS = (
+    "root cause",
+    "root-cause",
+    "recommendation",
+    "recommend",
+    "advice",
+    "define",
+    "definition",
+    "what is",
+    "why",
+    "how to improve",
+    "根因",
+    "原因",
+    "建议",
+    "定义",
+    "是什么",
+    "为什么",
+    "如何改进",
+)
+
 
 def _contains_any(text: str, terms: tuple) -> bool:
     return any(term in text for term in terms)
+
+
+def _normalize_entity_token(token: Any) -> str:
+    text = str(token or "").strip().lower()
+    return text.strip(" \t\r\n,，。.!！？、；;:：")
+
+
+def _is_noise_entity_token(token: Any) -> bool:
+    normalized = _normalize_entity_token(token)
+    if not normalized:
+        return True
+    return normalized in _EN_STOP_WORDS or normalized in _CONFIRMATION_REPLY_TERMS
 
 
 def _is_manual_run_question(question_text: str) -> bool:
@@ -183,13 +257,124 @@ def guess_target_table(question_text: str) -> str:
     return "octane_defects"
 
 
-def extract_query_hints(question: str, columns: List[str], semantic_hints: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _extract_semantic_hints_from_unified_intent(unified_intent: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(unified_intent, dict):
+        return {}
+
+    merged: Dict[str, Any] = {}
+
+    entity_filters = unified_intent.get("entity_filters")
+    if isinstance(entity_filters, list):
+        merged["entity_tokens"] = [str(t).strip() for t in entity_filters if str(t).strip()]
+
+    semantic_constraints = unified_intent.get("semantic_constraints")
+    if isinstance(semantic_constraints, dict):
+        for key, value in semantic_constraints.items():
+            if isinstance(value, bool) and value:
+                merged[key] = True
+            elif key == "preferred_dimension":
+                preferred_dimension = str(value or "").strip()
+                if preferred_dimension:
+                    merged["preferred_dimension"] = preferred_dimension
+            elif key == "month_number" and isinstance(value, int) and 1 <= value <= 12:
+                merged["month_number"] = value
+
+    time_scope = unified_intent.get("time_scope")
+    if isinstance(time_scope, dict):
+        month_number = time_scope.get("month_number")
+        if isinstance(month_number, int) and 1 <= month_number <= 12 and merged.get("month_number") is None:
+            merged["month_number"] = month_number
+
+    return merged
+
+
+def _is_valid_month_number(value: Any) -> bool:
+    return isinstance(value, int) and 1 <= value <= 12
+
+
+def _is_meaningful_semantic_value(key: str, value: Any) -> bool:
+    if key == "preferred_dimension":
+        return bool(str(value or "").strip())
+    if key == "month_number":
+        return _is_valid_month_number(value)
+    if key == "entity_tokens" and isinstance(value, list):
+        return any(str(token or "").strip() for token in value)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return bool(value)
+    return value is not None
+
+
+def _should_adapt_with_unified_intent(semantic_hints: Optional[Dict[str, Any]]) -> bool:
+    return not (isinstance(semantic_hints, dict) and bool(semantic_hints))
+
+
+def extract_query_hints(
+    question: str,
+    columns: List[str],
+    semantic_hints: Optional[Dict[str, Any]] = None,
+    adapt_with_unified_intent: bool = True,
+) -> Dict[str, Any]:
     q = str(question or "")
     ql = q.lower()
 
+    base_semantic_hints = semantic_hints if isinstance(semantic_hints, dict) else {}
+    unified_semantic_hints: Dict[str, Any] = {}
+    if adapt_with_unified_intent and callable(build_unified_query_intent):
+        try:
+            unified_intent = build_unified_query_intent(
+                question=q,
+                columns=columns,
+                table_name=guess_target_table(q),
+                semantic_hints=base_semantic_hints,
+            )
+            unified_semantic_hints = _extract_semantic_hints_from_unified_intent(unified_intent)
+        except Exception:
+            unified_semantic_hints = {}
+
+    semantic_hints = dict(unified_semantic_hints)
+    if base_semantic_hints:
+        for key, value in base_semantic_hints.items():
+            if key == "entity_tokens" and isinstance(value, list):
+                tokens = semantic_hints.setdefault("entity_tokens", [])
+                if not isinstance(tokens, list):
+                    tokens = []
+                    semantic_hints["entity_tokens"] = tokens
+                seen = {_normalize_entity_token(t) for t in tokens if _normalize_entity_token(t)}
+                for token in value:
+                    text = str(token or "").strip()
+                    text_l = _normalize_entity_token(text)
+                    if not text or not text_l or text_l in seen or _is_noise_entity_token(text):
+                        continue
+                    seen.add(text_l)
+                    tokens.append(text)
+            elif key == "preferred_dimension":
+                preferred_dimension = str(value or "").strip()
+                if preferred_dimension:
+                    semantic_hints["preferred_dimension"] = preferred_dimension
+            elif key == "month_number":
+                if _is_valid_month_number(value):
+                    semantic_hints["month_number"] = value
+            elif isinstance(value, bool):
+                if value:
+                    semantic_hints[key] = True
+            else:
+                if _is_meaningful_semantic_value(key, value):
+                    semantic_hints[key] = value
+
     shared_hints = build_deterministic_query_hints(q, columns)
-    dedup_tokens: List[str] = [str(t).strip() for t in (shared_hints.get("entity_tokens") or []) if str(t).strip()]
-    seen = {str(t).strip().lower() for t in dedup_tokens if str(t).strip()}
+    dedup_tokens: List[str] = []
+    seen = set()
+    for token in (shared_hints.get("entity_tokens") or []):
+        text = str(token or "").strip()
+        normalized = _normalize_entity_token(text)
+        if not text or not normalized or normalized in seen or _is_noise_entity_token(text):
+            continue
+        seen.add(normalized)
+        dedup_tokens.append(text)
 
     wants_distribution = bool(shared_hints.get("wants_distribution"))
     wants_matrix = bool(shared_hints.get("wants_matrix"))
@@ -228,16 +413,13 @@ def extract_query_hints(question: str, columns: List[str], semantic_hints: Optio
         except Exception:
             month_number = None
 
-    semantic_hints = semantic_hints if isinstance(semantic_hints, dict) else {}
     if semantic_hints:
         semantic_tokens = semantic_hints.get("entity_tokens")
         if isinstance(semantic_tokens, list):
             for token in semantic_tokens:
                 text = str(token or "").strip()
-                if not text:
-                    continue
-                text_l = text.lower()
-                if text_l in seen:
+                text_l = _normalize_entity_token(text)
+                if not text or not text_l or text_l in seen or _is_noise_entity_token(text):
                     continue
                 seen.add(text_l)
                 dedup_tokens.append(text)
@@ -277,6 +459,84 @@ def extract_query_hints(question: str, columns: List[str], semantic_hints: Optio
     }
 
 
+def decide_query_execution_strategy(
+    question: str,
+    columns: Optional[List[str]] = None,
+    semantic_hints: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    q = str(question or "").strip()
+    ql = q.lower()
+    cols = list(columns or [])
+    hints = extract_query_hints(
+        q,
+        cols,
+        semantic_hints=semantic_hints,
+        adapt_with_unified_intent=_should_adapt_with_unified_intent(semantic_hints),
+    )
+
+    structured_signals: List[str] = []
+    weak_signals: List[str] = []
+
+    structured_hint_keys = {
+        "wants_trend": "trend",
+        "wants_distribution": "distribution",
+        "wants_matrix": "matrix",
+        "wants_matrix_severity": "matrix_severity",
+        "wants_aida_dist": "aida_distribution",
+        "wants_topissue": "topissue",
+        "wants_test_coverage": "test_coverage",
+        "wants_efficiency": "efficiency",
+    }
+    for key, label in structured_hint_keys.items():
+        if hints.get(key):
+            structured_signals.append(label)
+
+    if _is_manual_run_question(q):
+        structured_signals.append("manual_runs")
+    if _is_history_question(q):
+        structured_signals.append("history")
+    if re.search(r"\btop\s*\d+\b", ql) or re.search(r"前\s*\d+", q):
+        structured_signals.append("top_n")
+    if any(term in ql for term in _STRUCTURED_QUERY_TERMS):
+        structured_signals.append("structured_keyword")
+
+    if hints.get("wants_recommendation"):
+        weak_signals.append("recommendation_hint")
+    if any(term in ql for term in _WEAK_QUERY_TERMS):
+        weak_signals.append("weak_keyword")
+
+    # Definition-like requests are usually weakly structured unless accompanied by strong metrics asks.
+    if re.search(r"\bwhat\s+is\b", ql) or ("定义" in q):
+        weak_signals.append("definition_style")
+
+    structured_count = len(structured_signals)
+    weak_count = len(weak_signals)
+
+    if structured_count > 0 and weak_count == 0:
+        strategy = "deterministic_first"
+    elif weak_count > 0 and structured_count == 0:
+        strategy = "constrained_fallback"
+    elif structured_count >= (weak_count + 1):
+        strategy = "deterministic_first"
+    else:
+        strategy = "constrained_fallback"
+
+    confidence = 0.45 + (0.1 * structured_count) - (0.12 * weak_count)
+    if strategy == "deterministic_first":
+        confidence = max(confidence, 0.65)
+    else:
+        confidence = min(confidence, 0.55)
+    confidence = max(0.05, min(0.95, confidence))
+
+    return {
+        "strategy": strategy,
+        "confidence": round(confidence, 3),
+        "prefer_deterministic": bool(strategy == "deterministic_first" and confidence >= 0.55),
+        "structured_signals": structured_signals,
+        "weak_signals": weak_signals,
+    }
+
+
 def build_deterministic_sql(
     question: str,
     table_name: str,
@@ -284,7 +544,12 @@ def build_deterministic_sql(
     entity_tokens_override: Optional[List[str]] = None,
     semantic_hints: Optional[Dict[str, Any]] = None,
 ) -> str:
-    hints = extract_query_hints(question, columns, semantic_hints=semantic_hints)
+    hints = extract_query_hints(
+        question,
+        columns,
+        semantic_hints=semantic_hints,
+        adapt_with_unified_intent=_should_adapt_with_unified_intent(semantic_hints),
+    )
     history_question = _is_history_question(question)
     if entity_tokens_override is not None:
         hints["entity_tokens"] = [str(t).strip() for t in (entity_tokens_override or []) if str(t).strip()][:6]

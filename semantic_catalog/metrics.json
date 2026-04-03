@@ -389,6 +389,34 @@
       }
     },
     {
+      "id": "trend_anomaly_rules",
+      "name": "Trend Anomaly Rules",
+      "description": "基于业务规则配置的趋势异常识别元数据，支持周环比尖峰与稀疏信号抑制。",
+      "formula_reference": "agent.core.intelligent_agent.evaluate_anomaly_rules",
+      "inputs": [
+        "trend_data.value",
+        "semantic_catalog/business_rules.json:br_anomaly_wow_spike_300pct",
+        "semantic_catalog/business_rules.json:br_anomaly_sparse_signal_suppression",
+        "semantic_catalog/business_rules.json:br_anomaly_risk_concentration_shift"
+      ],
+      "business_meaning": [
+        "用于在趋势分析中识别可能需要关注的突增行为",
+        "通过稀疏信号抑制降低低基线场景误报"
+      ],
+      "misuse_risks": [
+        "异常规则是启发式口径，不可替代根因分析",
+        "周粒度数据缺失或未排序会导致异常判定偏差"
+      ],
+      "recommended_checks": [
+        "输出异常时同时给出前后周值与环比变化率",
+        "明确展示是否启用了稀疏信号抑制规则"
+      ],
+      "output": {
+        "name": "anomaly_findings",
+        "type": "list"
+      }
+    },
+    {
       "id": "severity_rate",
       "name": "Severity Rate (Deprecated)",
       "description": "历史兼容项：代码实现口径更接近 severe_rate（Critical Issues 规则），建议改用 severe_rate。",

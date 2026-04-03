@@ -1,0 +1,108 @@
+{
+  "trend_by_week": {
+    "target_tables": [
+      "octane_defects"
+    ],
+    "required_dimensions": [
+      "test_week"
+    ],
+    "parameter_slots": {
+      "year": "int",
+      "entity": "string"
+    },
+    "output_contract": {
+      "shape": "timeseries",
+      "primary_metric": "count"
+    },
+    "constraints": {
+      "time_grain": "week",
+      "max_points": 53
+    }
+  },
+  "risk_ranking": {
+    "target_tables": [
+      "topissue_summary"
+    ],
+    "required_dimensions": [
+      "risk_level"
+    ],
+    "parameter_slots": {
+      "year": "int",
+      "limit": "int"
+    },
+    "output_contract": {
+      "shape": "ranking",
+      "primary_metric": "risk_score"
+    },
+    "constraints": {
+      "sort": "desc",
+      "default_limit": 10
+    }
+  },
+  "aida_distribution": {
+    "target_tables": [
+      "octane_defects"
+    ],
+    "required_dimensions": [
+      "top_aida"
+    ],
+    "parameter_slots": {
+      "year": "int",
+      "status_phase": "string"
+    },
+    "output_contract": {
+      "shape": "distribution",
+      "primary_metric": "count"
+    },
+    "constraints": {
+      "allow_unknown_bucket": true,
+      "max_buckets": 30
+    }
+  },
+  "tester_performance": {
+    "target_tables": [
+      "octane_defects",
+      "octane_manual_runs"
+    ],
+    "required_dimensions": [
+      "tester"
+    ],
+    "parameter_slots": {
+      "year": "int",
+      "team": "string"
+    },
+    "output_contract": {
+      "shape": "ranking",
+      "primary_metric": "throughput"
+    },
+    "constraints": {
+      "minimum_sample_size": 1,
+      "sort": "desc"
+    }
+  },
+  "test_execution": {
+    "target_tables": [
+      "octane_manual_runs"
+    ],
+    "required_dimensions": [
+      "run_status"
+    ],
+    "parameter_slots": {
+      "year": "int",
+      "week": "int"
+    },
+    "output_contract": {
+      "shape": "summary",
+      "primary_metric": "execution_count"
+    },
+    "constraints": {
+      "allowed_statuses": [
+        "Passed",
+        "Failed",
+        "Blocked",
+        "Requires Attention"
+      ],
+      "time_grain": "week"
+    }
+  }
+}

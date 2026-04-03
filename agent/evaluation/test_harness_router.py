@@ -69,6 +69,16 @@ def test_pure_mode_never_loads_local_data():
     assert decision.llm_mode == "pure"
 
 
+def test_summary_confirmation_followup_loads_local_data_and_uses_skill_agent():
+    request = _request(question="继续", selected_mode="summary", force_skill_agent=True)
+
+    assert should_load_local_data(request) is True
+
+    decision = resolve_harness_route(request, has_data=True)
+    assert decision.handler == HarnessRouteHandler.SKILL_AGENT
+    assert decision.reason.startswith("待确认计划")
+
+
 class HarnessRouterRegressionTests(unittest.TestCase):
     def test_known_issue_route_has_priority_unittest(self):
         test_known_issue_route_has_priority()
@@ -84,6 +94,9 @@ class HarnessRouterRegressionTests(unittest.TestCase):
 
     def test_pure_mode_never_loads_local_data_unittest(self):
         test_pure_mode_never_loads_local_data()
+
+    def test_summary_confirmation_followup_loads_local_data_and_uses_skill_agent_unittest(self):
+        test_summary_confirmation_followup_loads_local_data_and_uses_skill_agent()
 
 
 if __name__ == "__main__":

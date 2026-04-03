@@ -3,7 +3,12 @@ import sqlite3
 import tempfile
 import unittest
 
-from agent.core.sql_runtime_service import compute_total_count, execute_query_with_fix, execute_sql_rows
+from agent.core.sql_runtime_service import (
+    build_evidence_bundle,
+    compute_total_count,
+    execute_query_with_fix,
+    execute_sql_rows,
+)
 
 
 class _ToolExecutorStub:
@@ -22,6 +27,22 @@ class _ToolExecutorRaiseStub:
 
 
 class SqlRuntimeServiceTests(unittest.TestCase):
+    def test_build_evidence_bundle_contains_minimum_contract_fields(self):
+        bundle = build_evidence_bundle(
+            sql_used='SELECT id, severity_group FROM "octane_defects" LIMIT 2',
+            rows=[{"id": 101, "severity_group": "Major"}, {"id": 102, "severity_group": "Critical"}],
+            total_count=24,
+            rule_ids=["rule_a", "rule_b"],
+            evidence_gap=["结果缺少功能字段"],
+        )
+
+        self.assertEqual(bundle.get("sql_used"), 'SELECT id, severity_group FROM "octane_defects" LIMIT 2')
+        self.assertEqual(bundle.get("sample_count"), 2)
+        self.assertEqual(bundle.get("total_count"), 24)
+        self.assertEqual(bundle.get("key_fields"), ["id", "severity_group"])
+        self.assertEqual(bundle.get("rule_ids"), ["rule_a", "rule_b"])
+        self.assertEqual(bundle.get("evidence_gap"), ["结果缺少功能字段"])
+
     def test_execute_query_with_fix_normalizes_payload(self):
         executor = _ToolExecutorStub(
             {

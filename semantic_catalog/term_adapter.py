@@ -1,5 +1,6 @@
 import os
 import re
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from semantic_catalog.runtime import SemanticCatalog
@@ -16,6 +17,9 @@ _FEATURE_DIMENSION_HINTS = {
     "domain",
     "service",
 }
+
+_UNIFIED_INTENT_CACHE_MAXSIZE = 128
+_UNIFIED_INTENT_ADAPTER_CACHE: "OrderedDict[Tuple[str, str, str, bool], Dict[str, Any]]" = OrderedDict()
 
 
 def is_semantic_catalog_enabled() -> bool:
@@ -183,6 +187,183 @@ def merge_semantic_hints(*hints_list: Optional[Dict[str, Any]]) -> Dict[str, Any
                     acc.append(text)
 
     return merged
+
+
+def _dedup_text_list(values: Sequence[Any], limit: int = 8) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _infer_query_family(question_lower: str, merged_hints: Dict[str, Any]) -> str:
+    if bool(merged_hints.get("wants_test_coverage")):
+        return "test_coverage"
+    if any(term in question_lower for term in ["测试", "测试用例", "execution status", "pass rate", "覆盖率"]):
+        return "test_coverage"
+    if bool(merged_hints.get("wants_aida_dist")) or bool(merged_hints.get("wants_feature_breakdown")):
+        return "defect_distribution"
+    if bool(merged_hints.get("wants_matrix")) or bool(merged_hints.get("wants_matrix_severity")):
+        return "matrix"
+    if bool(merged_hints.get("wants_trend")):
+        return "trend"
+    return "detail"
+
+
+def _infer_table_hint(question_lower: str, query_family: str, table_name: str) -> str:
+    explicit_table = str(table_name or "").strip()
+    if explicit_table:
+        return explicit_table
+    if query_family == "test_coverage":
+        return "octane_manual_runs"
+    if any(term in question_lower for term in ["history", "历史", "状态变更", "变更记录", "流转"]):
+        return "octane_defect_histories"
+    return "octane_defects"
+
+
+def _get_cached_adapter_output(
+    question: str,
+    table_name: str,
+    db_path: Optional[str],
+    prefer_db: bool,
+) -> Dict[str, Any]:
+    cache_key = (
+        str(question or "").strip(),
+        str(table_name or "").strip(),
+        str(db_path or ""),
+        bool(prefer_db),
+    )
+    cached = _UNIFIED_INTENT_ADAPTER_CACHE.get(cache_key)
+    if isinstance(cached, dict):
+        _UNIFIED_INTENT_ADAPTER_CACHE.move_to_end(cache_key)
+        return cached
+
+    adapter_out = adapt_question_with_semantic_terms(
+        question,
+        table_name=table_name,
+        db_path=db_path,
+        prefer_db=prefer_db,
+    )
+    if not isinstance(adapter_out, dict):
+        adapter_out = {}
+
+    _UNIFIED_INTENT_ADAPTER_CACHE[cache_key] = adapter_out
+    _UNIFIED_INTENT_ADAPTER_CACHE.move_to_end(cache_key)
+    while len(_UNIFIED_INTENT_ADAPTER_CACHE) > _UNIFIED_INTENT_CACHE_MAXSIZE:
+        _UNIFIED_INTENT_ADAPTER_CACHE.popitem(last=False)
+    return adapter_out
+
+
+def _clear_unified_intent_adapter_cache() -> None:
+    _UNIFIED_INTENT_ADAPTER_CACHE.clear()
+
+
+def build_unified_query_intent(
+    question: str,
+    columns: Optional[Sequence[str]] = None,
+    *,
+    table_name: str = "",
+    semantic_hints: Optional[Dict[str, Any]] = None,
+    db_path: Optional[str] = None,
+    prefer_db: Optional[bool] = None,
+) -> Dict[str, Any]:
+    q = str(question or "").strip()
+    q_lower = q.lower()
+    input_hints = semantic_hints if isinstance(semantic_hints, dict) else {}
+
+    if prefer_db is None:
+        prefer_db = bool(db_path)
+
+    adapter_out = _get_cached_adapter_output(
+        q,
+        table_name=table_name,
+        db_path=db_path,
+        prefer_db=bool(prefer_db),
+    )
+    adapted_hints = adapter_out.get("semantic_hints") if isinstance(adapter_out.get("semantic_hints"), dict) else {}
+    merged_hints = merge_semantic_hints(adapted_hints, input_hints)
+
+    merged_entity_tokens: List[Any] = []
+    for source in [input_hints.get("entity_tokens"), adapted_hints.get("entity_tokens"), merged_hints.get("entity_tokens")]:
+        if isinstance(source, list):
+            merged_entity_tokens.extend(source)
+
+    month_number = merged_hints.get("month_number")
+    if not (isinstance(month_number, int) and 1 <= month_number <= 12):
+        month_number = _extract_month_number(q)
+
+    query_family = _infer_query_family(q_lower, merged_hints)
+    table_hint = _infer_table_hint(q_lower, query_family, table_name)
+
+    semantic_constraints: Dict[str, Any] = {}
+    for key in [
+        "wants_feature_breakdown",
+        "wants_aida_dist",
+        "wants_showstopper",
+        "wants_showstopper_candidate",
+        "wants_distribution",
+        "wants_matrix",
+        "wants_matrix_severity",
+        "wants_trend",
+        "wants_test_coverage",
+        "wants_tester",
+        "wants_detail",
+        "wants_topissue",
+        "wants_efficiency",
+        "wants_recommendation",
+        "wants_analysis",
+    ]:
+        if bool(merged_hints.get(key)):
+            semantic_constraints[key] = True
+
+    preferred_dimension = str(merged_hints.get("preferred_dimension") or "").strip()
+    if preferred_dimension:
+        semantic_constraints["preferred_dimension"] = preferred_dimension
+
+    if isinstance(month_number, int) and 1 <= month_number <= 12:
+        semantic_constraints["month_number"] = month_number
+
+    entity_filters = _dedup_text_list(merged_entity_tokens, limit=8)
+    time_scope: Dict[str, Any] = {}
+    if isinstance(month_number, int) and 1 <= month_number <= 12:
+        time_scope["month_number"] = month_number
+
+    provenance: List[Dict[str, Any]] = []
+    adapter_provenance = adapter_out.get("provenance")
+    if isinstance(adapter_provenance, list):
+        for row in adapter_provenance:
+            if isinstance(row, dict):
+                provenance.append(dict(row))
+    if semantic_constraints or entity_filters:
+        provenance.append({"type": "unified_intent", "source": "term_adapter"})
+
+    signal_count = 0
+    signal_count += 1 if semantic_constraints else 0
+    signal_count += 1 if entity_filters else 0
+    signal_count += 1 if time_scope else 0
+    signal_count += 1 if query_family != "detail" else 0
+    confidence = min(1.0, 0.25 + 0.15 * signal_count)
+
+    return {
+        "query_family": query_family,
+        "table_hint": table_hint,
+        "time_scope": time_scope,
+        "entity_filters": entity_filters,
+        "semantic_constraints": semantic_constraints,
+        "confidence": float(confidence),
+        "provenance": provenance[:40],
+        "columns": [str(c).strip() for c in (columns or []) if str(c).strip()],
+    }
 
 
 def adapt_question_with_semantic_terms(

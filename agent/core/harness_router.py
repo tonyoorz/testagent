@@ -60,6 +60,7 @@ class HarnessRouteRequest:
     known_issues_enabled: bool
     use_agent: bool
     dashboard_type: str
+    force_skill_agent: bool = False
 
 
 @dataclass(frozen=True)
@@ -121,6 +122,8 @@ def should_load_local_data(request: HarnessRouteRequest) -> bool:
     mode = _normalize_mode(request.selected_mode)
     if request.known_issues_enabled:
         return True
+    if request.force_skill_agent:
+        return True
     if mode in {"rag", "confluence", "agent"}:
         return True
     if mode == "summary" and request.use_agent and is_advanced_decision_query(request.question):
@@ -132,6 +135,36 @@ def resolve_harness_route(request: HarnessRouteRequest, has_data: bool) -> Harne
     mode = _normalize_mode(request.selected_mode)
     advanced = is_advanced_decision_query(request.question)
     try_local_data = should_load_local_data(request)
+
+    if request.force_skill_agent:
+        if request.use_agent and has_data:
+            return HarnessRouteDecision(
+                requested_mode=mode,
+                handler=HarnessRouteHandler.SKILL_AGENT,
+                reason="待确认计划已存在，优先回到 Skill 工具链继续执行。",
+                llm_mode="summary",
+                advanced_query=True,
+                known_issues_enabled=request.known_issues_enabled,
+                use_agent_enabled=request.use_agent,
+                has_data=has_data,
+                should_try_local_data=try_local_data,
+            )
+
+        fallback_reason = "待确认计划需要本地数据。" if request.use_agent else "Skill 工具链当前不可用。"
+        fallback_handler = HarnessRouteHandler.DATABASE_SUMMARY if mode == "summary" else HarnessRouteHandler.LLM
+        return HarnessRouteDecision(
+            requested_mode=mode,
+            handler=fallback_handler,
+            reason="待确认计划无法直接恢复，已回退到当前可用链路。",
+            llm_mode="summary",
+            advanced_query=True,
+            known_issues_enabled=request.known_issues_enabled,
+            use_agent_enabled=request.use_agent,
+            has_data=has_data,
+            should_try_local_data=try_local_data,
+            used_fallback=True,
+            fallback_reason=fallback_reason,
+        )
 
     if request.known_issues_enabled:
         return HarnessRouteDecision(

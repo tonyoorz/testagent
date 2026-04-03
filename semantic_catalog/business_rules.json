@@ -265,6 +265,67 @@
         "若表中已存在 topissue_risk_score，则以已计算结果为准"
       ],
       "aliases": ["主子票取高", "master override", "child master risk"]
+    },
+    {
+      "id": "br_anomaly_wow_spike_300pct",
+      "name": "周环比异常尖峰（>=300%）",
+      "description": "周趋势中当前点相对前一周增长超过阈值时标记为异常尖峰。",
+      "trigger_terms": ["anomaly", "spike", "wow", "周环比", "异常波动"],
+      "rules": [
+        "当 previous_value > 0 且 (current - previous) / previous * 100 >= 300 时，触发 wow_spike_300pct",
+        "该规则用于识别突然放大的异常增长"
+      ],
+      "sql_guardrails": [
+        "计算环比前需先保证周序列有序",
+        "previous_value = 0 时不能直接计算百分比，避免除零"
+      ],
+      "aliases": ["week over week spike", "300% spike", "环比尖峰"],
+      "config": {
+        "rule_key": "wow_spike_300pct",
+        "enabled": true,
+        "threshold_pct": 300
+      }
+    },
+    {
+      "id": "br_anomaly_sparse_signal_suppression",
+      "name": "稀疏信号抑制",
+      "description": "当样本基线过低时，抑制异常尖峰告警以避免小样本噪声。",
+      "trigger_terms": ["sparse", "noise", "稀疏", "小样本", "抑制"],
+      "rules": [
+        "当 previous_value < 3 或 current_value < 3 时，抑制 wow_spike_300pct 告警",
+        "该规则优先级高于环比尖峰检测"
+      ],
+      "sql_guardrails": [
+        "低基线样本不应直接触发高置信度异常结论",
+        "建议在告警输出中说明已应用稀疏抑制"
+      ],
+      "aliases": ["sparse signal suppression", "low baseline suppression", "稀疏抑制"],
+      "config": {
+        "rule_key": "sparse_signal_suppression",
+        "enabled": true,
+        "min_baseline": 3,
+        "min_current": 3
+      }
+    },
+    {
+      "id": "br_anomaly_risk_concentration_shift",
+      "name": "风险集中度迁移",
+      "description": "当风险份额在相邻周期发生显著迁移时，标记风险集中度变化。",
+      "trigger_terms": ["risk concentration", "shift", "风险集中度", "份额迁移"],
+      "rules": [
+        "当主风险桶 share 在相邻周期变化幅度 >= 20% 时触发 risk_concentration_shift",
+        "用于提示风险从一个领域快速迁移到另一个领域"
+      ],
+      "sql_guardrails": [
+        "份额口径必须在同一分母下计算（如同一周总缺陷数）",
+        "跨维度比较前需对齐维度定义"
+      ],
+      "aliases": ["risk share shift", "concentration drift", "风险迁移"],
+      "config": {
+        "rule_key": "risk_concentration_shift",
+        "enabled": false,
+        "share_shift_threshold_pct": 20
+      }
     }
   ]
 }

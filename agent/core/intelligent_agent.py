@@ -45,6 +45,8 @@ from agent.core.agentic_runtime import (
     build_tool_specs,
     run_agentic_loop,
 )
+from agent.core.deterministic_sql_service import decide_query_execution_strategy
+from agent.core.sql_runtime_service import build_evidence_bundle
 
 from analysis_utils import (
     compute_defect_explore_kpis,
@@ -87,6 +89,129 @@ def _tokenize_text(text: str) -> List[str]:
             continue
         out.append(s)
     return out
+
+
+def _collect_evidence_bundles(context: Dict[str, Any], execution_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    bundles: List[Dict[str, Any]] = []
+    for candidate in [
+        context.get("critic_evidence_bundle"),
+        context.get("evidence_bundle"),
+    ]:
+        if isinstance(candidate, dict):
+            bundles.append(candidate)
+
+    for row in (execution_results or []):
+        if not isinstance(row, dict):
+            continue
+        tool_output = row.get("result") if isinstance(row.get("result"), dict) else {}
+        nested_result = tool_output.get("result") if isinstance(tool_output.get("result"), dict) else {}
+        for candidate in [
+            row.get("evidence_bundle"),
+            tool_output.get("evidence_bundle"),
+            nested_result.get("evidence_bundle"),
+        ]:
+            if isinstance(candidate, dict):
+                bundles.append(candidate)
+
+    return bundles
+
+
+def _build_critic_evidence_bundle(context: Dict[str, Any], execution_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    bundles = _collect_evidence_bundles(context, execution_results)
+
+    merged: Dict[str, Any] = {
+        "sql_used": "",
+        "sample_count": 0,
+        "total_count": None,
+        "key_fields": [],
+        "rule_ids": [],
+        "evidence_gap": [],
+    }
+    seen_gaps = set()
+    seen_fields = set()
+    seen_rules = set()
+
+    for bundle in bundles:
+        sql_used = str(bundle.get("sql_used") or bundle.get("sql") or "").strip()
+        if sql_used and not merged["sql_used"]:
+            merged["sql_used"] = sql_used
+
+        total_count = bundle.get("total_count")
+        if merged["total_count"] is None and isinstance(total_count, (int, np.integer)):
+            merged["total_count"] = int(total_count)
+
+        sample_count = bundle.get("sample_count")
+        if isinstance(sample_count, (int, np.integer, float)):
+            try:
+                merged["sample_count"] = max(int(merged.get("sample_count") or 0), int(sample_count))
+            except Exception:
+                pass
+
+        key_fields = bundle.get("key_fields") if isinstance(bundle.get("key_fields"), list) else []
+        for field in key_fields:
+            text = str(field or "").strip()
+            key = text.lower()
+            if text and key not in seen_fields:
+                seen_fields.add(key)
+                merged["key_fields"].append(text)
+
+        rule_ids = bundle.get("rule_ids") if isinstance(bundle.get("rule_ids"), list) else []
+        for rule in rule_ids:
+            text = str(rule or "").strip()
+            key = text.lower()
+            if text and key not in seen_rules:
+                seen_rules.add(key)
+                merged["rule_ids"].append(text)
+
+        evidence_gaps = bundle.get("evidence_gap") if isinstance(bundle.get("evidence_gap"), list) else []
+        for gap in evidence_gaps:
+            text = str(gap or "").strip()
+            key = text.lower()
+            if text and key not in seen_gaps:
+                seen_gaps.add(key)
+                merged["evidence_gap"].append(text)
+
+    # Fallback: derive minimal evidence signals from successful tool outputs
+    # when explicit evidence bundles are unavailable.
+    if not bundles:
+        fallback_sample_count = 0
+        for row in (execution_results or []):
+            if not isinstance(row, dict):
+                continue
+            tool_output = row.get("result") if isinstance(row.get("result"), dict) else {}
+            if tool_output.get("success") is not True:
+                continue
+            nested_result = tool_output.get("result") if isinstance(tool_output.get("result"), dict) else {}
+
+            rows = nested_result.get("rows") if isinstance(nested_result.get("rows"), list) else []
+            dict_rows = [r for r in rows if isinstance(r, dict)]
+            if dict_rows:
+                fallback_sample_count += len(dict_rows)
+                for field in list(dict_rows[0].keys()):
+                    text = str(field or "").strip()
+                    key = text.lower()
+                    if text and key not in seen_fields:
+                        seen_fields.add(key)
+                        merged["key_fields"].append(text)
+
+            sql_used = str(nested_result.get("sql") or nested_result.get("generated_sql") or "").strip()
+            if sql_used and not merged["sql_used"]:
+                merged["sql_used"] = sql_used
+
+        if fallback_sample_count > 0:
+            merged["sample_count"] = fallback_sample_count
+
+    # If still empty, return empty payload to avoid implying fake evidence.
+    if (
+        not str(merged.get("sql_used") or "").strip()
+        and int(merged.get("sample_count") or 0) <= 0
+        and merged.get("total_count") is None
+        and not merged.get("key_fields")
+        and not merged.get("evidence_gap")
+    ):
+        return {}
+
+    return merged
 
 
 @lru_cache(maxsize=16)
@@ -133,6 +258,229 @@ def _resolve_dimension_to_column(dataset: str, dim_or_alias: str, dataframe_colu
         if c.lower() == key:
             return c
     return None
+
+
+_DEFAULT_ANOMALY_RULE_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "wow_spike_300pct": {
+        "enabled": True,
+        "threshold_pct": 300.0,
+    },
+    "sparse_signal_suppression": {
+        "enabled": True,
+        "min_baseline": 3.0,
+        "min_current": 3.0,
+    },
+    "risk_concentration_shift": {
+        "enabled": False,
+        "share_shift_threshold_pct": 20.0,
+    },
+}
+
+
+def _coerce_float(value: Any, default: float) -> float:
+    try:
+        result = float(value)
+        if np.isfinite(result):
+            return result
+    except Exception:
+        pass
+    return default
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        raw = value.strip().lower()
+        if raw in {"1", "true", "yes", "on"}:
+            return True
+        if raw in {"0", "false", "no", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+@lru_cache(maxsize=1)
+def _load_anomaly_rule_configs() -> Dict[str, Dict[str, Any]]:
+    configs = deepcopy(_DEFAULT_ANOMALY_RULE_CONFIGS)
+    path = os.path.join(PROJECT_ROOT, "semantic_catalog", "business_rules.json")
+
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except Exception:
+        return configs
+
+    rules = payload.get("business_rules") if isinstance(payload, dict) else []
+    if not isinstance(rules, list):
+        return configs
+
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        cfg = rule.get("config")
+        if not isinstance(cfg, dict):
+            continue
+        rule_key = str(cfg.get("rule_key") or "").strip().lower()
+        if rule_key not in configs:
+            continue
+
+        merged = deepcopy(configs[rule_key])
+        merged.update(cfg)
+        merged["enabled"] = _coerce_bool(cfg.get("enabled"), bool(merged.get("enabled", True)))
+
+        if rule_key == "wow_spike_300pct":
+            merged["threshold_pct"] = _coerce_float(cfg.get("threshold_pct"), float(configs[rule_key]["threshold_pct"]))
+        elif rule_key == "sparse_signal_suppression":
+            merged["min_baseline"] = _coerce_float(cfg.get("min_baseline"), float(configs[rule_key]["min_baseline"]))
+            merged["min_current"] = _coerce_float(cfg.get("min_current"), float(configs[rule_key]["min_current"]))
+        elif rule_key == "risk_concentration_shift":
+            merged["share_shift_threshold_pct"] = _coerce_float(
+                cfg.get("share_shift_threshold_pct"),
+                float(configs[rule_key]["share_shift_threshold_pct"]),
+            )
+
+        configs[rule_key] = merged
+
+    return configs
+
+
+def clear_anomaly_rule_config_cache() -> None:
+    """Clear the in-process anomaly rule configuration cache."""
+    _load_anomaly_rule_configs.cache_clear()
+
+
+def _extract_risk_share_pct(row: Dict[str, Any]) -> Optional[float]:
+    if not isinstance(row, dict):
+        return None
+
+    for key in [
+        "top_share_pct",
+        "dominant_share_pct",
+        "share_pct",
+        "risk_share_pct",
+        "top_share",
+        "share",
+    ]:
+        raw = row.get(key)
+        try:
+            value = float(raw)
+        except Exception:
+            continue
+        if not np.isfinite(value):
+            continue
+        if 0.0 <= value <= 1.0:
+            return value * 100.0
+        return value
+
+    top_bucket = row.get("top_risk_bucket")
+    for key in ["risk_distribution", "risk_bucket_distribution", "bucket_distribution"]:
+        dist = row.get(key)
+        if not isinstance(dist, dict) or not dist:
+            continue
+
+        numeric_items: Dict[str, float] = {}
+        total = 0.0
+        for bucket_name, raw_value in dist.items():
+            try:
+                bucket_value = float(raw_value)
+            except Exception:
+                continue
+            if not np.isfinite(bucket_value) or bucket_value < 0:
+                continue
+            numeric_items[str(bucket_name)] = bucket_value
+            total += bucket_value
+
+        if total <= 0:
+            continue
+
+        if isinstance(top_bucket, str) and top_bucket in numeric_items:
+            return (numeric_items[top_bucket] / total) * 100.0
+
+        return (max(numeric_items.values()) / total) * 100.0
+
+    return None
+
+
+def evaluate_anomaly_rules(trend_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Evaluate configurable anomaly rules against trend points."""
+    if not isinstance(trend_data, list) or len(trend_data) < 2:
+        return []
+
+    configs = _load_anomaly_rule_configs()
+    wow_cfg = configs.get("wow_spike_300pct", {})
+    sparse_cfg = configs.get("sparse_signal_suppression", {})
+    risk_cfg = configs.get("risk_concentration_shift", {})
+
+    wow_enabled = bool(wow_cfg.get("enabled", True))
+    wow_threshold_pct = _coerce_float(wow_cfg.get("threshold_pct"), 300.0)
+
+    sparse_enabled = bool(sparse_cfg.get("enabled", True))
+    sparse_baseline = _coerce_float(sparse_cfg.get("min_baseline"), 3.0)
+    sparse_current = _coerce_float(sparse_cfg.get("min_current"), 3.0)
+
+    risk_enabled = bool(risk_cfg.get("enabled", False))
+    risk_share_shift_threshold = _coerce_float(risk_cfg.get("share_shift_threshold_pct"), 20.0)
+
+    findings: List[Dict[str, Any]] = []
+
+    for idx in range(1, len(trend_data)):
+        prev_row = trend_data[idx - 1] if isinstance(trend_data[idx - 1], dict) else {}
+        curr_row = trend_data[idx] if isinstance(trend_data[idx], dict) else {}
+
+        try:
+            prev_value = float(prev_row.get("value"))
+            curr_value = float(curr_row.get("value"))
+        except Exception:
+            continue
+
+        if not np.isfinite(prev_value) or not np.isfinite(curr_value):
+            continue
+
+        sparse_blocked = bool(
+            sparse_enabled and (prev_value < sparse_baseline or curr_value < sparse_current)
+        )
+
+        if wow_enabled and (not sparse_blocked) and prev_value > 0:
+            change_pct = ((curr_value - prev_value) / prev_value) * 100.0
+            if change_pct >= wow_threshold_pct:
+                findings.append(
+                    {
+                        "rule_id": "wow_spike_300pct",
+                        "severity": "high",
+                        "index": idx,
+                        "group": curr_row.get("group"),
+                        "value": curr_value,
+                        "previous_group": prev_row.get("group"),
+                        "previous_value": prev_value,
+                        "change_pct": round(change_pct, 2),
+                    }
+                )
+
+        if risk_enabled:
+            prev_share_pct = _extract_risk_share_pct(prev_row)
+            curr_share_pct = _extract_risk_share_pct(curr_row)
+
+            if prev_share_pct is not None and curr_share_pct is not None:
+                share_shift_pct = abs(curr_share_pct - prev_share_pct)
+                if share_shift_pct >= risk_share_shift_threshold:
+                    findings.append(
+                        {
+                            "rule_id": "risk_concentration_shift",
+                            "severity": "medium",
+                            "index": idx,
+                            "group": curr_row.get("group"),
+                            "previous_group": prev_row.get("group"),
+                            "top_risk_bucket": curr_row.get("top_risk_bucket"),
+                            "previous_top_risk_bucket": prev_row.get("top_risk_bucket"),
+                            "top_share_pct": round(curr_share_pct, 2),
+                            "previous_top_share_pct": round(prev_share_pct, 2),
+                            "share_shift_pct": round(share_shift_pct, 2),
+                        }
+                    )
+
+    return findings
 
 # ============================================================================
 # 1. 工具调用系统
@@ -291,16 +639,9 @@ class TrendAnalysisTool(DataAnalysisTool):
         else:
             insights.append(f"整体呈{direction}趋势，变化率为 {change_rate:.1f}%")
 
-            # 检测异常点
-            values = [item['value'] for item in trend_data]
-            mean_val = np.mean(values)
-            std_val = np.std(values)
-
-            anomalies = [item for item in trend_data
-                        if abs(item['value'] - mean_val) > 2 * std_val]
-
-            if anomalies:
-                insights.append(f"检测到 {len(anomalies)} 个异常数据点，需要关注")
+            anomaly_findings = evaluate_anomaly_rules(trend_data)
+            if anomaly_findings:
+                insights.append(f"检测到 {len(anomaly_findings)} 个异常数据点，需要关注")
 
         return insights
 
@@ -2265,10 +2606,24 @@ class SQLiteQueryTool(DataAnalysisTool):
             conn.close()
             items = [dict(r) for r in rows]
             cols = list(items[0].keys()) if items else []
+            evidence_bundle = build_evidence_bundle(
+                sql_used=final_sql,
+                rows=items,
+                total_count=None,
+                key_fields=cols,
+                rule_ids=[],
+                evidence_gap=[],
+            )
             return {
                 "success": True,
                 "tool": self.name,
-                "result": {"columns": cols, "rows": items, "row_count": len(items), "sql": final_sql},
+                "result": {
+                    "columns": cols,
+                    "rows": items,
+                    "row_count": len(items),
+                    "sql": final_sql,
+                    "evidence_bundle": evidence_bundle,
+                },
             }
         except Exception as e:
             return {"success": False, "tool": self.name, "error": str(e), "result": {"sql": sql}}
@@ -2438,6 +2793,15 @@ def _build_sql_result_explanation(question: str, sql: str, rows: List[Dict[str, 
         cautions.append("查询结果为空，建议放宽时间或筛选条件")
     if row_count >= 180:
         cautions.append("结果接近返回上限，建议追加聚合条件")
+    rule_ids = hints.get("semantic_rule_ids") if isinstance(hints, dict) and isinstance(hints.get("semantic_rule_ids"), list) else []
+    evidence_bundle = build_evidence_bundle(
+        sql_used=sql,
+        rows=rows,
+        total_count=None,
+        key_fields=cols,
+        rule_ids=rule_ids,
+        evidence_gap=[],
+    )
     return {
         "question": str(question or ""),
         "sql": str(sql or ""),
@@ -2445,6 +2809,7 @@ def _build_sql_result_explanation(question: str, sql: str, rows: List[Dict[str, 
         "columns": cols,
         "highlights": highlights,
         "cautions": cautions,
+        "evidence_bundle": evidence_bundle,
     }
 
 
@@ -2511,6 +2876,12 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             logger.debug(f"semantic term adapter skipped: {e}")
 
         normalized_question, business_hints = _augment_question_with_business_hints(question)
+        query_strategy = decide_query_execution_strategy(
+            question=question,
+            columns=[],
+            semantic_hints=semantic_hints,
+        )
+        business_hints["query_execution_strategy"] = query_strategy
         if semantic_hints:
             business_hints["semantic_term_hints"] = semantic_hints
             mapped_dimensions = semantic_adapter.get("mapped_dimensions") if isinstance(semantic_adapter, dict) else []
@@ -2544,6 +2915,11 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
                 out.setdefault("result", {})
                 out["result"]["cache_hit"] = True
                 out["result"]["cache_type"] = "result_cache"
+                out["result"]["query_execution_strategy"] = query_strategy
+                existing_hints = out["result"].get("business_hints") if isinstance(out["result"].get("business_hints"), dict) else {}
+                merged_hints = dict(existing_hints)
+                merged_hints["query_execution_strategy"] = query_strategy
+                out["result"]["business_hints"] = merged_hints
                 out["tool"] = self.name
                 return out
 
@@ -2558,7 +2934,16 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
                 cached_run["result"]["cache_type"] = "sql_cache"
                 rows_cached = cached_run["result"].get("rows") or []
                 cached_run["result"]["business_hints"] = business_hints
+                cached_run["result"]["query_execution_strategy"] = query_strategy
                 cached_run["result"]["business_explanation"] = _build_sql_result_explanation(question, cached_sql, rows_cached, business_hints)
+                cached_run["result"]["evidence_bundle"] = build_evidence_bundle(
+                    sql_used=cached_sql,
+                    rows=rows_cached,
+                    total_count=None,
+                    key_fields=cached_run["result"].get("columns") if isinstance(cached_run["result"].get("columns"), list) else None,
+                    rule_ids=business_hints.get("semantic_rule_ids") if isinstance(business_hints.get("semantic_rule_ids"), list) else [],
+                    evidence_gap=[],
+                )
                 cached_run["tool"] = self.name
                 if len(rows_cached) <= self._result_cache_max_rows:
                     self._result_cache[cache_key] = (now, deepcopy(cached_run))
@@ -2624,7 +3009,16 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         obj = _extract_json_object(first) or {}
         sql = str(obj.get("sql") or "").strip()
         if not sql:
-            return {"success": False, "tool": self.name, "error": "模型未返回可解析的SQL", "result": {"raw": first}}
+            return {
+                "success": False,
+                "tool": self.name,
+                "error": "模型未返回可解析的SQL",
+                "result": {
+                    "raw": first,
+                    "business_hints": business_hints,
+                    "query_execution_strategy": query_strategy,
+                },
+            }
 
         run_out = self._query_tool.execute(None, sql=sql, limit=limit)
         if run_out.get("success") is True:
@@ -2636,7 +3030,16 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             run_out["result"]["cache_type"] = "none"
             rows_out = run_out["result"].get("rows") or []
             run_out["result"]["business_hints"] = business_hints
+            run_out["result"]["query_execution_strategy"] = query_strategy
             run_out["result"]["business_explanation"] = _build_sql_result_explanation(question, sql, rows_out, business_hints)
+            run_out["result"]["evidence_bundle"] = build_evidence_bundle(
+                sql_used=sql,
+                rows=rows_out,
+                total_count=None,
+                key_fields=run_out["result"].get("columns") if isinstance(run_out["result"].get("columns"), list) else None,
+                rule_ids=business_hints.get("semantic_rule_ids") if isinstance(business_hints.get("semantic_rule_ids"), list) else [],
+                evidence_gap=[],
+            )
             run_out["tool"] = self.name
             if len(rows_out) <= self._result_cache_max_rows:
                 self._result_cache[cache_key] = (time.time(), deepcopy(run_out))
@@ -2668,7 +3071,13 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
                 "success": False,
                 "tool": self.name,
                 "error": "SQL纠错失败：模型未返回可解析SQL",
-                "result": {"raw": second, "previous_sql": sql, "error": err},
+                "result": {
+                    "raw": second,
+                    "previous_sql": sql,
+                    "error": err,
+                    "business_hints": business_hints,
+                    "query_execution_strategy": query_strategy,
+                },
             }
         run2 = self._query_tool.execute(None, sql=sql2, limit=limit)
         if run2.get("success") is True:
@@ -2680,7 +3089,16 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             run2["result"]["cache_type"] = "none"
             rows_out2 = run2["result"].get("rows") or []
             run2["result"]["business_hints"] = business_hints
+            run2["result"]["query_execution_strategy"] = query_strategy
             run2["result"]["business_explanation"] = _build_sql_result_explanation(question, sql2, rows_out2, business_hints)
+            run2["result"]["evidence_bundle"] = build_evidence_bundle(
+                sql_used=sql2,
+                rows=rows_out2,
+                total_count=None,
+                key_fields=run2["result"].get("columns") if isinstance(run2["result"].get("columns"), list) else None,
+                rule_ids=business_hints.get("semantic_rule_ids") if isinstance(business_hints.get("semantic_rule_ids"), list) else [],
+                evidence_gap=[],
+            )
             run2["tool"] = self.name
             if len(rows_out2) <= self._result_cache_max_rows:
                 self._result_cache[cache_key] = (time.time(), deepcopy(run2))
@@ -2690,7 +3108,14 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             "success": False,
             "tool": self.name,
             "error": str(run2.get("error") or "SQL纠错后仍失败"),
-            "result": {"previous_sql": sql, "fixed_sql": sql2, "previous_error": err, "fixed_error": run2.get("error")},
+            "result": {
+                "previous_sql": sql,
+                "fixed_sql": sql2,
+                "previous_error": err,
+                "fixed_error": run2.get("error"),
+                "business_hints": business_hints,
+                "query_execution_strategy": query_strategy,
+            },
         }
 
     def clear_cache(self) -> None:
@@ -6928,6 +7353,11 @@ class IntelligentAgent:
         answer_parts.append(self._generate_recommendations(context, execution_results))
 
         answer_text = ''.join(answer_parts)
+        critic_evidence_bundle = _build_critic_evidence_bundle(context, execution_results)
+        if critic_evidence_bundle:
+            context["critic_evidence_bundle"] = critic_evidence_bundle
+            context["evidence_bundle"] = critic_evidence_bundle
+
         if os.getenv("AGENT_CRITIC_ENABLED") == "1":
             try:
                 from agent.evaluation.agent_critic import CriticPipeline, RuleBasedCritic
@@ -6958,6 +7388,11 @@ class IntelligentAgent:
                     critic_block = "\n**校验与质疑**\n- [info] 未发现明显风险提示缺失或工具异常。\n"
                 if refusal is not None:
                     reason = getattr(refusal, "refusal_reason", "") or "数据不足"
+                    context["refusal"] = {
+                        "should_refuse": True,
+                        "reason": str(reason),
+                        "source": "critic",
+                    }
                     answer_text = f"抱歉，当前无法给出可靠结论：{reason}\n" + critic_block
                     try:
                         trace = (context or {}).get("analysis_trace")

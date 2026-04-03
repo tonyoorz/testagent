@@ -1,4 +1,7 @@
 import re
+import json
+import logging
+from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 
@@ -166,6 +169,58 @@ _HISTORY_ZH_SKIP_TERMS = (
     "状态变更记录",
     "阶段变化",
 )
+
+_QUERY_REGISTRY_REQUIRED_KEYS = {
+    "target_tables",
+    "required_dimensions",
+    "parameter_slots",
+    "output_contract",
+    "constraints",
+}
+
+_QUERY_REGISTRY_REQUIRED_VALUE_TYPES = {
+    "target_tables": list,
+    "required_dimensions": list,
+    "parameter_slots": dict,
+    "output_contract": dict,
+    "constraints": dict,
+}
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def _is_valid_query_registry_definition(definition: Dict[str, Any]) -> bool:
+    if not _QUERY_REGISTRY_REQUIRED_KEYS.issubset(set(definition.keys())):
+        return False
+    for field, expected_type in _QUERY_REGISTRY_REQUIRED_VALUE_TYPES.items():
+        if not isinstance(definition.get(field), expected_type):
+            return False
+    return True
+
+
+def load_query_registry() -> Dict[str, Dict[str, Any]]:
+    registry_path = Path(__file__).with_name("query_registry.json")
+
+    try:
+        payload = json.loads(registry_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        _LOGGER.warning("Failed to load query registry from %s: %s", registry_path, exc)
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    validated: Dict[str, Dict[str, Any]] = {}
+    for family_name, definition in payload.items():
+        if not isinstance(family_name, str):
+            continue
+        if not isinstance(definition, dict):
+            continue
+        if not _is_valid_query_registry_definition(definition):
+            continue
+        validated[family_name] = definition
+
+    return validated
 
 
 def _contains_any(text: str, terms: tuple) -> bool:

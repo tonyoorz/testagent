@@ -1,14 +1,62 @@
 import unittest
 
 from agent.core.enhanced_ai_chat_manager import (
+    apply_summary_query_strategy_override,
     append_stream_event_to_store,
     build_stream_reasoning_content,
+    build_summary_uncertainty_line,
     build_timeline_view_models,
+    decide_summary_query_execution_strategy,
+    downgrade_unsupported_claims,
+    format_total_count_display,
     infer_summary_evidence_gaps,
+    should_resume_pending_agent_confirmation,
 )
 
 
 class EnhancedChatReasoningTests(unittest.TestCase):
+    def test_format_total_count_display_uses_numeric_when_known(self):
+        self.assertEqual(format_total_count_display(128), "128")
+
+    def test_format_total_count_display_uses_unknown_marker_when_unknown(self):
+        self.assertEqual(format_total_count_display(None), "unknown")
+
+    def test_build_summary_uncertainty_line_reports_insufficient_evidence_when_gap_exists(self):
+        text = build_summary_uncertainty_line(["结果缺少功能字段，无法回答模块分布"])
+
+        self.assertIn("insufficient evidence", text.lower())
+        self.assertIn("结果缺少功能字段", text)
+
+    def test_decide_summary_query_execution_strategy_prefers_deterministic_for_structured_asks(self):
+        decision = decide_summary_query_execution_strategy(
+            question="请给我matrix severity分布Top 10，并看通过率趋势",
+            columns=["topissue_display", "severity_group", "test_week", "run_status"],
+        )
+
+        self.assertEqual(decision.get("strategy"), "deterministic_first")
+
+    def test_apply_summary_query_strategy_override_forces_deterministic_metadata(self):
+        overridden = apply_summary_query_strategy_override(
+            query_strategy={"strategy": "constrained_fallback", "confidence": 0.22},
+            configured_mode="deterministic",
+        )
+
+        self.assertEqual(overridden.get("strategy"), "deterministic_first")
+        self.assertGreaterEqual(float(overridden.get("confidence") or 0.0), 0.65)
+        self.assertEqual(overridden.get("forced_by_env"), "deterministic")
+        self.assertTrue(overridden.get("prefer_deterministic"))
+
+    def test_apply_summary_query_strategy_override_forces_agent_metadata(self):
+        overridden = apply_summary_query_strategy_override(
+            query_strategy={"strategy": "deterministic_first", "confidence": 0.9, "prefer_deterministic": True},
+            configured_mode="agent",
+        )
+
+        self.assertEqual(overridden.get("strategy"), "constrained_fallback")
+        self.assertLessEqual(float(overridden.get("confidence") or 1.0), 0.55)
+        self.assertEqual(overridden.get("forced_by_env"), "agent")
+        self.assertFalse(overridden.get("prefer_deterministic"))
+
     def test_append_stream_event_creates_append_only_timeline(self):
         stream_entry = {"events": []}
 
@@ -81,6 +129,62 @@ class EnhancedChatReasoningTests(unittest.TestCase):
         self.assertTrue(any("功能" in gap for gap in gaps))
         self.assertTrue(any("showstopper" in gap.lower() for gap in gaps))
         self.assertTrue(any("聚合" in gap for gap in gaps))
+
+    def test_downgrade_unsupported_claims_softens_strong_confident_phrasing_when_gaps_exist(self):
+        answer = "该问题已经被完全证明，结论是必然的，并且一定正确。"
+        evidence_bundle = {"evidence_gap": ["结果中缺少关键字段，无法确认全部结论"]}
+
+        downgraded = downgrade_unsupported_claims(answer, evidence_bundle)
+
+        self.assertNotIn("完全证明", downgraded)
+        self.assertNotIn("必然", downgraded)
+        self.assertNotIn("一定", downgraded)
+        self.assertIn("无法确认", downgraded)
+
+    def test_downgrade_unsupported_claims_keeps_text_when_no_evidence_gap(self):
+        answer = "结论是必然的。"
+        evidence_bundle = {"evidence_gap": []}
+
+        same_text = downgrade_unsupported_claims(answer, evidence_bundle)
+
+        self.assertEqual(same_text, answer)
+
+    def test_downgrade_unsupported_claims_handles_proven_and_proved_variants(self):
+        answer = "This trend is proven and was proved by last week's data."
+        evidence_bundle = {"evidence_gap": ["sample is partial"]}
+
+        downgraded = downgrade_unsupported_claims(answer, evidence_bundle)
+
+        self.assertNotRegex(downgraded, r"\bproven\b")
+        self.assertNotRegex(downgraded, r"\bproved\b")
+        self.assertIn("suggests", downgraded.lower())
+        self.assertIn("无法确认", downgraded)
+
+    def test_should_resume_pending_agent_confirmation_detects_positive_reply(self):
+        self.assertTrue(
+            should_resume_pending_agent_confirmation(
+                user_message="继续",
+                agent_results={
+                    "last_agent_context": {
+                        "needs_confirmation": True,
+                        "confirmation_pending": True,
+                    }
+                },
+            )
+        )
+
+    def test_should_resume_pending_agent_confirmation_ignores_normal_query(self):
+        self.assertFalse(
+            should_resume_pending_agent_confirmation(
+                user_message="请看IDCEVO缺陷趋势",
+                agent_results={
+                    "last_agent_context": {
+                        "needs_confirmation": True,
+                        "confirmation_pending": True,
+                    }
+                },
+            )
+        )
 
 
 if __name__ == "__main__":

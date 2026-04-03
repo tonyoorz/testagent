@@ -58,6 +58,58 @@ def _normalize_tool_rows(items: Any, row_limit: int) -> List[Dict[str, Any]]:
     return rows
 
 
+def build_evidence_bundle(
+    *,
+    sql_used: str,
+    rows: Optional[List[Dict[str, Any]]] = None,
+    sample_count: Optional[int] = None,
+    total_count: Optional[int] = None,
+    key_fields: Optional[List[str]] = None,
+    rule_ids: Optional[List[str]] = None,
+    evidence_gap: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    normalized_rows: List[Dict[str, Any]] = []
+    for row in (rows or []):
+        if isinstance(row, dict):
+            normalized_rows.append(row)
+
+    if isinstance(sample_count, int) and sample_count >= 0:
+        safe_sample_count = int(sample_count)
+    else:
+        safe_sample_count = len(normalized_rows)
+
+    safe_total_count: Optional[int] = None
+    if isinstance(total_count, int):
+        safe_total_count = max(0, int(total_count))
+
+    inferred_fields: List[str] = []
+    if isinstance(key_fields, list) and key_fields:
+        inferred_fields = [str(field) for field in key_fields if str(field).strip()]
+    elif normalized_rows:
+        inferred_fields = [str(field) for field in list(normalized_rows[0].keys())]
+
+    normalized_rule_ids: List[str] = []
+    for item in (rule_ids or []):
+        text = str(item or "").strip()
+        if text:
+            normalized_rule_ids.append(text)
+
+    normalized_gaps: List[str] = []
+    for gap in (evidence_gap or []):
+        text = str(gap or "").strip()
+        if text:
+            normalized_gaps.append(text)
+
+    return {
+        "sql_used": str(sql_used or "").strip(),
+        "sample_count": safe_sample_count,
+        "total_count": safe_total_count,
+        "key_fields": inferred_fields,
+        "rule_ids": normalized_rule_ids,
+        "evidence_gap": normalized_gaps,
+    }
+
+
 def execute_query_with_fix(
     *,
     question: str,

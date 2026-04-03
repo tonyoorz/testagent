@@ -1,13 +1,33 @@
 import unittest
+from unittest.mock import patch
 
 from agent.core.deterministic_sql_service import (
     build_deterministic_sql,
+    decide_query_execution_strategy,
     extract_query_hints,
     guess_target_table,
 )
 
 
 class DeterministicSQLServiceTests(unittest.TestCase):
+    def test_summary_path_prefers_deterministic_sql_for_structured_query(self):
+        decision = decide_query_execution_strategy(
+            question="请看测试通过率周趋势，并给出Top 5 tester",
+            columns=["test_week", "run_status", "run_by", "test_id"],
+        )
+
+        self.assertEqual(decision.get("strategy"), "deterministic_first")
+        self.assertGreaterEqual(float(decision.get("confidence") or 0.0), 0.6)
+
+    def test_summary_path_allows_llm_fallback_when_deterministic_confidence_low(self):
+        decision = decide_query_execution_strategy(
+            question="请做根因分析并给出改进建议，定义一下关键质量问题",
+            columns=["creation_time", "status_phase", "name"],
+        )
+
+        self.assertEqual(decision.get("strategy"), "constrained_fallback")
+        self.assertLess(float(decision.get("confidence") or 1.0), 0.6)
+
     def test_guess_target_table_routes_execution_status_to_manual_runs(self):
         table = guess_target_table("请看执行状态中Blocked和Failed周趋势")
         self.assertEqual(table, "octane_manual_runs")
@@ -61,6 +81,24 @@ class DeterministicSQLServiceTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 hints = extract_query_hints(phrase, ["creation_time", "status", "run_by", "test_id"])
                 self.assertTrue(hints.get("wants_test_coverage"))
+
+    def test_extract_query_hints_filters_confirmation_reply_tokens(self):
+        hints = extract_query_hints(
+            "继续",
+            ["creation_time", "status_phase", "name", "author"],
+        )
+
+        self.assertEqual(hints.get("entity_tokens"), [])
+
+    def test_build_deterministic_sql_does_not_search_confirmation_reply_literal(self):
+        sql = build_deterministic_sql(
+            question="继续",
+            table_name="octane_defects",
+            columns=["defect_id", "name", "author", "creation_time"],
+        )
+
+        self.assertNotIn("%继续%", sql)
+        self.assertIn('FROM "octane_defects"', sql)
 
     def test_build_deterministic_sql_for_manual_runs_uses_pass_rate_aggregation(self):
         sql = build_deterministic_sql(
@@ -143,6 +181,141 @@ class DeterministicSQLServiceTests(unittest.TestCase):
         self.assertTrue(hints.get("wants_showstopper"))
         self.assertNotIn("showstopper", [str(t).lower() for t in (hints.get("entity_tokens") or [])])
         self.assertNotIn("candidate", [str(t).lower() for t in (hints.get("entity_tokens") or [])])
+
+    def test_extract_query_hints_uses_unified_intent_builder_when_available(self):
+        with patch("agent.core.deterministic_sql_service.build_unified_query_intent") as mock_builder:
+            mock_builder.return_value = {
+                "query_family": "defect_distribution",
+                "table_hint": "octane_defects",
+                "time_scope": {"month_number": 4},
+                "entity_filters": ["IDCEVO"],
+                "semantic_constraints": {
+                    "wants_aida_dist": True,
+                    "preferred_dimension": "top_aida",
+                    "wants_showstopper": True,
+                },
+                "confidence": 0.9,
+                "provenance": [{"source": "unit_test"}],
+            }
+
+            hints = extract_query_hints(
+                "请查看分布",
+                ["creation_time", "top_aida", "status_phase", "name"],
+            )
+
+        mock_builder.assert_called_once()
+        self.assertEqual(hints.get("month_number"), 4)
+        self.assertIn("IDCEVO", hints.get("entity_tokens") or [])
+        self.assertTrue(hints.get("wants_aida_dist"))
+        self.assertTrue(hints.get("wants_showstopper"))
+        self.assertEqual(hints.get("preferred_dimension"), "top_aida")
+
+    def test_extract_query_hints_preserves_unified_positives_when_base_hints_are_weak(self):
+        with patch("agent.core.deterministic_sql_service.build_unified_query_intent") as mock_builder:
+            mock_builder.return_value = {
+                "query_family": "defect_distribution",
+                "table_hint": "octane_defects",
+                "time_scope": {"month_number": 4},
+                "entity_filters": ["IDCEVO"],
+                "semantic_constraints": {
+                    "wants_aida_dist": True,
+                    "preferred_dimension": "top_aida",
+                    "wants_showstopper": True,
+                },
+                "confidence": 0.9,
+                "provenance": [{"source": "unit_test"}],
+            }
+
+            hints = extract_query_hints(
+                "请查看分布",
+                ["creation_time", "top_aida", "status_phase", "name"],
+                semantic_hints={
+                    "wants_aida_dist": False,
+                    "wants_showstopper": False,
+                    "preferred_dimension": None,
+                    "month_number": None,
+                    "entity_tokens": ["TEAM_X"],
+                },
+            )
+
+        self.assertEqual(hints.get("month_number"), 4)
+        self.assertIn("IDCEVO", hints.get("entity_tokens") or [])
+        self.assertIn("TEAM_X", hints.get("entity_tokens") or [])
+        self.assertTrue(hints.get("wants_aida_dist"))
+        self.assertTrue(hints.get("wants_showstopper"))
+        self.assertEqual(hints.get("preferred_dimension"), "top_aida")
+
+    def test_extract_query_hints_allows_meaningful_base_hints_to_override_unified_values(self):
+        with patch("agent.core.deterministic_sql_service.build_unified_query_intent") as mock_builder:
+            mock_builder.return_value = {
+                "query_family": "defect_distribution",
+                "table_hint": "octane_defects",
+                "time_scope": {"month_number": 4},
+                "entity_filters": ["IDCEVO"],
+                "semantic_constraints": {
+                    "wants_aida_dist": True,
+                    "preferred_dimension": "top_aida",
+                    "wants_showstopper": True,
+                },
+                "confidence": 0.9,
+                "provenance": [{"source": "unit_test"}],
+            }
+
+            hints = extract_query_hints(
+                "请查看分布",
+                ["creation_time", "top_aida", "aida_english", "status_phase", "name"],
+                semantic_hints={
+                    "preferred_dimension": "aida_english",
+                    "month_number": 5,
+                },
+            )
+
+        self.assertEqual(hints.get("month_number"), 5)
+        self.assertEqual(hints.get("preferred_dimension"), "aida_english")
+
+    def test_decide_query_execution_strategy_skips_unified_intent_when_semantic_hints_provided(self):
+        with patch("agent.core.deterministic_sql_service.build_unified_query_intent") as mock_builder:
+            decision = decide_query_execution_strategy(
+                question="show pass rate trend by week",
+                columns=["test_week", "run_status", "run_by"],
+                semantic_hints={"entity_tokens": ["IDCEVO"]},
+            )
+
+        mock_builder.assert_not_called()
+        self.assertEqual(decision.get("strategy"), "deterministic_first")
+
+    def test_decide_query_execution_strategy_keeps_unified_intent_for_callers_without_semantic_hints(self):
+        with patch("agent.core.deterministic_sql_service.build_unified_query_intent") as mock_builder:
+            mock_builder.return_value = {}
+            decide_query_execution_strategy(
+                question="show pass rate trend by week",
+                columns=["test_week", "run_status", "run_by"],
+            )
+
+        mock_builder.assert_called_once()
+
+    def test_build_deterministic_sql_skips_unified_intent_when_semantic_hints_provided(self):
+        with patch("agent.core.deterministic_sql_service.build_unified_query_intent") as mock_builder:
+            sql = build_deterministic_sql(
+                question="show pass rate trend by week",
+                table_name="octane_manual_runs",
+                columns=["test_week", "run_status", "run_by"],
+                semantic_hints={"entity_tokens": ["IDCEVO"]},
+            )
+
+        mock_builder.assert_not_called()
+        self.assertIn('FROM "octane_manual_runs"', sql)
+
+    def test_build_deterministic_sql_keeps_unified_intent_for_callers_without_semantic_hints(self):
+        with patch("agent.core.deterministic_sql_service.build_unified_query_intent") as mock_builder:
+            mock_builder.return_value = {}
+            build_deterministic_sql(
+                question="show pass rate trend by week",
+                table_name="octane_manual_runs",
+                columns=["test_week", "run_status", "run_by"],
+            )
+
+        mock_builder.assert_called_once()
 
     def test_build_deterministic_sql_feature_question_uses_aida_and_showstopper_filter(self):
         sql = build_deterministic_sql(

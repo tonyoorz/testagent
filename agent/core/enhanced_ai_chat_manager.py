@@ -42,15 +42,18 @@ from agent.core.harness_router import (
 )
 from agent.core.deterministic_sql_service import (
     build_deterministic_sql,
+    decide_query_execution_strategy,
     extract_query_hints,
     guess_target_table,
 )
 from agent.core.sql_runtime_service import (
+    build_evidence_bundle,
     compute_total_count,
     execute_query_with_fix,
     execute_sql_rows,
     sanitize_select_sql,
 )
+from agent.evaluation.agent_critic import contains_strong_confident_language
 from duplicate_issue_finder import extract_hints, get_or_build_index
 from octane_db import default_db_path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -58,6 +61,32 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 # Configure logging first before importing enhancement modules
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_POSITIVE_CONFIRMATION_REPLIES = {
+    "继续", "继续执行", "确认", "确认执行", "是", "好的", "好", "ok", "yes", "y", "proceed", "continue",
+}
+
+
+def _normalize_confirmation_reply(text: str) -> str:
+    return str(text or "").strip().lower().strip(" \t\r\n,，。.!！？、；;:：")
+
+
+def is_positive_confirmation_reply(text: str) -> bool:
+    normalized = _normalize_confirmation_reply(text)
+    return bool(normalized) and normalized in _POSITIVE_CONFIRMATION_REPLIES
+
+
+def should_resume_pending_agent_confirmation(user_message: str, agent_results: Optional[Dict[str, Any]]) -> bool:
+    if not is_positive_confirmation_reply(user_message):
+        return False
+    if not isinstance(agent_results, dict):
+        return False
+
+    context = agent_results.get("last_agent_context")
+    if not isinstance(context, dict):
+        return False
+
+    return bool(context.get("needs_confirmation") or context.get("confirmation_pending"))
 
 # Dify Workflow (RAG) config
 HARDCODED_DIFY_API_BASE = "http://10.86.150.232/v1"
@@ -632,6 +661,116 @@ def infer_summary_evidence_gaps(question: str, sql_used: str, rows: List[Dict[st
         seen.add(key)
         deduped.append(gap)
     return deduped
+
+
+def build_summary_uncertainty_line(evidence_gaps: Optional[List[str]]) -> str:
+    normalized: List[str] = []
+    for gap in (evidence_gaps or []):
+        text = str(gap or "").strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    if not normalized:
+        return ""
+    return f"insufficient evidence: {normalized[0]}"
+
+
+def downgrade_unsupported_claims(answer_text: str, evidence_bundle: Optional[Dict[str, Any]]) -> str:
+    text = str(answer_text or "").strip()
+    if not text:
+        return text
+
+    bundle = evidence_bundle if isinstance(evidence_bundle, dict) else {}
+    evidence_gaps = bundle.get("evidence_gap") if isinstance(bundle.get("evidence_gap"), list) else []
+    normalized_gaps = [str(g).strip() for g in evidence_gaps if str(g or "").strip()]
+    if not normalized_gaps:
+        return text
+
+    has_strong_claim = contains_strong_confident_language(text)
+    if not has_strong_claim:
+        return text
+
+    downgraded = text
+    replacements = [
+        (r"完全证明", "初步显示"),
+        (r"已被证明", "初步显示"),
+        (r"证明", "显示"),
+        (r"必然", "较可能"),
+        (r"一定", "较可能"),
+        (r"毫无疑问", "从当前样本看"),
+        (r"可以确定", "目前倾向认为"),
+        (r"\bdefinitely\b", "likely"),
+        (r"\bcertainly\b", "likely"),
+        (r"\bguaranteed\b", "likely"),
+        (r"\bprove(?:s|d|n)?\b", "suggests"),
+    ]
+    for pattern, repl in replacements:
+        downgraded = re.sub(pattern, repl, downgraded, flags=re.IGNORECASE)
+
+    if ("无法确认" not in downgraded) and ("cannot be confirmed" not in downgraded.lower()):
+        notice = f"证据说明：{normalized_gaps[0]}，当前结论仍有不确定性，暂无法确认。"
+        downgraded = f"{downgraded}\n{notice}" if downgraded else notice
+
+    return downgraded
+
+
+def format_total_count_display(total_count: Optional[int], unknown_marker: str = "unknown") -> str:
+    marker = str(unknown_marker or "").strip() or "unknown"
+    if isinstance(total_count, (int, np.integer)):
+        try:
+            normalized = int(total_count)
+        except Exception:
+            normalized = -1
+        if normalized >= 0:
+            return str(normalized)
+    return marker
+
+
+def decide_summary_query_execution_strategy(
+    question: str,
+    columns: Optional[List[str]] = None,
+    semantic_hints: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return decide_query_execution_strategy(
+        question=question,
+        columns=columns,
+        semantic_hints=semantic_hints,
+    )
+
+
+def apply_summary_query_strategy_override(
+    query_strategy: Optional[Dict[str, Any]],
+    configured_mode: str = "",
+) -> Dict[str, Any]:
+    effective_strategy = dict(query_strategy) if isinstance(query_strategy, dict) else {}
+    strategy_name = str(effective_strategy.get("strategy") or "constrained_fallback").strip().lower()
+
+    try:
+        strategy_confidence = float(effective_strategy.get("confidence") or 0.0)
+    except Exception:
+        strategy_confidence = 0.0
+
+    mode = str(configured_mode or "").strip().lower()
+    forced_by_env = ""
+    if mode == "deterministic":
+        strategy_name = "deterministic_first"
+        strategy_confidence = max(strategy_confidence, 0.65)
+        forced_by_env = "deterministic"
+    elif mode == "agent":
+        strategy_name = "constrained_fallback"
+        strategy_confidence = min(strategy_confidence, 0.55)
+        forced_by_env = "agent"
+
+    strategy_confidence = max(0.05, min(0.95, strategy_confidence))
+    effective_strategy["strategy"] = strategy_name
+    effective_strategy["confidence"] = round(strategy_confidence, 3)
+    effective_strategy["prefer_deterministic"] = bool(
+        strategy_name == "deterministic_first" and strategy_confidence >= 0.55
+    )
+    if forced_by_env:
+        effective_strategy["forced_by_env"] = forced_by_env
+    else:
+        effective_strategy.pop("forced_by_env", None)
+    return effective_strategy
 
 
 def build_stream_reasoning_content(stream_data: Dict[str, Any], now_ts: Optional[float] = None) -> str:
@@ -1990,6 +2129,7 @@ class EnhancedAIChatManager:
                                 'agent_used': True,
                                 'resolved_question': result.get('resolved_question'),
                                 'tools_used': result.get('tools_used', []),
+                                'last_agent_context': result.get('context', {}),
                             }
 
                     ctx = result.get("context") or {}
@@ -2418,40 +2558,71 @@ class EnhancedAIChatManager:
             total_count: Optional[int] = None,
             sample_limit: int = 120,
             fallback_reason: str = "",
+            evidence_bundle: Optional[Dict[str, Any]] = None,
         ) -> str:
             row_count = len(rows or [])
             conclusion = str(llm_answer or "").strip() or "暂无可用结论。"
-            safe_total = int(total_count) if isinstance(total_count, int) and total_count >= 0 else None
-            lines: List[str] = [
-                "[结论]",
-                conclusion,
-                "",
-                "[关键数字]",
-                f"- 总命中记录: {safe_total if safe_total is not None else row_count}",
-                f"- 返回样本: {row_count}",
-                f"- 数据表: {table_name or '-'}",
-                f"- SQL: {sql_used or '-'}",
-                f"- SQL模式: {mode or '-'}",
+            safe_total = int(total_count) if isinstance(total_count, (int, np.integer)) and int(total_count) >= 0 else None
+            total_count_display = format_total_count_display(safe_total)
+            bundle = evidence_bundle if isinstance(evidence_bundle, dict) else {}
+            if not bundle:
+                bundle = build_evidence_bundle(
+                    sql_used=sql_used,
+                    rows=rows,
+                    total_count=safe_total,
+                    evidence_gap=[],
+                )
+
+            conclusion = downgrade_unsupported_claims(conclusion, bundle)
+
+            evidence_gaps = bundle.get("evidence_gap") if isinstance(bundle.get("evidence_gap"), list) else []
+            uncertainty_line = build_summary_uncertainty_line(evidence_gaps)
+
+            observed_lines: List[str] = [
+                "[Observed Facts]",
+                f"- total_count: {total_count_display}",
+                f"- sample_count: {row_count}",
+                f"- table: {table_name or '-'}",
+                f"- sql_used: {sql_used or '-'}",
+                f"- sql_mode: {mode or '-'}",
             ]
+            key_fields = bundle.get("key_fields") if isinstance(bundle.get("key_fields"), list) else []
+            if key_fields:
+                observed_lines.append(f"- key_fields: {', '.join([str(f) for f in key_fields[:12]])}")
+            rule_ids = bundle.get("rule_ids") if isinstance(bundle.get("rule_ids"), list) else []
+            if rule_ids:
+                observed_lines.append(f"- rule_ids: {', '.join([str(r) for r in rule_ids[:12]])}")
 
-            explain_block = _format_business_explanation_block(explanation)
-            if explain_block:
-                lines.extend(["", explain_block])
+            interpretation_lines: List[str] = [
+                "[Rule-Based Interpretation]",
+                f"- {conclusion}",
+            ]
+            highlights = explanation.get("highlights") if isinstance(explanation, dict) else []
+            if isinstance(highlights, list):
+                for h in highlights[:6]:
+                    interpretation_lines.append(f"- {str(h)}")
+            if uncertainty_line:
+                interpretation_lines.append(f"- {uncertainty_line}")
 
-            cautions: List[str] = []
+            suggestion_lines: List[str] = ["[Suggestions / Inference]"]
             if row_count == 0:
-                cautions.append("当前查询命中为0，可尝试放宽时间范围、状态或模块筛选")
+                suggestion_lines.append("- 当前查询命中为0，可尝试放宽时间范围、状态或模块筛选")
             if (safe_total is not None) and (safe_total > row_count):
-                cautions.append(f"为保证响应速度，回答详情按样本返回（上限 {int(sample_limit)} 条），已提供全量命中总数")
+                suggestion_lines.append(
+                    f"- 为保证响应速度，回答详情按样本返回（上限 {int(sample_limit)} 条），已提供全量命中总数"
+                )
+            if uncertainty_line:
+                suggestion_lines.append("- 证据链不完整，建议补充明细字段或调整筛选口径后再下最终结论")
             if fallback_reason:
-                cautions.append(f"本地兜底原因: {fallback_reason}")
-            if cautions:
-                lines.append("")
-                lines.append("[口径提醒]")
-                for c in cautions:
-                    lines.append(f"- {c}")
+                suggestion_lines.append(f"- 本地兜底原因: {fallback_reason}")
+            cautions = explanation.get("cautions") if isinstance(explanation, dict) else []
+            if isinstance(cautions, list):
+                for c in cautions[:4]:
+                    suggestion_lines.append(f"- {str(c)}")
+            if len(suggestion_lines) == 1:
+                suggestion_lines.append("- 当前证据支持基础结论，建议结合业务上下文复核")
 
-            return "\n".join(lines)
+            return "\n".join(observed_lines + [""] + interpretation_lines + [""] + suggestion_lines)
 
         def start_db_summary_streaming(task_id: str, question: str, conversation_history: List[Dict[str, Any]]):
             """摘要模式：优先走 Agent 统一 SQL 工具链，再按需降级。"""
@@ -2461,8 +2632,10 @@ class EnhancedAIChatManager:
                 out_rows: List[Dict[str, Any]] = []
                 total_count: Optional[int] = None
                 business_explanation: Dict[str, Any] = {}
+                evidence_bundle: Dict[str, Any] = {}
                 semantic_adapter: Dict[str, Any] = {}
                 semantic_hints: Dict[str, Any] = {}
+                query_strategy: Dict[str, Any] = {}
                 normalized_question = str(question or "").strip()
                 stage = "init"
                 summary_sql_mode = "agent"
@@ -2614,19 +2787,54 @@ class EnhancedAIChatManager:
                         },
                     )
 
-                    # 摘要模式优先走统一工具链，避免与Agent模式SQL行为漂移。
+                    query_strategy = decide_summary_query_execution_strategy(
+                        question=normalized_question,
+                        columns=col_preview,
+                        semantic_hints=semantic_hints,
+                    )
+                    configured_mode = str(os.getenv("CHAT_SUMMARY_SQL_MODE") or "").strip().lower()
+                    query_strategy = apply_summary_query_strategy_override(
+                        query_strategy=query_strategy,
+                        configured_mode=configured_mode,
+                    )
+                    strategy_name = str(query_strategy.get("strategy") or "constrained_fallback").strip().lower()
+                    strategy_confidence = float(query_strategy.get("confidence") or 0.0)
+                    forced_by_env = str(query_strategy.get("forced_by_env") or "").strip()
+
+                    execution_path.append(f"strategy:{strategy_name}")
+                    _append_db_event(
+                        kind="route_decision",
+                        title="摘要查询策略已确定",
+                        status="ok",
+                        summary=(
+                            f"strategy={strategy_name}; confidence={strategy_confidence:.2f}"
+                            + (f"; forced_by_env={forced_by_env}" if forced_by_env else "")
+                        ),
+                        details=query_strategy,
+                    )
+
                     with streaming_lock:
-                        streaming_data[task_id]['progress'] = '正在生成数据库查询(工具链优先)...'
+                        if strategy_name == "deterministic_first":
+                            streaming_data[task_id]['progress'] = '正在生成数据库查询(Deterministic优先)...'
+                        else:
+                            streaming_data[task_id]['progress'] = '正在生成数据库查询(受限回退策略)...'
                         streaming_data[task_id]['last_update'] = time.time()
 
                     _mark_stage("generate_sql")
-                    summary_sql_mode = (os.getenv("CHAT_SUMMARY_SQL_MODE") or "agent").strip().lower()
                     sql = ""
                     rows: List[Any] = []
 
-                    # 优先复用统一工具链，避免摘要模式与 Agent 模式出现两套SQL行为漂移。
                     use_agent_sql = (os.getenv("CHAT_SUMMARY_SQL_USE_AGENT", "1") or "1").strip().lower() not in {"0", "false", "no"}
-                    if use_agent_sql:
+                    if strategy_name == "deterministic_first":
+                        execution_path.append("sql_generate:deterministic")
+                        summary_sql_mode = "deterministic"
+                        sql = build_deterministic_sql(
+                            question=normalized_question,
+                            table_name=target_table,
+                            columns=col_preview,
+                            semantic_hints=semantic_hints,
+                        )
+                    elif use_agent_sql:
                         execution_path.append("sql_generate:tool")
                         with streaming_lock:
                             streaming_data[task_id]['progress'] = '正在通过Agent工具链生成SQL...'
@@ -2658,6 +2866,7 @@ class EnhancedAIChatManager:
                                 details={
                                     "table": target_table,
                                     "mode": "agent",
+                                    "strategy": strategy_name,
                                 },
                             )
 
@@ -2853,6 +3062,44 @@ class EnhancedAIChatManager:
                                     if local_fallback_reason else "零结果后自动放宽实体词过滤重试成功"
                                 )
 
+                    if (not out_rows) and strategy_name == "deterministic_first" and use_agent_sql:
+                        _mark_stage("fallback_agent_sql")
+                        execution_path.append("sql_fallback:agent_tool")
+                        _append_db_event(
+                            kind="fallback",
+                            title="Deterministic 结果不足，切换 Agent SQL",
+                            status="fallback",
+                            summary="结构化查询未命中有效样本，尝试受限回退",
+                            details={
+                                "table": target_table,
+                                "strategy": strategy_name,
+                                "mode": summary_sql_mode,
+                            },
+                        )
+
+                        agent_fallback_out = execute_query_with_fix(
+                            question=normalized_question,
+                            table_name=target_table,
+                            row_limit=summary_row_limit,
+                            tool_executor=tool_executor,
+                            semantic_hints=semantic_hints,
+                        )
+                        if bool(agent_fallback_out.get("success")):
+                            out_rows = list(agent_fallback_out.get("rows") or [])
+                            sql_clean = str(agent_fallback_out.get("sql") or sql_clean)
+                            exp = agent_fallback_out.get("business_explanation")
+                            if isinstance(exp, dict):
+                                business_explanation = exp
+                            summary_sql_mode = "agent"
+                            tool_sql_succeeded = True
+                        else:
+                            fallback_error = str(agent_fallback_out.get("error") or "query_sqlite_with_fix失败")
+                            local_fallback_reason = (
+                                f"{local_fallback_reason}; {fallback_error}" if local_fallback_reason else fallback_error
+                            )
+                            if not failure_category:
+                                failure_category = _classify_summary_failure(stage, local_fallback_reason)
+
                     _append_db_event(
                         kind="sql_generated",
                         title="SQL 已生成",
@@ -2886,10 +3133,22 @@ class EnhancedAIChatManager:
                             "table": target_table,
                             "failure_category": failure_category,
                             "execution_path": execution_path,
+                            "query_strategy": query_strategy,
                         },
                     )
 
                     evidence_gaps = infer_summary_evidence_gaps(question, sql_clean, out_rows, target_table)
+                    matched_rule_ids = semantic_adapter.get("matched_rule_ids") if isinstance(semantic_adapter, dict) else []
+                    evidence_bundle = build_evidence_bundle(
+                        sql_used=sql_clean,
+                        rows=out_rows,
+                        total_count=total_count,
+                        rule_ids=matched_rule_ids if isinstance(matched_rule_ids, list) else [],
+                        evidence_gap=evidence_gaps,
+                    )
+                    if not isinstance(business_explanation, dict):
+                        business_explanation = {}
+                    business_explanation["evidence_bundle"] = evidence_bundle
                     if evidence_gaps:
                         _append_db_event(
                             kind="evidence_gap",
@@ -2920,7 +3179,8 @@ class EnhancedAIChatManager:
                             "sample_count": len(out_rows),
                             "sample_limit": summary_row_limit,
                             "row_count": len(out_rows),
-                            "rows": out_rows
+                            "rows": out_rows,
+                            "evidence_bundle": evidence_bundle,
                         }, ensure_ascii=False)}
                     ]
                     stage = "generate_answer"
@@ -2956,6 +3216,7 @@ class EnhancedAIChatManager:
                                 "sample_limit": summary_row_limit,
                                 "row_count": len(compact_rows),
                                 "rows": compact_rows,
+                                "evidence_bundle": evidence_bundle,
                                 "note": "compact_retry"
                             }, ensure_ascii=False)}
                         ]
@@ -3003,6 +3264,7 @@ class EnhancedAIChatManager:
                         total_count=total_count,
                         sample_limit=summary_row_limit,
                         fallback_reason=local_fallback_reason,
+                        evidence_bundle=evidence_bundle,
                     )
                     elapsed_ms = int((time.time() - started_at) * 1000)
                     stage_timeline = " > ".join(stage_events)
@@ -3011,6 +3273,7 @@ class EnhancedAIChatManager:
                         streaming_data.setdefault(task_id, {})
                         summary_trace = {
                             'mode': summary_sql_mode,
+                            'query_strategy': query_strategy,
                             'stage': stage,
                             'execution_path': execution_path,
                             'failure_category': failure_category,
@@ -3020,6 +3283,7 @@ class EnhancedAIChatManager:
                             'row_count': len(out_rows),
                             'table': target_table,
                             'sql': sql_clean,
+                            'evidence_bundle': evidence_bundle,
                         }
                         streaming_data[task_id]['summary_trace'] = summary_trace
                     _log_summary_trace(task_id=task_id, trace=summary_trace, success=True)
@@ -3063,6 +3327,7 @@ class EnhancedAIChatManager:
                     execution_path_text = " > ".join(execution_path)
                     summary_trace = {
                         'mode': summary_sql_mode,
+                        'query_strategy': query_strategy,
                         'stage': stage,
                         'execution_path': execution_path,
                         'failure_category': failure_category,
@@ -3278,19 +3543,21 @@ class EnhancedAIChatManager:
              State(data_store_id, 'data'),
              State(f'{chat_id_prefix}-chat-mode', 'value'),
              State(f'{chat_id_prefix}-known-issues', 'value'),
+             State(f'{chat_id_prefix}-agent-results', 'data'),
              State(f'{chat_id_prefix}-conversation-state', 'data')]
         )
         def handle_enhanced_chat(*args):
             send_clicks = args[0]
             input_submit = args[1]
             clear_clicks = args[2]
-            preset_clicks = args[3:-7]
-            input_value = args[-7]
-            chat_messages = _trim_chat_messages(args[-6] or [])
-            streaming_state = args[-5] or {'active': False, 'task_id': None}
-            filtered_data = args[-4]
-            chat_mode = (args[-3] or "summary")
-            known_issues_checked = args[-2] or []
+            preset_clicks = args[3:-8]
+            input_value = args[-8]
+            chat_messages = _trim_chat_messages(args[-7] or [])
+            streaming_state = args[-6] or {'active': False, 'task_id': None}
+            filtered_data = args[-5]
+            chat_mode = (args[-4] or "summary")
+            known_issues_checked = args[-3] or []
+            prior_agent_results = dict(args[-2] or {})
             conversation_state = args[-1] or self._create_initial_conversation_state()
 
             ctx = callback_context
@@ -3362,12 +3629,15 @@ class EnhancedAIChatManager:
                 chat_messages.append({"role": "user", "content": user_message})
                 chat_messages = _trim_chat_messages(chat_messages)
 
+                force_skill_agent = should_resume_pending_agent_confirmation(user_message, prior_agent_results)
+
                 route_request = HarnessRouteRequest(
                     question=user_message,
                     selected_mode=chat_mode,
                     known_issues_enabled=use_known_issues,
                     use_agent=self.use_agent,
                     dashboard_type=self.dashboard_type,
+                    force_skill_agent=force_skill_agent,
                 )
 
                 current_data: Any = pd.DataFrame()
