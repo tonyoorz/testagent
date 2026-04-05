@@ -273,38 +273,33 @@ def resolve_harness_route(request: HarnessRouteRequest, has_data: bool) -> Harne
         )
 
     if mode == "summary":
-        if advanced and request.use_agent and has_data:
+        if advanced and request.use_agent:
+            if has_data:
+                return HarnessRouteDecision(
+                    requested_mode=mode,
+                    handler=HarnessRouteHandler.SKILL_AGENT,
+                    reason="问题属于高阶分析，且本地数据可用，已从数据库直读升级到 Skill 工具链。",
+                    llm_mode="summary",
+                    advanced_query=advanced,
+                    known_issues_enabled=False,
+                    use_agent_enabled=request.use_agent,
+                    has_data=has_data,
+                    should_try_local_data=try_local_data,
+                )
+            # has_data=False 时仍走 DATABASE_SUMMARY，但标记为高阶查询以获得更强的SQL生成
             return HarnessRouteDecision(
                 requested_mode=mode,
-                handler=HarnessRouteHandler.SKILL_AGENT,
-                reason="问题属于高阶分析，且本地数据可用，已从数据库直读升级到 Skill 工具链。",
+                handler=HarnessRouteHandler.DATABASE_SUMMARY,
+                reason="问题属于高阶分析，本地数据预加载未完成，走数据库直读链路尝试查询。",
                 llm_mode="summary",
                 advanced_query=advanced,
                 known_issues_enabled=False,
-                use_agent_enabled=request.use_agent,
+                    use_agent_enabled=request.use_agent,
                 has_data=has_data,
-                should_try_local_data=try_local_data,
+                should_try_local_data=True,  # 强制尝试加载数据
+                used_fallback=True,
+                fallback_reason="本地数据未预加载，但仍尝试数据库直读。",
             )
-
-        reason = "当前问题保持在数据库直读链路。"
-        fallback_reason = ""
-        if advanced and request.use_agent and not has_data:
-            reason = "问题属于高阶分析，但本地数据不可用，因此保留在数据库直读链路。"
-            fallback_reason = "未命中可用于 Skill 工具链的本地数据。"
-
-        return HarnessRouteDecision(
-            requested_mode=mode,
-            handler=HarnessRouteHandler.DATABASE_SUMMARY,
-            reason=reason,
-            llm_mode="summary",
-            advanced_query=advanced,
-            known_issues_enabled=False,
-            use_agent_enabled=request.use_agent,
-            has_data=has_data,
-            should_try_local_data=try_local_data,
-            used_fallback=bool(fallback_reason),
-            fallback_reason=fallback_reason,
-        )
 
     if mode == "agent":
         if request.use_agent and has_data:

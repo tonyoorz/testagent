@@ -14,15 +14,18 @@ _PROJECT_ALIAS_MAP = {
 }
 
 _EN_STOP_WORDS = {
-    "aida", "ticket", "topissue", "issue", "defect", "summary", "agent", "sqlite",
-    "tester", "reporter", "owner", "team", "project", "status", "phase", "query",
-    "trend", "efficiency", "analysis", "analyze", "recommend", "recommendation", "improve", "optimization",
-    "passed", "failed", "blocked", "requires", "attention", "coverage", "frequency", "week", "monthly",
+    "ticket", "topissue", "summary", "agent", "sqlite",
     "please", "kindly", "thanks", "thank", "thx", "assistant", "copilot", "chatgpt", "sisi",
-    "matrix", "distribution", "severity", "priority", "risk",
     "showstopper", "confirmed", "candidate", "maturity",
-    "preventing", "obstructing", "grade", "tag", "tags", "count",
+    "preventing", "obstructing", "grade", "tag", "tags",
     "fv", "fvp",
+    # 注意：以下业务词汇已从停用词中移除，避免误杀用户查询中的关键实体
+    # "project", "team", "tester", "owner", "severity", "priority",
+    # "issue", "defect", "status", "phase", "query",
+    # "trend", "efficiency", "analysis", "analyze", "recommend", "recommendation", "improve", "optimization",
+    # "aida", "reporter", "coverage", "frequency", "week", "monthly",
+    # "passed", "failed", "blocked", "requires", "attention",
+    # "matrix", "distribution", "severity", "priority", "risk", "count",
 }
 
 _TOPISSUE_TERMS = [
@@ -267,9 +270,11 @@ def build_deterministic_query_hints(question: str, columns: Iterable[str]) -> Di
 
     # P1: 先做项目别名匹配，补充标准化后的项目名
     q_lower = q.lower()
+    seen_lower = set()
     for canonical, aliases in _PROJECT_ALIAS_MAP.items():
         for alias in aliases:
-            if alias in q_lower and canonical not in entity_tokens:
+            if alias in q_lower:
+                seen_lower.add(canonical.lower())
                 entity_tokens.append(canonical)
                 break
 
@@ -279,10 +284,13 @@ def build_deterministic_query_hints(question: str, columns: Iterable[str]) -> Di
             continue
         if len(tl) <= 1:
             continue
+        if tl in seen_lower:
+            continue  # 已通过别名匹配添加，跳过重复
         if manual_run_question and tl in _MANUAL_RUN_ENTITY_SKIP_TERMS:
             continue
         if history_question and tl in _HISTORY_ENTITY_SKIP_TERMS:
             continue
+        seen_lower.add(tl)
         entity_tokens.append(token)
 
     for token in zh_tokens:

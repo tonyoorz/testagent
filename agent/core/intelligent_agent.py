@@ -2907,6 +2907,12 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         """从 schema 和预设语义映射生成列说明文本，注入 system prompt。"""
         lines: List[str] = []
         tables = schema.get("tables") or {}
+
+        # 构建反向映射：列名→用户可能的说法
+        col_to_nl: Dict[str, List[str]] = {}
+        for nl_term, col_name in self._NL_TO_COLUMN_MAP.items():
+            col_to_nl.setdefault(col_name, []).append(nl_term)
+
         for table_name, table_info in tables.items():
             if not isinstance(table_info, list):
                 continue
@@ -2916,13 +2922,45 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
                     continue
                 sem = self._COLUMN_SEMANTICS.get(col_name)
                 if sem:
+                    nl_terms = col_to_nl.get(col_name, [])
+                    nl_hint = f"（用户可能说：{'/'.join(nl_terms)}）" if nl_terms else ""
                     lines.append(
-                        f"- {col_name}: {sem['cn']}。{sem['desc']}。典型值: {sem.get('example', '')}"
+                        f"- {col_name}: {sem['cn']}。{sem['desc']}。典型值: {sem.get('example', '')} {nl_hint}"
                     )
                 else:
                     col_type = col_info.get("type", "") if isinstance(col_info, dict) else ""
                     lines.append(f"- {col_name} ({col_type})")
         return "\n".join(lines) if lines else "(无列语义信息)"
+
+    # P2: 用户自然语言→列名的桥接映射
+    _NL_TO_COLUMN_MAP: Dict[str, str] = {
+        "项目": "tproject",
+        "车系": "tproject",
+        "严重度": "severity_group",
+        "严重等级": "severity_group",
+        "风险矩阵": "matrix_display",
+        "矩阵标签": "matrix_display",
+        "功能模块": "aida_english",
+        "模块": "aida_english",
+        "领域": "aida_english",
+        "AIDA": "aida_english",
+        "状态": "status_phase",
+        "阶段": "status_phase",
+        "测试人员": "tester",
+        "发现人": "tester",
+        "报告人": "tester",
+        "功能团队": "fv",
+        "Feature Team": "fv",
+        "开发团队": "domain",
+        "Solution Cluster": "domain",
+        "ECU": "ecu",
+        "软件版本": "software_version",
+        "测试周": "test_week",
+        "执行状态": "run_status",
+        "执行人": "run_by",
+        "创建时间": "creation_time",
+        "处理天数": "processing_cycle_days",
+    }
 
     def _normalize_project_token(self, token: str) -> Optional[str]:
         """将用户输入的项目名标准化为数据库中可能的形式。"""
@@ -3145,7 +3183,9 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         err = str(run_out.get("error") or "")
         fix_prompt_template = (
             "上一次SQL执行失败。请根据错误信息与schema修复SQL。\n"
-            "修复时也要参考 semantic_context 的口径定义，并保持与 business_hints 一致。\n"
+            "修复时必须严格遵循列名业务含义映射，特别注意：\n"
+            + column_semantics + "\n"
+            "同时参考 semantic_context 的口径定义，并保持与 business_hints 一致。\n"
             "仍然只允许 SELECT 或 WITH；只输出JSON。\n"
             '输出格式：{"sql":"..."}'
         )

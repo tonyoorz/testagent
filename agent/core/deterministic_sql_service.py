@@ -10,13 +10,15 @@ except Exception:
 
 
 _EN_STOP_WORDS = {
-    "aida", "ticket", "topissue", "issue", "defect", "summary", "agent", "sqlite",
-    "tester", "reporter", "owner", "team", "project", "status", "phase", "query",
-    "trend", "efficiency", "analysis", "analyze", "recommend", "recommendation", "improve", "optimization",
-    "showstopper", "candidate",
-    "passed", "failed", "blocked", "requires", "attention", "coverage", "frequency", "week", "monthly",
+    "ticket", "topissue", "summary", "agent", "sqlite",
     "please", "kindly", "thanks", "thank", "thx", "assistant", "copilot", "chatgpt", "sisi",
-    "matrix", "distribution", "severity", "priority",
+    "showstopper", "candidate",
+    # 业务关键词已移除，避免误杀实体
+    # "aida", "issue", "defect", "tester", "reporter", "owner", "team", "project",
+    # "status", "phase", "query", "trend", "efficiency", "analysis", "analyze",
+    # "recommend", "recommendation", "improve", "optimization",
+    # "passed", "failed", "blocked", "requires", "attention", "coverage",
+    # "frequency", "week", "monthly", "matrix", "distribution", "severity", "priority",
 }
 
 _CONFIRMATION_REPLY_TERMS = {
@@ -560,7 +562,8 @@ def decide_query_execution_strategy(
     else:
         strategy = "constrained_fallback"
 
-    confidence = 0.45 + (0.1 * structured_count) - (0.12 * weak_count)
+    # 置信度公式优化：提高基础分，降低弱信号惩罚，避免误杀正常查询
+    confidence = 0.50 + (0.1 * structured_count) - (0.05 * weak_count)
     if strategy == "deterministic_first":
         confidence = max(confidence, 0.65)
         if strong_structured_intent:
