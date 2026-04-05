@@ -2751,6 +2751,25 @@ def _extract_business_query_hints(question: str) -> Dict[str, Any]:
 def _augment_question_with_business_hints(question: str) -> Tuple[str, Dict[str, Any]]:
     q = str(question or "").strip()
     hints = _extract_business_query_hints(q)
+
+    # P1: 项目别名标准化 - 将用户口语化的项目名统一
+    _PROJECT_ALIAS_MAP: Dict[str, str] = {
+        "idcevo": "IDCevo", "idcevo25": "IDCevo", "idc evo": "IDCevo", "idc-evo": "IDCevo",
+        "idc": "IDC", "idc4": "IDC",
+        "mgu": "MGU", "mgu22": "MGU", "mgu21": "MGU", "mgu18": "MGU",
+        "rsu": "RSU",
+        "app": "App",
+    }
+    normalized_projects: List[str] = []
+    q_lower = q.lower()
+    for alias, canonical in _PROJECT_ALIAS_MAP.items():
+        if alias in q_lower and canonical not in hints.get("project_tokens", []):
+            normalized_projects.append(canonical)
+    if normalized_projects and "project_tokens" not in hints:
+        hints["project_tokens"] = []
+    if normalized_projects:
+        hints["project_tokens"] = list(set(hints.get("project_tokens", []) + normalized_projects))
+
     hint_lines = []
     if hints.get("time_range"):
         hint_lines.append(f"time_range={hints['time_range']}")
@@ -2846,6 +2865,78 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             self._result_cache_max_rows = max(50, int(os.getenv("AGENT_SQL_RESULT_CACHE_MAX_ROWS", "500") or 500))
         except Exception:
             self._result_cache_max_rows = 500
+
+    # 列名与业务语义的对照映射，用于 NL→SQL prompt 注入
+    _COLUMN_SEMANTICS: Dict[str, Dict[str, str]] = {
+        "tproject": {"cn": "项目/车系", "desc": "如 IDCevo/IDC/MGU/RSU/App 等项目缩写", "example": "IDCevo, MGU22, RSU"},
+        "project": {"cn": "项目/车系", "desc": "同 tproject，映射后的项目字段", "example": "IDCevo, IDC, MGU, RSU, App"},
+        "severity_group": {"cn": "严重度", "desc": "缺陷严重等级", "example": "Critical, Major, Minor"},
+        "severity": {"cn": "严重度", "desc": "原始严重度字段", "example": "1-Critical, 2-Major, 3-Minor"},
+        "matrix_display": {"cn": "风险矩阵标签", "desc": "风险等级标签(矩阵位置)", "example": "MATRIX-1A, MATRIX-1B, MATRIX-2C"},
+        "aida_english": {"cn": "功能模块/AIDA", "desc": "功能域英文名", "example": "Audio, Navigation, Bluetooth"},
+        "top_aida": {"cn": "主AIDA", "desc": "团队口径的主要AIDA", "example": "Audio, HMI"},
+        "topissue": {"cn": "TopIssue标记", "desc": "是否为关键问题", "example": "TopIssue"},
+        "topissue_display": {"cn": "TopIssue分类标签", "desc": "如 showstopper_confirmed 等", "example": "showstopper_candidate, confirmed"},
+        "tester": {"cn": "测试人员/发现人", "desc": "缺陷报告人", "example": "人名"},
+        "status_phase": {"cn": "缺陷状态/阶段", "desc": "缺陷生命周期阶段", "example": "New, Open, Fixed, Closed, Reopen"},
+        "fv": {"cn": "Feature Team/功能团队", "desc": "功能负责团队(DTSV)", "example": "团队名"},
+        "pu": {"cn": "PU/SOP", "desc": "first_use_sop 字段", "example": "SOP日期"},
+        "domain": {"cn": "Solution Cluster/开发团队", "desc": "负责修复的开发团队", "example": "团队名"},
+        "ecu": {"cn": "ECU名称", "desc": "关联的ECU", "example": "ECU-xxx"},
+        "creation_time": {"cn": "创建时间", "desc": "缺陷/记录创建时间", "example": "2025-01-15 10:30:00"},
+        "tcreationtime": {"cn": "创建时间", "desc": "缺陷创建时间(原始字段)", "example": "2025-01-15"},
+        "test_week": {"cn": "测试周(CW)", "desc": "日历周编号", "example": "CW01, CW25"},
+        "run_status": {"cn": "测试执行状态", "desc": "manual run 执行结果", "example": "Passed, Failed, Blocked"},
+        "software_version": {"cn": "软件版本", "desc": "被测软件版本号", "example": "版本号"},
+        "detected_by": {"cn": "发现人", "desc": "同 tester", "example": "人名"},
+        "processing_cycle_days": {"cn": "处理天数", "desc": "缺陷处理周期(天)", "example": "30, 60, 120"},
+        "run_by": {"cn": "执行人", "desc": "测试用例执行者", "example": "人名"},
+        "author_name": {"cn": "提交人", "desc": "测试用例作者", "example": "人名"},
+    }
+
+    # 项目名别名映射（用于 entity token 标准化）
+    _PROJECT_ALIASES: Dict[str, List[str]] = {
+        "idcevo": ["idcevo", "idcevo25", "idc evo", "idc-evo", "idcevo_25", "idcevo-25"],
+        "idc": ["idc", "idc4", "idc 4"],
+        "mgu": ["mgu", "mgu22", "mgu21", "mgu18", "mgu 22"],
+        "rsu": ["rsu", "rsu2", "rsu3"],
+        "app": ["app", "application"],
+    }
+
+    def _build_column_semantics_prompt(self, schema: Dict[str, Any]) -> str:
+        """从 schema 和预设语义映射生成列说明文本，注入 system prompt。"""
+        lines: List[str] = []
+        tables = schema.get("tables") or {}
+        for table_name, table_info in tables.items():
+            if not isinstance(table_info, list):
+                continue
+            for col_info in table_info:
+                col_name = col_info.get("name", "") if isinstance(col_info, dict) else ""
+                if not col_name:
+                    continue
+                sem = self._COLUMN_SEMANTICS.get(col_name)
+                if sem:
+                    lines.append(
+                        f"- {col_name}: {sem['cn']}。{sem['desc']}。典型值: {sem.get('example', '')}"
+                    )
+                else:
+                    col_type = col_info.get("type", "") if isinstance(col_info, dict) else ""
+                    lines.append(f"- {col_name} ({col_type})")
+        return "\n".join(lines) if lines else "(无列语义信息)"
+
+    def _normalize_project_token(self, token: str) -> Optional[str]:
+        """将用户输入的项目名标准化为数据库中可能的形式。"""
+        tl = str(token or "").strip().lower()
+        if not tl:
+            return None
+        for canonical, aliases in self._PROJECT_ALIASES.items():
+            if tl in aliases or tl == canonical:
+                return canonical
+            # 模糊匹配：别名前缀
+            for alias in aliases:
+                if alias.startswith(tl) or tl.startswith(alias):
+                    return canonical
+        return None
 
     def execute(self, data: Any, **kwargs) -> Dict[str, Any]:
         if not self._db_path:
@@ -2983,11 +3074,16 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         except Exception as e:
             logger.debug(f"build_semantic_context skipped: {e}")
 
+        column_semantics = self._build_column_semantics_prompt(schema)
         sys_prompt = (
             "你是SQLite专家。根据用户问题与数据库schema生成只读SQL。\n"
             "严格要求：只允许 SELECT 或 WITH；必须使用 schema 中存在的表与列；只输出JSON。\n"
             "优先参考 semantic_context 中的业务定义和指标口径，结合 business_hints 约束筛选条件。\n"
             "优先参考业务语义提示中的 time_range、severity、status、matrix_levels、aida_keywords、ecu_keywords、project_tokens。\n"
+            "\n"
+            "## 列名与业务含义对照表\n"
+            "以下是数据库列名对应的中文业务含义和典型值，生成SQL时必须参照此映射：\n"
+            + column_semantics + "\n"
             '输出格式：{\"sql\":\"...\"}'
         )
         user_payload = {
@@ -3045,74 +3141,87 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
                 self._result_cache[cache_key] = (time.time(), deepcopy(run_out))
             return run_out
 
+        # P3: SQL 纠错重试循环（最多 3 轮）
         err = str(run_out.get("error") or "")
-        fix_prompt = (
+        fix_prompt_template = (
             "上一次SQL执行失败。请根据错误信息与schema修复SQL。\n"
             "修复时也要参考 semantic_context 的口径定义，并保持与 business_hints 一致。\n"
             "仍然只允许 SELECT 或 WITH；只输出JSON。\n"
-            '输出格式：{\"sql\":\"...\"}'
+            '输出格式：{"sql":"..."}'
         )
-        fix_payload = {
-            "question": question,
-            "normalized_question": normalized_question,
-            "business_hints": business_hints,
-            "schema": schema,
-            "semantic_context": semantic_context,
-            "previous_sql": sql,
-            "error": err,
-            "limit_hint": limit,
-        }
-        messages = [{"role": "system", "content": fix_prompt}, {"role": "user", "content": json.dumps(fix_payload, ensure_ascii=False)}]
-        second = self._llm.chat_completion(messages, temperature=0.1, max_tokens=900)
-        obj2 = _extract_json_object(second) or {}
-        sql2 = str(obj2.get("sql") or "").strip()
-        if not sql2:
-            return {
-                "success": False,
-                "tool": self.name,
-                "error": "SQL纠错失败：模型未返回可解析SQL",
-                "result": {
-                    "raw": second,
-                    "previous_sql": sql,
-                    "error": err,
-                    "business_hints": business_hints,
-                    "query_execution_strategy": query_strategy,
-                },
+
+        previous_sql = sql
+        previous_err = err
+        max_fix_attempts = 3
+
+        for attempt_idx in range(1, max_fix_attempts + 1):
+            fix_payload = {
+                "question": question,
+                "normalized_question": normalized_question,
+                "business_hints": business_hints,
+                "schema": schema,
+                "semantic_context": semantic_context,
+                "previous_sql": previous_sql,
+                "error": previous_err,
+                "attempt": attempt_idx,
+                "limit_hint": limit,
             }
-        run2 = self._query_tool.execute(None, sql=sql2, limit=limit)
-        if run2.get("success") is True:
-            self._sql_cache[cache_key] = sql2
-            run2["result"] = run2.get("result") or {}
-            run2["result"]["generated_sql"] = sql2
-            run2["result"]["attempts"] = 2
-            run2["result"]["cache_hit"] = False
-            run2["result"]["cache_type"] = "none"
-            rows_out2 = run2["result"].get("rows") or []
-            run2["result"]["business_hints"] = business_hints
-            run2["result"]["query_execution_strategy"] = query_strategy
-            run2["result"]["business_explanation"] = _build_sql_result_explanation(question, sql2, rows_out2, business_hints)
-            run2["result"]["evidence_bundle"] = build_evidence_bundle(
-                sql_used=sql2,
-                rows=rows_out2,
-                total_count=None,
-                key_fields=run2["result"].get("columns") if isinstance(run2["result"].get("columns"), list) else None,
-                rule_ids=business_hints.get("semantic_rule_ids") if isinstance(business_hints.get("semantic_rule_ids"), list) else [],
-                evidence_gap=[],
-            )
-            run2["tool"] = self.name
-            if len(rows_out2) <= self._result_cache_max_rows:
-                self._result_cache[cache_key] = (time.time(), deepcopy(run2))
-            return run2
+            messages = [{"role": "system", "content": fix_prompt_template}, {"role": "user", "content": json.dumps(fix_payload, ensure_ascii=False)}]
+            fix_response = self._llm.chat_completion(messages, temperature=0.1, max_tokens=900)
+            obj_fix = _extract_json_object(fix_response) or {}
+            sql_fix = str(obj_fix.get("sql") or "").strip()
+            if not sql_fix:
+                if attempt_idx < max_fix_attempts:
+                    continue
+                return {
+                    "success": False,
+                    "tool": self.name,
+                    "error": f"SQL纠错失败（{attempt_idx}轮）：模型未返回可解析SQL",
+                    "result": {
+                        "raw": fix_response,
+                        "previous_sql": previous_sql,
+                        "error": previous_err,
+                        "business_hints": business_hints,
+                        "query_execution_strategy": query_strategy,
+                    },
+                }
+
+            run_fix = self._query_tool.execute(None, sql=sql_fix, limit=limit)
+            if run_fix.get("success") is True:
+                self._sql_cache[cache_key] = sql_fix
+                run_fix["result"] = run_fix.get("result") or {}
+                run_fix["result"]["generated_sql"] = sql_fix
+                run_fix["result"]["attempts"] = 1 + attempt_idx
+                run_fix["result"]["cache_hit"] = False
+                run_fix["result"]["cache_type"] = "none"
+                rows_fix = run_fix["result"].get("rows") or []
+                run_fix["result"]["business_hints"] = business_hints
+                run_fix["result"]["query_execution_strategy"] = query_strategy
+                run_fix["result"]["business_explanation"] = _build_sql_result_explanation(question, sql_fix, rows_fix, business_hints)
+                run_fix["result"]["evidence_bundle"] = build_evidence_bundle(
+                    sql_used=sql_fix,
+                    rows=rows_fix,
+                    total_count=None,
+                    key_fields=run_fix["result"].get("columns") if isinstance(run_fix["result"].get("columns"), list) else None,
+                    rule_ids=business_hints.get("semantic_rule_ids") if isinstance(business_hints.get("semantic_rule_ids"), list) else [],
+                    evidence_gap=[],
+                )
+                run_fix["tool"] = self.name
+                if len(rows_fix) <= self._result_cache_max_rows:
+                    self._result_cache[cache_key] = (time.time(), deepcopy(run_fix))
+                return run_fix
+
+            previous_sql = sql_fix
+            previous_err = str(run_fix.get("error") or "")
 
         return {
             "success": False,
             "tool": self.name,
-            "error": str(run2.get("error") or "SQL纠错后仍失败"),
+            "error": f"SQL纠错{max_fix_attempts}轮后仍失败: {previous_err}",
             "result": {
-                "previous_sql": sql,
-                "fixed_sql": sql2,
-                "previous_error": err,
-                "fixed_error": run2.get("error"),
+                "last_fixed_sql": previous_sql,
+                "last_error": previous_err,
+                "original_sql": sql,
                 "business_hints": business_hints,
                 "query_execution_strategy": query_strategy,
             },

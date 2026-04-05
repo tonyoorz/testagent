@@ -5,6 +5,14 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 
+_PROJECT_ALIAS_MAP = {
+    "idcevo": ["idcevo", "idcevo25", "idc evo", "idc-evo", "idcevo_25", "idcevo-25"],
+    "idc": ["idc", "idc4", "idc 4"],
+    "mgu": ["mgu", "mgu22", "mgu21", "mgu18", "mgu 22"],
+    "rsu": ["rsu", "rsu2", "rsu3"],
+    "app": ["app", "application"],
+}
+
 _EN_STOP_WORDS = {
     "aida", "ticket", "topissue", "issue", "defect", "summary", "agent", "sqlite",
     "tester", "reporter", "owner", "team", "project", "status", "phase", "query",
@@ -256,6 +264,14 @@ def build_deterministic_query_hints(question: str, columns: Iterable[str]) -> Di
     zh_tokens = re.findall(r"[\u4e00-\u9fff]{2,8}", q)
 
     entity_tokens: List[str] = []
+
+    # P1: 先做项目别名匹配，补充标准化后的项目名
+    q_lower = q.lower()
+    for canonical, aliases in _PROJECT_ALIAS_MAP.items():
+        for alias in aliases:
+            if alias in q_lower and canonical not in entity_tokens:
+                entity_tokens.append(canonical)
+                break
 
     for token in en_tokens:
         tl = token.lower()
