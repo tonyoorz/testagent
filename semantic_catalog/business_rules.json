@@ -890,6 +890,96 @@
         "top aida提取",
         "primary aida"
       ]
+    },
+    {
+      "id": "br_severity_group_classification",
+      "name": "severity_group双条件判定规则",
+      "description": "severity_group字段通过Matrix和Classification两个独立条件判定，任一满足即为Critical Issues。",
+      "trigger_terms": [
+        "severity_group",
+        "Critical Issues",
+        "General Issues",
+        "严重分组",
+        "is_severe"
+      ],
+      "rules": [
+        "severity_group = 'Critical Issues' 当满足以下任一条件：",
+        "条件1: matrix值在severe_matrices中 (Matrix-1A~1E, 2A~2C, 3A)",
+        "条件2: classification列表与severe_classifications有交集",
+        "severe_classifications = ['Showstopper_Candidate', 'Showstopper_Confirmed', 'Preventing Maturity Grade ConDrive', 'Obstructing Maturity Grade ConDrive']",
+        "severe_matrices = ['matrix-1a'~'matrix-3a' (不含2c之后的低等级)]",
+        "注意: 此判定在defect_explore中重复定义了多次(is_severe_defect函数)，口径必须保持一致"
+      ],
+      "sql_guardrails": [
+        "severity_group已预计算，优先直接使用字段值而非重算",
+        "Critical判定依赖matrix和classification两个字段的完整性，缺失会导致漏判"
+      ],
+      "aliases": [
+        "严重度分组",
+        "critical判定",
+        "severe classification"
+      ]
+    },
+    {
+      "id": "br_run_status_normalization_complete",
+      "name": "测试执行状态归一化完整规则",
+      "description": "test数据的run_status字段归一化规则，用于测试覆盖率/通过率等分析。",
+      "trigger_terms": [
+        "run_status",
+        "执行状态",
+        "Passed",
+        "Failed",
+        "Blocked",
+        "Planned",
+        "Requires Attention"
+      ],
+      "rules": [
+        "passed → Passed",
+        "failed → Failed",
+        "blocked → Blocked",
+        "planned → Planned",
+        "requires attention → Blocked（注意：归入Blocked而非单独分类）",
+        "run_status从Octane的status字段提取name属性"
+      ],
+      "sql_guardrails": [
+        "Requires Attention 在统计中应并入 Blocked",
+        "状态比较需大小写不敏感",
+        "测试数据中run_status可能包含Future Planning（finished_udf为空的记录）"
+      ],
+      "aliases": [
+        "测试状态归一化",
+        "test status mapping"
+      ]
+    },
+    {
+      "id": "br_history_data_cache_mechanism",
+      "name": "历史数据缓存与来源说明",
+      "description": "processing_cycle_days、ECU流转路径、Domain流转路径等衍生字段依赖history数据，通过预加载缓存提升性能。",
+      "trigger_terms": [
+        "processing_cycle_days",
+        "流转路径",
+        "历史数据",
+        "history",
+        "ecu_transition_path"
+      ],
+      "rules": [
+        "history数据来源: SQLite数据库(octane_defect_histories表) 或 history/目录下的JSON文件，数据库优先",
+        "HistoryCache类管理内存缓存，默认容量2000条，LRU淘汰策略",
+        "preload_histories批量预加载defect_id列表对应的历史数据",
+        "processing_cycle_days: 从创建到当前状态的处理天数，依赖history数据",
+        "ECU流转路径: 从assigned_ecu_udf字段变化历史提取",
+        "Domain流转路径: 从solution_cluster_udf字段变化历史提取"
+      ],
+      "sql_guardrails": [
+        "processing_cycle_days字段可能为空（无历史数据时）",
+        "ECU/Domain流转路径为字符串格式: '转移次数, 值1 -> 值2 -> 值3'",
+        "分析处理效率时应提示历史数据覆盖率"
+      ],
+      "aliases": [
+        "历史缓存",
+        "history cache",
+        "处理周期数据来源"
+      ]
     }
   ]
 }

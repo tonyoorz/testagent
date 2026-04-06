@@ -326,7 +326,7 @@
       "formula_reference": "defect_explore project_stats",
       "inputs": ["status_phase"],
       "calculation": {
-        "resolved_statuses": ["06-Resolved", "07-Closed", "08-Verified"],
+        "resolved_statuses": ["06-Concluded", "09-Concluded without action", "10-Closed"],
         "numerator": "count(status_phase in resolved_statuses)",
         "denominator": "count(*)",
         "output": "numerator/denominator*100",

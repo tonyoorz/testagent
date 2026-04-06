@@ -505,7 +505,7 @@ class HybridRetriever:
         if status_cols:
             status_map = {
                 'open': ['Open', 'New'],
-                'close': ['Closed', 'Resolved'],
+                'close': ['Concluded', 'Closed', 'Concluded without action'],
                 'in progress': ['In Progress', 'Analyzing']
             }
             for key, values in status_map.items():
