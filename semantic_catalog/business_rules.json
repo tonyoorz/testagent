@@ -980,6 +980,137 @@
         "history cache",
         "处理周期数据来源"
       ]
+    },
+    {
+      "id": "br_complexity_classification",
+      "name": "ECU复杂度分类规则",
+      "description": "基于ECU乒乓次数对缺陷进行复杂度分类，用于快速筛选和概览。",
+      "trigger_terms": [
+        "complexity",
+        "复杂度",
+        "simple",
+        "medium",
+        "complex"
+      ],
+      "rules": [
+        "complexity字段基于ecu_pingpong_count计算:",
+        "0次 → simple（简单，未发生ECU转移）",
+        "1-2次 → medium（中等，少量ECU转移）",
+        ">2次 → complex（复杂，频繁ECU转移）",
+        "该分类用于概览筛选，不用于TopIssue评分（评分使用原始次数）"
+      ],
+      "sql_guardrails": [
+        "complexity字段已预计算，可直接过滤",
+        "需要精确评分时用ecu_pingpong_count原始值而非complexity分类"
+      ],
+      "aliases": [
+        "复杂度分类",
+        "ECU复杂度"
+      ]
+    },
+    {
+      "id": "br_long_runner_definition",
+      "name": "Long Runner定义与识别",
+      "description": "长期未解决的缺陷识别逻辑，是TopIssue LONG RUNNER维度的核心关注点。",
+      "trigger_terms": [
+        "long runner",
+        "长期未决",
+        "长期票",
+        "处理周期长"
+      ],
+      "rules": [
+        "Long Runner判定维度来自TopIssue评分中的Processing Cycle + Shift PU",
+        "处理周期>30天的缺陷自动进入Long Runner关注范围",
+        "TopIssue推荐理由中LONG RUNNER部分: 'Long-term processing - Open for {days} days'",
+        "有Shift_PU的缺陷表示修复被推迟到后续PU，也属于Long Runner关注范畴",
+        "defect_explore有专门的Long Runner分析Tab（tab-defect-long-runner）"
+      ],
+      "sql_guardrails": [
+        "processing_cycle_days依赖history数据，可能为空",
+        "Long Runner分析应结合processing_cycle_days和Shift_PU两个字段"
+      ],
+      "aliases": [
+        "长期缺陷",
+        "久拖不决",
+        "long running defect"
+      ]
+    },
+    {
+      "id": "br_defect_lifecycle_calculation",
+      "name": "缺陷生命周期计算",
+      "description": "从history数据计算缺陷从创建到最终状态(Concluded/Closed)的完整生命周期。",
+      "trigger_terms": [
+        "lifecycle",
+        "生命周期",
+        "duration",
+        "存活期",
+        "存活时间"
+      ],
+      "rules": [
+        "lifecycle从history JSON文件中提取phase/status变更记录",
+        "计算creation_time到最终状态(06/09/10)首次出现的时间差",
+        "输出: defect_id, creation_time, final_time, duration_days, final_status",
+        "最终状态定义: 06 Solved/Concluded, 09 Rejected/Concluded without action",
+        "仅包含已达到最终状态的缺陷（活跃缺陷不参与）"
+      ],
+      "sql_guardrails": [
+        "lifecycle分析依赖history数据完整性，可能不是所有缺陷都有历史记录",
+        "duration_days是自然日而非工作日"
+      ],
+      "aliases": [
+        "生命周期分析",
+        "defect lifecycle",
+        "存活天数"
+      ]
+    },
+    {
+      "id": "br_solution_cluster_reassignment",
+      "name": "Solution Cluster智能再分配",
+      "description": "对domain为空的缺陷，基于AIDA→Solution Cluster映射进行智能分配。",
+      "trigger_terms": [
+        "unassigned",
+        "未分配",
+        "domain为空",
+        "solution cluster"
+      ],
+      "rules": [
+        "defect_explore中多处有reassign_unassigned_clusters逻辑",
+        "对domain为空的记录，基于同AIDA的其他记录的domain分布进行智能分配",
+        "优先分配到该AIDA下最常见的domain",
+        "分配结果仅用于展示，不写回数据库"
+      ],
+      "sql_guardrails": [
+        "分析domain分布时应注意部分记录的domain可能是智能分配的而非原始值",
+        "建议在结论中标注unassigned比例"
+      ],
+      "aliases": [
+        "domain补全",
+        "cluster reassignment",
+        "智能分配"
+      ]
+    },
+    {
+      "id": "br_top_req_selection_logic",
+      "name": "top_aida/ticket的get_top_req选择逻辑",
+      "description": "从多个AIDA/需求中选择'主'需求的算法：选择最后一部分最短的那个。",
+      "trigger_terms": [
+        "get_top_req",
+        "主需求",
+        "top req"
+      ],
+      "rules": [
+        "get_top_req(req)算法: 从aidas列表中，按空格分割每个元素，取最后一部分",
+        "选择最后一部分长度最短的元素作为top_req",
+        "逻辑: 最短的末尾部分通常代表最概括的分类",
+        "若列表为空或全为非字符串，返回空字符串"
+      ],
+      "sql_guardrails": [
+        "top_aida的选择逻辑基于长度最短原则，不代表业务优先级最高"
+      ],
+      "aliases": [
+        "主需求选择",
+        "top requirement"
+      ]
     }
   ]
 }

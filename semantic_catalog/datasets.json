@@ -4,10 +4,20 @@
     {
       "id": "octane_defects",
       "name": "Octane Defects",
-      "aliases": ["defects", "defect", "缺陷", "bug", "issue", "octane_defect", "work_item"],
+      "aliases": [
+        "defects",
+        "defect",
+        "缺陷",
+        "bug",
+        "issue",
+        "octane_defect",
+        "work_item"
+      ],
       "description": "用于缺陷分析的主数据集，来自 Octane 缺陷导出或本地SQLite缓存。",
       "granularity": "一行=一个缺陷(work_item)",
-      "primary_keys": ["id"],
+      "primary_keys": [
+        "id"
+      ],
       "time_columns": [
         {
           "name": "creation_time",
@@ -18,13 +28,25 @@
       "core_dimensions": [
         {
           "name": "project",
-          "aliases": ["tproject", "项目", "车系", "车型", "project_name"],
+          "aliases": [
+            "tproject",
+            "项目",
+            "车系",
+            "车型",
+            "project_name"
+          ],
           "meaning": "项目/车系映射后的项目字段",
           "type": "string"
         },
         {
           "name": "aida_english",
-          "aliases": ["aida", "top_aida", "product_area", "产品域", "领域"],
+          "aliases": [
+            "aida",
+            "top_aida",
+            "product_area",
+            "产品域",
+            "领域"
+          ],
           "meaning": "AIDA 英文名（从 AIDA 字段抽取，仅保留英文文字、去掉数字/编号；用于统一口径分析）",
           "type": "string"
         },
@@ -35,13 +57,26 @@
         },
         {
           "name": "status_phase",
-          "aliases": ["phase", "status", "状态", "阶段", "lifecycle"],
+          "aliases": [
+            "phase",
+            "status",
+            "状态",
+            "阶段",
+            "lifecycle"
+          ],
           "meaning": "缺陷状态/阶段（phase字段映射）",
           "type": "string"
         },
         {
           "name": "fv",
-          "aliases": ["feature team", "feature_team", "功能负责人", "负责人", "模块负责人", "dtsv"],
+          "aliases": [
+            "feature team",
+            "feature_team",
+            "功能负责人",
+            "负责人",
+            "模块负责人",
+            "dtsv"
+          ],
           "meaning": "Feature Team（DTSV 功能负责人/责任团队），用于表示该缺陷对应的功能负责人或负责团队",
           "type": "string"
         },
@@ -52,109 +87,193 @@
         },
         {
           "name": "tester",
-          "aliases": ["detected_by", "found_by", "reporter", "发现人", "测试人员"],
+          "aliases": [
+            "detected_by",
+            "found_by",
+            "reporter",
+            "发现人",
+            "测试人员"
+          ],
           "meaning": "缺陷发现人/测试者（detected_by映射）",
           "type": "string"
         },
         {
           "name": "id",
-          "aliases": ["ticket_id", "bug_id", "defect_id", "issue_id", "work_item_id"],
+          "aliases": [
+            "ticket_id",
+            "bug_id",
+            "defect_id",
+            "issue_id",
+            "work_item_id"
+          ],
           "meaning": "Octane 缺陷/工单的 ID（ticket/bug 唯一编号）",
           "type": "string"
         },
         {
           "name": "test_week",
-          "aliases": ["cw", "calendar_week", "测试周", "周"],
+          "aliases": [
+            "cw",
+            "calendar_week",
+            "测试周",
+            "周"
+          ],
           "meaning": "测试周（CW 周编号），一年通常有 CW01-CW52 共 52 个测试周",
           "type": "string"
         },
         {
           "name": "aidas",
-          "aliases": ["product_areas", "aida_list", "aida集合"],
+          "aliases": [
+            "product_areas",
+            "aida_list",
+            "aida集合"
+          ],
           "meaning": "Octane 系统的 AIDA 多值集合字段：一个 ticket 可关联多个 AIDA",
           "type": "string"
         },
         {
           "name": "top_aida",
-          "aliases": ["top aida", "主要aida", "主aida", "最重要aida"],
+          "aliases": [
+            "top aida",
+            "主要aida",
+            "主aida",
+            "最重要aida"
+          ],
           "meaning": "团队口径的 Top AIDA：从 aidas 中抽取的主 AIDA，是测试团队定义的最小颗粒度（验证基石）",
           "type": "string"
         },
         {
           "name": "domain",
-          "aliases": ["solution_cluster", "dev_team", "开发团队", "责任团队"],
+          "aliases": [
+            "solution_cluster",
+            "dev_team",
+            "开发团队",
+            "责任团队"
+          ],
           "meaning": "开发团队/责任团队（Solution Cluster 口径，用于标识负责开发/修复的团队）",
           "type": "string"
         },
         {
           "name": "matrix",
-          "aliases": ["matrix_display", "severity_matrix", "严重矩阵", "严重性标签"],
+          "aliases": [
+            "matrix_display",
+            "severity_matrix",
+            "严重矩阵",
+            "严重性标签"
+          ],
           "meaning": "缺陷严重性矩阵标签（用于标识严重程度分层的规则标签）",
           "type": "string"
         },
         {
           "name": "software_version",
-          "aliases": ["sw_version", "version", "软件版本", "被测版本"],
+          "aliases": [
+            "sw_version",
+            "version",
+            "软件版本",
+            "被测版本"
+          ],
           "meaning": "被测软件版本（SUT 软件版本）",
           "type": "string"
         },
         {
           "name": "occurrence",
-          "aliases": ["error_occurrence", "repro_rate", "复现率", "复现概率"],
+          "aliases": [
+            "error_occurrence",
+            "repro_rate",
+            "复现率",
+            "复现概率"
+          ],
           "meaning": "复现概率/复现频次（描述缺陷在测试中出现的概率）",
           "type": "string"
         },
         {
           "name": "solution",
-          "aliases": ["solution_responsible", "解决方案负责人", "解决方案责任团队"],
+          "aliases": [
+            "solution_responsible",
+            "解决方案负责人",
+            "解决方案责任团队"
+          ],
           "meaning": "负责给出解决方案的开发团队/责任方（Solution Responsible）",
           "type": "string"
         },
         {
           "name": "parent_child",
-          "aliases": ["parent_child_udf", "子票", "父子关系"],
+          "aliases": [
+            "parent_child_udf",
+            "子票",
+            "父子关系"
+          ],
           "meaning": "缺陷父子关系/Child 关联状态字段（用于描述 master-child 关系）",
           "type": "string"
         },
         {
           "name": "blocking_reason",
-          "aliases": ["blocking_reason_udf", "blocked_reason", "阻塞原因"],
+          "aliases": [
+            "blocking_reason_udf",
+            "blocked_reason",
+            "阻塞原因"
+          ],
           "meaning": "缺陷/测试阻塞原因（导致无法推进验证或修复的原因）",
           "type": "string"
         },
         {
           "name": "ecu",
-          "aliases": ["assigned_ecu", "ecu_name", "车内ECU"],
+          "aliases": [
+            "assigned_ecu",
+            "ecu_name",
+            "车内ECU"
+          ],
           "meaning": "测试车内 ECU 名称（缺陷关联 ECU / 负责 ECU）",
           "type": "string"
         },
         {
           "name": "release",
-          "aliases": ["detected_in_release", "release_stage", "释放阶段"],
+          "aliases": [
+            "detected_in_release",
+            "release_stage",
+            "释放阶段"
+          ],
           "meaning": "当前软件释放的 Release 阶段（Detected in Release / Release Stage）",
           "type": "string"
         },
         {
           "name": "istep",
-          "aliases": ["i_step", "milestone", "研发周期", "目标周期"],
+          "aliases": [
+            "i_step",
+            "milestone",
+            "研发周期",
+            "目标周期"
+          ],
           "meaning": "车型研发目标周期的里程碑（Milestone / I-Step）",
           "type": "string"
         },
         {
           "name": "lead_model",
-          "aliases": ["lead_model_udf", "引领车型", "标准车型"],
+          "aliases": [
+            "lead_model_udf",
+            "引领车型",
+            "标准车型"
+          ],
           "meaning": "引领车型：软硬件 cluster 最先应用/落地的标准车型",
           "type": "string"
         },
         {
           "name": "tags",
-          "aliases": ["user_tags", "标签", "tag_list"],
+          "aliases": [
+            "user_tags",
+            "标签",
+            "tag_list"
+          ],
           "meaning": "Ticket 标签集合（用于分类、过滤或流程标记）",
           "type": "string"
         },
         {
           "name": "ticket_quality",
-          "aliases": ["tqr", "tqr_udf", "quality", "缺陷质量"],
+          "aliases": [
+            "tqr",
+            "tqr_udf",
+            "quality",
+            "缺陷质量"
+          ],
           "meaning": "缺陷质量（Ticket Quality / TQR，用于衡量缺陷描述、复现信息等质量）",
           "type": "string"
         }
@@ -223,10 +342,19 @@
     {
       "id": "octane_tests",
       "name": "Octane Tests",
-      "aliases": ["tests", "test", "测试", "execution", "test_run", "octane_tests"],
+      "aliases": [
+        "tests",
+        "test",
+        "测试",
+        "execution",
+        "test_run",
+        "octane_tests"
+      ],
       "description": "用于测试执行/覆盖率等分析的数据集，来自 Octane 测试导出或本地SQLite缓存。",
       "granularity": "一行=一个测试实体（具体以导出字段为准）",
-      "primary_keys": ["id"],
+      "primary_keys": [
+        "id"
+      ],
       "time_columns": [
         {
           "name": "creation_time",
@@ -237,36 +365,157 @@
       "core_dimensions": [
         {
           "name": "project",
-          "aliases": ["tproject", "项目", "车系", "车型", "project_name"],
-          "meaning": "项目字段（例如 idcevo / idc / mgu 等项目缩写，用于标识项目/车系）",
-          "type": "string"
-        },
-        {
-          "name": "aida_english",
-          "aliases": ["aida", "top_aida", "product_area", "产品域", "领域"],
-          "meaning": "AIDA 英文名（从 AIDA 字段抽取，仅保留英文文字、去掉数字/编号；用于统一口径分析）",
-          "type": "string"
-        },
-        {
-          "name": "fv",
-          "aliases": ["feature team", "feature_team", "功能负责人", "负责人", "模块负责人", "dtsv"],
-          "meaning": "Feature Team（DTSV 功能负责人/责任团队），用于表示该测试/用例对应的功能负责人或负责团队",
-          "type": "string"
-        },
-        {
-          "name": "id",
-          "aliases": ["test_id", "execution_id", "run_id", "record_id"],
-          "meaning": "Octane 测试实体/测试记录的 ID（测试数据行的唯一编号）",
+          "aliases": [
+            "tproject",
+            "项目",
+            "车系",
+            "车型"
+          ],
+          "meaning": "项目/车系（三步分类得到）",
           "type": "string"
         },
         {
           "name": "top_aida",
-          "aliases": ["top aida", "主要aida", "主aida", "最重要aida"],
-          "meaning": "团队口径的 Top AIDA：测试团队定义的最小颗粒度（验证基石），与缺陷侧 top_aida 口径一致",
+          "aliases": [
+            "aida",
+            "主aida"
+          ],
+          "meaning": "主AIDA（从product_areas列表第一个元素提取）",
           "type": "string"
+        },
+        {
+          "name": "aida_english",
+          "aliases": [
+            "aida英文"
+          ],
+          "meaning": "AIDA英文名（从top_aida提取英文部分）",
+          "type": "string"
+        },
+        {
+          "name": "fv",
+          "aliases": [
+            "feature team",
+            "dtsv",
+            "功能负责人"
+          ],
+          "meaning": "Feature Team（从Excel映射，非Octane原生）",
+          "type": "string"
+        },
+        {
+          "name": "run_status",
+          "aliases": [
+            "status",
+            "执行状态",
+            "结果"
+          ],
+          "meaning": "测试执行状态（Passed/Failed/Blocked/Planned，Requires Attention归入Blocked）",
+          "type": "string"
+        },
+        {
+          "name": "test_week",
+          "aliases": [
+            "cw",
+            "测试周"
+          ],
+          "meaning": "测试周（从finished_udf计算，格式YY-CWww）",
+          "type": "string"
+        },
+        {
+          "name": "tester",
+          "aliases": [
+            "run_by",
+            "执行人"
+          ],
+          "meaning": "测试执行人（run_by.full_name）",
+          "type": "string"
+        },
+        {
+          "name": "model",
+          "aliases": [
+            "车型",
+            "exec_model_series"
+          ],
+          "meaning": "车型系列（exec_model_series_udf.name）",
+          "type": "string"
+        },
+        {
+          "name": "test_event",
+          "aliases": [
+            "release",
+            "测试事件"
+          ],
+          "meaning": "测试事件/Release（release.name）",
+          "type": "string"
+        },
+        {
+          "name": "pu",
+          "aliases": [
+            "set_udf",
+            "SOP"
+          ],
+          "meaning": "PU/SOP字段（set_udf.name）",
+          "type": "string"
+        },
+        {
+          "name": "team",
+          "aliases": [
+            "团队"
+          ],
+          "meaning": "团队字段",
+          "type": "string"
+        },
+        {
+          "name": "fvp",
+          "aliases": [
+            "fvp"
+          ],
+          "meaning": "FVP字段",
+          "type": "string"
+        },
+        {
+          "name": "lead_model",
+          "aliases": [
+            "引领车型",
+            "标准车型"
+          ],
+          "meaning": "引领车型",
+          "type": "string"
+        },
+        {
+          "name": "id",
+          "aliases": [
+            "test_id",
+            "run_id"
+          ],
+          "meaning": "测试记录唯一ID",
+          "type": "string"
+        },
+        {
+          "name": "year",
+          "aliases": [
+            "年份"
+          ],
+          "meaning": "测试周所属年份（从finished_udf或test_week推断）",
+          "type": "integer"
         }
       ],
-      "common_columns": ["id", "project", "top_aida", "aida_english", "fv"],
+      "common_columns": [
+        "id",
+        "project",
+        "top_aida",
+        "aida_english",
+        "fv",
+        "run_status",
+        "test_week",
+        "tester",
+        "model",
+        "test_event",
+        "pu",
+        "team",
+        "fvp",
+        "lead_model",
+        "year"
+      ],
       "can_answer": [
         "测试覆盖/测试用例数量在项目/AIDA/FV维度的分布",
         "缺陷与测试的联动（需要明确join键）"
@@ -278,7 +527,31 @@
         "loader": "data_processor.load_test_data",
         "default_file_pattern": "testcase/*.json",
         "db_kind": "tests"
-      }
+      },
+      "field_lineage": {
+        "model": "exec_model_series_udf.name",
+        "test_id": "test.id",
+        "test_name": "test.name",
+        "author_name": "author.full_name",
+        "test_event": "release.name",
+        "tester": "run_by.full_name",
+        "aida_count": "product_areas.total_count",
+        "aida": "product_areas.data[].name",
+        "pu": "set_udf.name",
+        "run_status": "status.name",
+        "fv": "Excel映射(top_aida_project_fv_mapping.xlsx, 多sheet按top_aida匹配)",
+        "project": "三步分类(target_ecu_conf_udf→name正则→特殊覆盖)"
+      },
+      "list_field_lineage": {
+        "aida": "product_areas"
+      },
+      "data_processing_notes": [
+        "project字段非Octane原生，由三步分类策略得到：1)name含RSU→RSU 2)target_ecu_conf_udf判断(IDCEVO/My BMW/HU-MGU等) 3)name正则",
+        "fv字段非Octane原生，从aida/top_aida_project_fv_mapping.xlsx按top_aida映射，多sheet合并",
+        "run_status中Requires Attention归入Blocked",
+        "test_week从finished_udf计算，无有效时间戳的标记为Future Planning",
+        "year字段从test_week或finished_udf推断"
+      ]
     }
   ]
 }
