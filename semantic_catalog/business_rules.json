@@ -1111,6 +1111,410 @@
         "主需求选择",
         "top requirement"
       ]
+    },
+    {
+      "id": "br_problem_finder_team_vs_team",
+      "name": "problem_finder_team vs team vs detected_by 区别",
+      "description": "缺陷涉及三个不同的人员/团队字段，含义完全不同，分析时不可混用。",
+      "trigger_terms": [
+        "team",
+        "团队",
+        "problem_finder",
+        "发现团队",
+        "归属团队",
+        "team分析"
+      ],
+      "rules": [
+        "team: 缺陷当前归属的Octane团队(如DTSV_China)，用于团队维度过滤",
+        "problem_finder_team: 实际发现问题的团队(problem_finder_team_udf)，可能和归属团队不同",
+        "detected_by: 具体发现缺陷的测试人员(个人级别)",
+        "owner: 缺陷当前负责人/处理人",
+        "author: 缺陷创建者(提交人)",
+        "downloader按三重条件下载: (problem_finder_team==team || author==team || team==team)"
+      ],
+      "sql_guardrails": [
+        "按团队统计缺陷数: GROUP BY team (归属维度)",
+        "分析哪个团队发现缺陷最多: GROUP BY problem_finder_team (发现维度)",
+        "分析测试员贡献: GROUP BY detected_by (个人维度)",
+        "不要把team和problem_finder_team混用"
+      ],
+      "aliases": [
+        "团队字段区别",
+        "team vs finder",
+        "发现团队"
+      ]
+    },
+    {
+      "id": "br_history_json_structure",
+      "name": "Defect History JSON结构",
+      "description": "defect历史数据存储在octane_defect_histories表或history/目录下，包含完整的状态变更记录。",
+      "trigger_terms": [
+        "history",
+        "历史",
+        "变更记录",
+        "change_set",
+        "流转历史",
+        "history_logs"
+      ],
+      "rules": [
+        "History数据来源: octane_defect_histories表(payload_json列) 或 history/{defect_id}_history.json",
+        "JSON结构: {total_count:N, data:[{entity_id, entity_type, timestamp, change_set:[{field_name, old_value_text, value_text, valueName}]}]}",
+        "field_name常见值: phase(状态变更), assigned_ecu_udf(ECU变更), solution_cluster_udf(Domain变更)",
+        "timestamp为UTC ISO格式: 2025-01-15T10:30:00Z",
+        "按timestamp升序排列可还原完整流转路径"
+      ],
+      "sql_guardrails": [
+        "从DB查history: SELECT payload_json FROM octane_defect_histories WHERE defect_id = ?",
+        "解析change_set需JSON处理: json_extract / json_each",
+        "ECU流转路径: field_name='assigned_ecu_udf'的change_set, 按timestamp排序",
+        "Inflow/Outflow: field_name='phase', old以00开头new以01开头=Inflow, new以06/09开头=Outflow"
+      ],
+      "aliases": [
+        "历史结构",
+        "history JSON",
+        "变更记录格式",
+        "history_logs"
+      ]
+    },
+    {
+      "id": "br_reprel_changes_meaning",
+      "name": "需求变更次数(reprel_changes)与缺陷关联",
+      "description": "reprel_changes_udf记录需求变更次数，频繁变更可能暗示需求不稳定，导致缺陷增多。",
+      "trigger_terms": [
+        "reprel",
+        "需求变更",
+        "requirement change",
+        "需求变化"
+      ],
+      "rules": [
+        "reprel_changes存储在octane_defects表的reprel_changes列(INTEGER类型)",
+        "值表示该缺陷关联的需求被修改的次数",
+        "高reprel_changes(>=3)通常意味着: 需求定义不清晰/频繁调整/需求理解偏差",
+        "可结合defect分析: 需求变更频繁的领域缺陷密度是否更高"
+      ],
+      "sql_guardrails": [
+        "查询高需求变更缺陷: WHERE CAST(reprel_changes AS INTEGER) >= 3",
+        "按领域分析需求稳定性: SELECT solution_cluster, AVG(reprel_changes) GROUP BY solution_cluster"
+      ],
+      "aliases": [
+        "需求变更",
+        "reprel",
+        "requirement changes"
+      ]
+    },
+    {
+      "id": "br_testing_tool_type_classification",
+      "name": "测试工具类型(testing_tool_type)分类",
+      "description": "Manual Run的testing_tool_type字段区分不同测试方式，影响测试效率和质量分析。",
+      "trigger_terms": [
+        "testing_tool",
+        "测试工具",
+        "SIL",
+        "HIL",
+        "手动测试",
+        "自动测试",
+        "测试方式"
+      ],
+      "rules": [
+        "testing_tool_type存储在octane_manual_runs表的testing_tool_type列",
+        "常见类型: 手动测试(Manual), 自动化测试, SIL(软件在环), HIL(硬件在环)",
+        "不同工具类型的通过率和缺陷发现能力不同",
+        "分析测试效率时应区分工具类型"
+      ],
+      "sql_guardrails": [
+        "按工具类型分析通过率: SELECT testing_tool_type, status, COUNT(*) GROUP BY testing_tool_type, status",
+        "注意部分记录testing_tool_type可能为空"
+      ],
+      "aliases": [
+        "测试工具类型",
+        "tool type",
+        "SIL HIL"
+      ]
+    },
+    {
+      "id": "br_native_status_vs_status",
+      "name": "native_status vs status 区别",
+      "description": "Manual Run有两个状态字段：status是归一化后的状态，native_status是Octane原始状态值。",
+      "trigger_terms": [
+        "native_status",
+        "原始状态",
+        "Requires Attention"
+      ],
+      "rules": [
+        "status: 归一化后的执行状态(Passed/Failed/Blocked/Planned)",
+        "native_status: Octane原始状态值，可能包含更多细节如Requires Attention",
+        "Requires Attention在native_status中存在，归一化后归入Blocked",
+        "如需区分Requires Attention和Blocked，需用native_status"
+      ],
+      "sql_guardrails": [
+        "精确状态分析用native_status，汇总统计用status",
+        "查询Requires Attention: WHERE native_status LIKE '%Requires Attention%'"
+      ],
+      "aliases": [
+        "原生状态",
+        "状态区别",
+        "状态精度"
+      ]
+    },
+    {
+      "id": "br_raw_json_access_pattern",
+      "name": "raw_json列的使用场景",
+      "description": "优化表的raw_json列存储Octane原始完整JSON，可用于获取未展平的字段。",
+      "trigger_terms": [
+        "raw_json",
+        "原始数据",
+        "完整字段",
+        "未展平"
+      ],
+      "rules": [
+        "octane_defects.raw_json: 完整的Octane defect JSON对象",
+        "octane_manual_runs.raw_json: 完整的Octane manual_run JSON对象",
+        "当优化表列不包含所需字段时，可json_extract(raw_json, '$.field')获取",
+        "downloader下载的完整字段(defect 40个, manual_run 30个)都在raw_json中"
+      ],
+      "sql_guardrails": [
+        "示例: SELECT json_extract(raw_json, '$.ecu_to_modul_udf') FROM octane_defects",
+        "raw_json是TEXT类型，需json_extract处理",
+        "不要对raw_json做LIKE查询(性能差)，优先用展平列"
+      ],
+      "aliases": [
+        "原始JSON",
+        "raw json",
+        "完整数据"
+      ]
+    },
+    {
+      "id": "br_octane_db_flattening_logic",
+      "name": "Octane DB展平逻辑",
+      "description": "octane_db.py将Octane嵌套JSON展平为关系表的映射规则。",
+      "trigger_terms": [
+        "展平",
+        "flatten",
+        "octane_db",
+        "优化表",
+        "upsert"
+      ],
+      "rules": [
+        "嵌套对象{name:'xxx'} -> 提取name值 -> TEXT列",
+        "嵌套对象{full_name:'xxx'} -> 优先取full_name回退取name -> TEXT列",
+        "product_areas -> 提取top_aida(第一个data元素的name) + aida_english -> TEXT列",
+        "creation_time -> 计算test_week(ISO周) -> TEXT列",
+        "top_aida -> 映射fv(assign_fv_from_aida) -> TEXT列",
+        "fv -> 推导fvp(_get_fvp_from_fv) -> TEXT列",
+        "保留raw_json存储完整原始JSON"
+      ],
+      "sql_guardrails": [
+        "展平表和DataFrame清洗结果可能不同(两套独立逻辑)",
+        "优先用展平列查询，raw_json作为补充",
+        "octane_defects表的reporting_class是TEXT(非列表)，需LIKE匹配"
+      ],
+      "aliases": [
+        "数据库展平",
+        "flatten logic",
+        "DB映射"
+      ]
+    },
+    {
+      "id": "br_problem_finder_team_vs_team",
+      "name": "problem_finder_team vs team vs detected_by 区别",
+      "description": "缺陷涉及三个不同的人员/团队字段，含义完全不同，分析时不可混用。",
+      "trigger_terms": [
+        "team",
+        "团队",
+        "problem_finder",
+        "发现团队",
+        "归属团队",
+        "team分析"
+      ],
+      "rules": [
+        "team: 缺陷当前归属的Octane团队(如DTSV_China)，用于团队维度过滤",
+        "problem_finder_team: 实际发现问题的团队(problem_finder_team_udf)，可能和归属团队不同",
+        "detected_by: 具体发现缺陷的测试人员(个人级别)",
+        "owner: 缺陷当前负责人/处理人",
+        "author: 缺陷创建者(提交人)",
+        "downloader按三重条件下载: (problem_finder_team==team || author==team || team==team)"
+      ],
+      "sql_guardrails": [
+        "按团队统计缺陷数: GROUP BY team (归属维度)",
+        "分析哪个团队发现缺陷最多: GROUP BY problem_finder_team (发现维度)",
+        "分析测试员贡献: GROUP BY detected_by (个人维度)",
+        "不要把team和problem_finder_team混用"
+      ],
+      "aliases": [
+        "团队字段区别",
+        "team vs finder",
+        "发现团队"
+      ]
+    },
+    {
+      "id": "br_history_json_structure",
+      "name": "Defect History JSON结构",
+      "description": "defect历史数据存储在octane_defect_histories表或history/目录下，包含完整的状态变更记录。",
+      "trigger_terms": [
+        "history",
+        "历史",
+        "变更记录",
+        "change_set",
+        "流转历史",
+        "history_logs"
+      ],
+      "rules": [
+        "History数据来源: octane_defect_histories表(payload_json列) 或 history/{defect_id}_history.json",
+        "JSON结构: {total_count:N, data:[{entity_id, entity_type, timestamp, change_set:[{field_name, old_value_text, value_text, valueName}]}]}",
+        "field_name常见值: phase(状态变更), assigned_ecu_udf(ECU变更), solution_cluster_udf(Domain变更)",
+        "timestamp为UTC ISO格式: 2025-01-15T10:30:00Z",
+        "按timestamp升序排列可还原完整流转路径"
+      ],
+      "sql_guardrails": [
+        "从DB查history: SELECT payload_json FROM octane_defect_histories WHERE defect_id = ?",
+        "解析change_set需JSON处理: json_extract / json_each",
+        "ECU流转路径: field_name='assigned_ecu_udf'的change_set, 按timestamp排序",
+        "Inflow/Outflow: field_name='phase', old以00开头new以01开头=Inflow, new以06/09开头=Outflow"
+      ],
+      "aliases": [
+        "历史结构",
+        "history JSON",
+        "变更记录格式",
+        "history_logs"
+      ]
+    },
+    {
+      "id": "br_reprel_changes_meaning",
+      "name": "需求变更次数(reprel_changes)与缺陷关联",
+      "description": "reprel_changes_udf记录需求变更次数，频繁变更可能暗示需求不稳定，导致缺陷增多。",
+      "trigger_terms": [
+        "reprel",
+        "需求变更",
+        "requirement change",
+        "需求变化"
+      ],
+      "rules": [
+        "reprel_changes存储在octane_defects表的reprel_changes列(INTEGER类型)",
+        "值表示该缺陷关联的需求被修改的次数",
+        "高reprel_changes(>=3)通常意味着: 需求定义不清晰/频繁调整/需求理解偏差",
+        "可结合defect分析: 需求变更频繁的领域缺陷密度是否更高"
+      ],
+      "sql_guardrails": [
+        "查询高需求变更缺陷: WHERE CAST(reprel_changes AS INTEGER) >= 3",
+        "按领域分析需求稳定性: SELECT solution_cluster, AVG(reprel_changes) GROUP BY solution_cluster"
+      ],
+      "aliases": [
+        "需求变更",
+        "reprel",
+        "requirement changes"
+      ]
+    },
+    {
+      "id": "br_testing_tool_type_classification",
+      "name": "测试工具类型(testing_tool_type)分类",
+      "description": "Manual Run的testing_tool_type字段区分不同测试方式，影响测试效率和质量分析。",
+      "trigger_terms": [
+        "testing_tool",
+        "测试工具",
+        "SIL",
+        "HIL",
+        "手动测试",
+        "自动测试",
+        "测试方式"
+      ],
+      "rules": [
+        "testing_tool_type存储在octane_manual_runs表的testing_tool_type列",
+        "常见类型: 手动测试(Manual), 自动化测试, SIL(软件在环), HIL(硬件在环)",
+        "不同工具类型的通过率和缺陷发现能力不同",
+        "分析测试效率时应区分工具类型"
+      ],
+      "sql_guardrails": [
+        "按工具类型分析通过率: SELECT testing_tool_type, status, COUNT(*) GROUP BY testing_tool_type, status",
+        "注意部分记录testing_tool_type可能为空"
+      ],
+      "aliases": [
+        "测试工具类型",
+        "tool type",
+        "SIL HIL"
+      ]
+    },
+    {
+      "id": "br_native_status_vs_status",
+      "name": "native_status vs status 区别",
+      "description": "Manual Run有两个状态字段：status是归一化后的状态，native_status是Octane原始状态值。",
+      "trigger_terms": [
+        "native_status",
+        "原始状态",
+        "Requires Attention"
+      ],
+      "rules": [
+        "status: 归一化后的执行状态(Passed/Failed/Blocked/Planned)",
+        "native_status: Octane原始状态值，可能包含更多细节如Requires Attention",
+        "Requires Attention在native_status中存在，归一化后归入Blocked",
+        "如需区分Requires Attention和Blocked，需用native_status"
+      ],
+      "sql_guardrails": [
+        "精确状态分析用native_status，汇总统计用status",
+        "查询Requires Attention: WHERE native_status LIKE '%Requires Attention%'"
+      ],
+      "aliases": [
+        "原生状态",
+        "状态区别",
+        "状态精度"
+      ]
+    },
+    {
+      "id": "br_raw_json_access_pattern",
+      "name": "raw_json列的使用场景",
+      "description": "优化表的raw_json列存储Octane原始完整JSON，可用于获取未展平的字段。",
+      "trigger_terms": [
+        "raw_json",
+        "原始数据",
+        "完整字段",
+        "未展平"
+      ],
+      "rules": [
+        "octane_defects.raw_json: 完整的Octane defect JSON对象",
+        "octane_manual_runs.raw_json: 完整的Octane manual_run JSON对象",
+        "当优化表列不包含所需字段时，可json_extract(raw_json, '$.field')获取",
+        "downloader下载的完整字段(defect 40个, manual_run 30个)都在raw_json中"
+      ],
+      "sql_guardrails": [
+        "示例: SELECT json_extract(raw_json, '$.ecu_to_modul_udf') FROM octane_defects",
+        "raw_json是TEXT类型，需json_extract处理",
+        "不要对raw_json做LIKE查询(性能差)，优先用展平列"
+      ],
+      "aliases": [
+        "原始JSON",
+        "raw json",
+        "完整数据"
+      ]
+    },
+    {
+      "id": "br_octane_db_flattening_logic",
+      "name": "Octane DB展平逻辑",
+      "description": "octane_db.py将Octane嵌套JSON展平为关系表的映射规则。",
+      "trigger_terms": [
+        "展平",
+        "flatten",
+        "octane_db",
+        "优化表",
+        "upsert"
+      ],
+      "rules": [
+        "嵌套对象{name:'xxx'} -> 提取name值 -> TEXT列",
+        "嵌套对象{full_name:'xxx'} -> 优先取full_name回退取name -> TEXT列",
+        "product_areas -> 提取top_aida(第一个data元素的name) + aida_english -> TEXT列",
+        "creation_time -> 计算test_week(ISO周) -> TEXT列",
+        "top_aida -> 映射fv(assign_fv_from_aida) -> TEXT列",
+        "fv -> 推导fvp(_get_fvp_from_fv) -> TEXT列",
+        "保留raw_json存储完整原始JSON"
+      ],
+      "sql_guardrails": [
+        "展平表和DataFrame清洗结果可能不同(两套独立逻辑)",
+        "优先用展平列查询，raw_json作为补充",
+        "octane_defects表的reporting_class是TEXT(非列表)，需LIKE匹配"
+      ],
+      "aliases": [
+        "数据库展平",
+        "flatten logic",
+        "DB映射"
+      ]
     }
   ]
 }

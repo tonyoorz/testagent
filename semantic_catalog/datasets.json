@@ -337,6 +337,305 @@
         "loader": "data_processor.load_defect_data",
         "default_file_pattern": "defect/2025_defect.json",
         "db_kind": "defects"
+      },
+      "optimized_table": {
+        "table_name": "octane_defects",
+        "description": "downloader下载原始JSON后由octane_db.py展平写入的优化查询表，Agent查询的主要目标",
+        "columns": [
+          {
+            "name": "defect_id",
+            "type": "TEXT",
+            "pk": true,
+            "meaning": "Octane缺陷唯一ID",
+            "octane_source": "id"
+          },
+          {
+            "name": "name",
+            "type": "TEXT",
+            "meaning": "缺陷标题/名称",
+            "octane_source": "name"
+          },
+          {
+            "name": "creation_time",
+            "type": "TEXT",
+            "meaning": "创建时间(ISO格式)",
+            "octane_source": "creation_time"
+          },
+          {
+            "name": "last_modified",
+            "type": "TEXT",
+            "meaning": "最后修改时间",
+            "octane_source": "last_modified"
+          },
+          {
+            "name": "team",
+            "type": "TEXT",
+            "meaning": "归属团队(Octane team字段)",
+            "octane_source": "team.name"
+          },
+          {
+            "name": "problem_finder_team",
+            "type": "TEXT",
+            "meaning": "发现问题的团队(problem_finder_team_udf)，与team不同：team是归属团队，problem_finder_team是实际发现问题的团队",
+            "octane_source": "problem_finder_team_udf.name"
+          },
+          {
+            "name": "program",
+            "type": "TEXT",
+            "meaning": "项目/程序(program字段)",
+            "octane_source": "program"
+          },
+          {
+            "name": "author",
+            "type": "TEXT",
+            "meaning": "创建者/提交者",
+            "octane_source": "author.name/full_name"
+          },
+          {
+            "name": "aida_businesskey",
+            "type": "TEXT",
+            "meaning": "AIDA业务键",
+            "octane_source": "aida_businesskey_udf"
+          },
+          {
+            "name": "aida_english",
+            "type": "TEXT",
+            "meaning": "AIDA英文名(从product_areas提取)",
+            "note": "octane_db.py extract_english"
+          },
+          {
+            "name": "top_aida",
+            "type": "TEXT",
+            "meaning": "主AIDA",
+            "note": "octane_db.py提取"
+          },
+          {
+            "name": "product_areas",
+            "type": "TEXT",
+            "meaning": "产品域/多值AIDA列表(JSON)",
+            "octane_source": "product_areas"
+          },
+          {
+            "name": "user_tags",
+            "type": "TEXT",
+            "meaning": "用户标签集合(含matrix-前缀)",
+            "octane_source": "user_tags"
+          },
+          {
+            "name": "phase",
+            "type": "TEXT",
+            "meaning": "Octane原始phase字段",
+            "octane_source": "phase.name"
+          },
+          {
+            "name": "severity",
+            "type": "TEXT",
+            "meaning": "Octane系统severity",
+            "octane_source": "severity.name"
+          },
+          {
+            "name": "problem_severity",
+            "type": "TEXT",
+            "meaning": "问题严重度",
+            "octane_source": "problem_severity_udf.name"
+          },
+          {
+            "name": "status_phase",
+            "type": "TEXT",
+            "meaning": "状态阶段(Agent查询状态的主要字段)",
+            "octane_source": "phase.name"
+          },
+          {
+            "name": "owner",
+            "type": "TEXT",
+            "meaning": "缺陷当前负责人",
+            "octane_source": "owner.name/full_name"
+          },
+          {
+            "name": "detected_by",
+            "type": "TEXT",
+            "meaning": "缺陷发现人/测试员",
+            "octane_source": "detected_by.name/full_name"
+          },
+          {
+            "name": "detected_in_release",
+            "type": "TEXT",
+            "meaning": "发现时Release阶段",
+            "octane_source": "detected_in_release.name"
+          },
+          {
+            "name": "software_version",
+            "type": "TEXT",
+            "meaning": "被测软件版本",
+            "octane_source": "software_version_udf"
+          },
+          {
+            "name": "vin",
+            "type": "TEXT",
+            "meaning": "车辆识别码",
+            "octane_source": "vin_udf"
+          },
+          {
+            "name": "assigned_ecu",
+            "type": "TEXT",
+            "meaning": "分配的ECU",
+            "octane_source": "assigned_ecu_udf.name"
+          },
+          {
+            "name": "lead_model",
+            "type": "TEXT",
+            "meaning": "引领车型",
+            "octane_source": "lead_model_udf.name"
+          },
+          {
+            "name": "ecu_no_of_changes",
+            "type": "INTEGER",
+            "meaning": "ECU变更/转移次数(ECU乒乓)",
+            "octane_source": "ecu_no_of_changes_udf"
+          },
+          {
+            "name": "parent_id",
+            "type": "TEXT",
+            "meaning": "父票/Master票ID",
+            "octane_source": "parent.id"
+          },
+          {
+            "name": "parent_child_type",
+            "type": "TEXT",
+            "meaning": "父子关系类型",
+            "octane_source": "parent_child_udf.name"
+          },
+          {
+            "name": "relation_to",
+            "type": "TEXT",
+            "meaning": "关联关系(含子票ID列表)",
+            "octane_source": "relation_to_udf"
+          },
+          {
+            "name": "test_week",
+            "type": "TEXT",
+            "meaning": "测试周(从creation_time计算)",
+            "note": "octane_db.py _calc_test_week"
+          },
+          {
+            "name": "risk_score",
+            "type": "REAL",
+            "meaning": "风险评分(后续计算填入,初始NULL)",
+            "note": "非下载时生成"
+          },
+          {
+            "name": "fv",
+            "type": "TEXT",
+            "meaning": "Feature Team(AIDA映射,非Octane原生)",
+            "note": "octane_db.py assign_fv_from_aida"
+          },
+          {
+            "name": "fvp",
+            "type": "TEXT",
+            "meaning": "FVP(从FV推导)"
+          },
+          {
+            "name": "tqr",
+            "type": "TEXT",
+            "meaning": "Ticket Quality Rating",
+            "octane_source": "tqr_udf"
+          },
+          {
+            "name": "blocking_reason",
+            "type": "TEXT",
+            "meaning": "阻塞原因",
+            "octane_source": "blocking_reason_udf.name"
+          },
+          {
+            "name": "error_occurrence",
+            "type": "TEXT",
+            "meaning": "复现概率/频次",
+            "octane_source": "error_occurrence_udf.name"
+          },
+          {
+            "name": "solution_responsible",
+            "type": "TEXT",
+            "meaning": "解决方案负责人",
+            "octane_source": "solution_responsible_udf.name"
+          },
+          {
+            "name": "solution_cluster",
+            "type": "TEXT",
+            "meaning": "Solution Cluster/开发域",
+            "octane_source": "solution_cluster_udf.name"
+          },
+          {
+            "name": "reporting_class",
+            "type": "TEXT",
+            "meaning": "报告分类(可能含多个值,需LIKE)",
+            "octane_source": "reporting_class_udf.data[].name"
+          },
+          {
+            "name": "function_responsible",
+            "type": "TEXT",
+            "meaning": "功能负责人",
+            "octane_source": "function_responsible1_udf.name"
+          },
+          {
+            "name": "involved_i_step",
+            "type": "TEXT",
+            "meaning": "涉及I-Step/里程碑",
+            "octane_source": "involved_i_step1_udf.name"
+          },
+          {
+            "name": "first_use_sop_of_function",
+            "type": "TEXT",
+            "meaning": "首次使用SOP/PU目标",
+            "octane_source": "first_use_sop_of_function_udf.name"
+          },
+          {
+            "name": "tolerated_count",
+            "type": "INTEGER",
+            "meaning": "容忍次数",
+            "octane_source": "tolerated_count_udf"
+          },
+          {
+            "name": "reprel_changes",
+            "type": "INTEGER",
+            "meaning": "需求变更次数(高值=需求不稳定)",
+            "octane_source": "reprel_changes_udf"
+          },
+          {
+            "name": "raw_json",
+            "type": "TEXT",
+            "meaning": "Octane原始完整JSON"
+          },
+          {
+            "name": "year",
+            "type": "INTEGER",
+            "meaning": "数据年份"
+          },
+          {
+            "name": "fetched_at",
+            "type": "TEXT",
+            "meaning": "数据下载时间戳"
+          }
+        ],
+        "columns_not_in_dataframe": [
+          "problem_finder_team",
+          "program",
+          "author",
+          "aida_businesskey",
+          "function_responsible",
+          "tolerated_count",
+          "reprel_changes",
+          "last_modified",
+          "owner",
+          "fvp",
+          "tqr"
+        ],
+        "notes": [
+          "优化表有44列DataFrame约25列差异在raw_json",
+          "problem_finder_team vs team vs detected_by三者不同",
+          "reporting_class是TEXT需LIKE匹配",
+          "risk_score初始NULL需后续计算",
+          "raw_json可json_parse获取未展平字段"
+        ]
       }
     },
     {
@@ -551,7 +850,221 @@
         "run_status中Requires Attention归入Blocked",
         "test_week从finished_udf计算，无有效时间戳的标记为Future Planning",
         "year字段从test_week或finished_udf推断"
-      ]
+      ],
+      "optimized_table": {
+        "table_name": "octane_manual_runs",
+        "description": "downloader下载Manual Run后octane_db.py展平写入的优化查询表",
+        "columns": [
+          {
+            "name": "mr_id",
+            "type": "TEXT",
+            "pk": true,
+            "meaning": "Manual Run唯一ID",
+            "octane_source": "id"
+          },
+          {
+            "name": "name",
+            "type": "TEXT",
+            "meaning": "Run名称",
+            "octane_source": "name"
+          },
+          {
+            "name": "test_name",
+            "type": "TEXT",
+            "meaning": "测试用例名称",
+            "octane_source": "test_name"
+          },
+          {
+            "name": "test_id",
+            "type": "TEXT",
+            "meaning": "关联测试用例ID",
+            "octane_source": "test.id"
+          },
+          {
+            "name": "creation_time",
+            "type": "TEXT",
+            "meaning": "创建时间",
+            "octane_source": "creation_time"
+          },
+          {
+            "name": "last_modified",
+            "type": "TEXT",
+            "meaning": "最后修改时间",
+            "octane_source": "last_modified"
+          },
+          {
+            "name": "started",
+            "type": "TEXT",
+            "meaning": "开始执行时间",
+            "octane_source": "started"
+          },
+          {
+            "name": "finished",
+            "type": "TEXT",
+            "meaning": "完成时间(finished_udf)",
+            "octane_source": "finished_udf"
+          },
+          {
+            "name": "defect_id",
+            "type": "TEXT",
+            "meaning": "关联的缺陷ID",
+            "octane_source": "defect.id"
+          },
+          {
+            "name": "run_team",
+            "type": "TEXT",
+            "meaning": "执行团队(run_team_000_udf)",
+            "octane_source": "run_team_000_udf.name"
+          },
+          {
+            "name": "program",
+            "type": "TEXT",
+            "meaning": "程序/项目",
+            "octane_source": "program"
+          },
+          {
+            "name": "author",
+            "type": "TEXT",
+            "meaning": "创建者",
+            "octane_source": "author.name/full_name"
+          },
+          {
+            "name": "run_by",
+            "type": "TEXT",
+            "meaning": "执行人/测试员",
+            "octane_source": "run_by.name/full_name"
+          },
+          {
+            "name": "status",
+            "type": "TEXT",
+            "meaning": "执行状态(Passed/Failed/Blocked/Planned)",
+            "octane_source": "status.name"
+          },
+          {
+            "name": "native_status",
+            "type": "TEXT",
+            "meaning": "Octane原生状态(含Requires Attention等)",
+            "octane_source": "native_status"
+          },
+          {
+            "name": "is_completed",
+            "type": "INTEGER",
+            "meaning": "是否已完成(0/1)",
+            "octane_source": "is_completed"
+          },
+          {
+            "name": "steps_num",
+            "type": "INTEGER",
+            "meaning": "测试步骤数",
+            "octane_source": "steps_num"
+          },
+          {
+            "name": "version_stamp",
+            "type": "INTEGER",
+            "meaning": "版本戳",
+            "octane_source": "version_stamp"
+          },
+          {
+            "name": "release",
+            "type": "TEXT",
+            "meaning": "Release/测试事件",
+            "octane_source": "release.name"
+          },
+          {
+            "name": "exec_model_series",
+            "type": "TEXT",
+            "meaning": "车型系列",
+            "octane_source": "exec_model_series_udf.name"
+          },
+          {
+            "name": "execution_sw_version",
+            "type": "TEXT",
+            "meaning": "执行时软件版本",
+            "octane_source": "execution_sw_version_udf"
+          },
+          {
+            "name": "test_version",
+            "type": "TEXT",
+            "meaning": "测试版本",
+            "octane_source": "test_version"
+          },
+          {
+            "name": "product_areas",
+            "type": "TEXT",
+            "meaning": "产品域/多值AIDA列表",
+            "octane_source": "product_areas"
+          },
+          {
+            "name": "domain",
+            "type": "TEXT",
+            "meaning": "域(domain_udf)",
+            "octane_source": "domain_udf.name"
+          },
+          {
+            "name": "test_phase",
+            "type": "TEXT",
+            "meaning": "测试阶段",
+            "octane_source": "test_phase"
+          },
+          {
+            "name": "testing_tool_type",
+            "type": "TEXT",
+            "meaning": "测试工具类型(手动/SIL/HIL等)",
+            "octane_source": "testing_tool_type"
+          },
+          {
+            "name": "taxonomies",
+            "type": "TEXT",
+            "meaning": "分类标签",
+            "octane_source": "taxonomies"
+          },
+          {
+            "name": "set_field",
+            "type": "TEXT",
+            "meaning": "SET/PU字段(set_udf)",
+            "octane_source": "set_udf.name"
+          },
+          {
+            "name": "target_ecu_conf",
+            "type": "TEXT",
+            "meaning": "目标ECU配置(项目分类关键依据)",
+            "octane_source": "target_ecu_conf_udf"
+          },
+          {
+            "name": "testplatformid",
+            "type": "TEXT",
+            "meaning": "测试平台ID",
+            "octane_source": "testplatformid_udf"
+          },
+          {
+            "name": "raw_json",
+            "type": "TEXT",
+            "meaning": "Octane原始完整JSON"
+          },
+          {
+            "name": "year",
+            "type": "INTEGER",
+            "meaning": "数据年份"
+          },
+          {
+            "name": "spec",
+            "type": "TEXT",
+            "meaning": "Release spec标识(如R-25-01)"
+          },
+          {
+            "name": "fetched_at",
+            "type": "TEXT",
+            "meaning": "数据下载时间戳"
+          }
+        ],
+        "notes": [
+          "native_status含Requires Attention等原始状态",
+          "testing_tool_type区分手动/SIL/HIL",
+          "target_ecu_conf是项目分类核心依据",
+          "defect_id关联测试run发现的缺陷",
+          "steps_num表示测试步骤数"
+        ]
+      }
     }
   ]
 }
