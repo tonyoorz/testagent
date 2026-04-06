@@ -353,6 +353,70 @@ def build_deterministic_query_hints(question: str, columns: Iterable[str]) -> Di
         or wants_aida_dist
     )
 
+    # === 数值约束提取器 ===
+    # 从用户自然语言中提取数值阈值条件
+    numeric_constraints: List[Dict[str, Any]] = []
+    _NUMERIC_PATTERNS: List[Dict[str, Any]] = [
+        # ECU 乒乓次数
+        {"field": "ecu_pingpong_count", "patterns": [
+            r"ecu[^\w]*乒乓[^\w]*(?:超过|>=?|大于|不少于|至少)\s*(\d+)",
+            r"ecu[^\w]*转移[^\w]*(?:超过|>=?|大于|不少于|至少)\s*(\d+)",
+            r"ecu[^\w]*transfer[^\w]*(?:more than|>=?|over|at least)\s*(\d+)",
+            r"乒乓[^\w]*(?:超过|>=?|大于|不少于|至少)\s*(\d+)\s*次",
+            r"转移[^\w]*(?:超过|>=?|大于|不少于|至少)\s*(\d+)\s*次",
+        ], "op": ">="},
+        # Domain 乒乓次数
+        {"field": "domain_pingpong_count", "patterns": [
+            r"domain[^\w]*乒乓[^\w]*(?:超过|>=?|大于|不少于|至少)\s*(\d+)",
+            r"域[^\w]*转移[^\w]*(?:超过|>=?|大于|不少于|至少)\s*(\d+)",
+        ], "op": ">="},
+        # 处理天数
+        {"field": "processing_days", "patterns": [
+            r"(?:处理|修复|解决|等待|开放).{0,4}(?:超过|>=?|大于|不少于|至少)\s*(\d+)\s*天",
+            r"(?:超过|>=?|大于|不少于|至少)\s*(\d+)\s*天(?:未|没|没有)(?:处理|修复|解决|关闭)",
+            r"long[^\w]*runner[^\w]*(?:more than|>=?|over|at least)\s*(\d+)",
+            r"open[^\w]*(?:more than|>=?|over|at least)\s*(\d+)\s*days",
+        ], "op": ">="},
+        # TopIssue 风险分
+        {"field": "topissue_risk_score", "patterns": [
+            r"(?:风险分|评分|risk score).{0,4}(?:超过|>=?|大于|不少于|至少)\s*(\d+)",
+            r"(?:超过|>=?|大于|不少于|至少)\s*(\d+)\s*分(?:的)?(?:风险|高分|topissue)",
+        ], "op": ">="},
+        # 子票数
+        {"field": "child_count", "patterns": [
+            r"子票.{0,4}(?:超过|>=?|大于|不少于|至少)\s*(\d+)",
+            r"child.{0,4}(?:more than|>=?|over|at least)\s*(\d+)",
+        ], "op": ">="},
+    ]
+    for constraint_def in _NUMERIC_PATTERNS:
+        for pattern in constraint_def["patterns"]:
+            match = re.search(pattern, ql)
+            if match:
+                try:
+                    value = int(match.group(1))
+                    if value > 0:
+                        numeric_constraints.append({
+                            "field": constraint_def["field"],
+                            "op": constraint_def["op"],
+                            "value": value,
+                        })
+                except (ValueError, IndexError):
+                    pass
+                break  # 每个字段只取第一个匹配
+
+    # 隐含阈值推断：如果提到 ECU乒乓/高风险 但没给具体数值，给默认
+    if any(k in ql for k in ["ecu乒乓", "ecu_pingpong", "ecus pingpong"]) and not any(c["field"] == "ecu_pingpong_count" for c in numeric_constraints):
+        numeric_constraints.append({"field": "ecu_pingpong_count", "op": ">=", "value": 1})
+    if any(k in ql for k in ["高风险票", "高风险缺陷", "topissue"]) and not any(c["field"] == "topissue_risk_score" for c in numeric_constraints):
+        numeric_constraints.append({"field": "topissue_risk_score", "op": ">=", "value": 60})
+    if any(k in ql for k in ["长期票", "长期未解决", "longrunner", "长周期"]) and not any(c["field"] == "processing_days" for c in numeric_constraints):
+        numeric_constraints.append({"field": "processing_days", "op": ">=", "value": 30})
+
+    # 区分测试人员查询意图：缺陷发现 vs 测试执行
+    wants_tester_defects = wants_tester and not wants_test_coverage and any(
+        k in ql for k in ["缺陷", "缺陷数", "bug", "issue", "发现", "提票", "提单", "报缺陷", "defect"]
+    )
+
     return {
         "entity_tokens": dedup_tokens[:6],
         "wants_distribution": wants_distribution,
@@ -369,5 +433,7 @@ def build_deterministic_query_hints(question: str, columns: Iterable[str]) -> Di
         "wants_test_coverage": wants_test_coverage,
         "wants_recommendation": wants_recommendation,
         "wants_analysis": wants_analysis,
+        "numeric_constraints": numeric_constraints,
+        "wants_tester_defects": wants_tester_defects,
         "columns": set(columns or []),
     }

@@ -53,7 +53,13 @@ class SemanticIntentDetector:
             "风险最高的项目是什么？", "哪些缺陷最紧急？",
             "risk analysis", "critical defects", "high priority issues",
             "severe problems", "top issues", "urgent defects",
-            "风险", "严重", "紧急", "critical", "high risk"
+            "风险", "严重", "紧急", "critical", "high risk",
+            "最近有啥问题", "哪个最严重", "危险", "topissue",
+            "高风险票", "showstopper有哪些", "有什么严重bug",
+            "最紧急的缺陷", "需要关注的缺陷", "关键问题",
+            "风险评估", "风险分析", "最危险的缺陷",
+            "blocking issues", "major defects", "showstoppers",
+            "有什么大问题", "严重的issue", "高危缺陷"
         ],
         'comparison': [
             "idcevo和mgu对比", "哪个项目缺陷多？", "vs比较",
@@ -61,7 +67,12 @@ class SemanticIntentDetector:
             "哪个ECU的问题最多？", "横向对比各项目",
             "compare projects", "versus", "vs", "difference between",
             "which project has more defects", "comparison analysis",
-            "对比", "比较", "vs", "差异", "哪个更多"
+            "对比", "比较", "vs", "差异", "哪个更多",
+            "哪个好", "哪个差", "差别", "差距",
+            "A和B的区别", "两者对比", "横向比较",
+            "项目间差异", "不同项目对比", "比较分析",
+            "compare", "benchmark", "relative",
+            "谁更多", "谁更好", "哪个项目最差"
         ],
         'trend': [
             "最近趋势如何？", "缺陷增长了吗？", "历史走势",
@@ -70,14 +81,26 @@ class SemanticIntentDetector:
             "缺陷流转历史", "状态变更记录", "defect status history",
             "trend analysis", "over time", "historical trend",
             "growth pattern", "weekly trend", "monthly change",
-            "趋势", "变化", "增长", "走势", "历史", "流转历史", "状态变更"
+            "趋势", "变化", "增长", "走势", "历史", "流转历史", "状态变更",
+            "变化趋势", "增长趋势", "趋势分析", "历史数据",
+            "按周趋势", "按月趋势", "每周变化",
+            "上升还是下降", "趋势好不好", "走势怎么样",
+            "近几周的变化", "缺陷趋势走向",
+            "evolution", "progress", "trajectory",
+            "过去几周", "近期走势", "周环比"
         ],
         'summary': [
             "总结一下", "当前整体情况", "数据概览",
             "总体分析", "给我一个概况", "整体统计",
             "summary", "overview", "overall status", "general picture",
             "high level summary", "total count", "statistics",
-            "总结", "概览", "整体", "概况", "统计"
+            "总结", "概览", "整体", "概况", "统计",
+            "整体情况", "当前状态", "数据总览",
+            "怎么样", "好不好", "啥情况",
+            "全部数据", "总共有多少", "整体看看",
+            "大面上怎么样", "宏观情况", "综合来看",
+            "big picture", "at a glance", "in general",
+            "一句话总结", "目前怎么样", "现在什么情况"
         ],
         'quality': [
             "缺陷质量如何？", "平均处理时间？", "转移次数分析",
@@ -85,7 +108,13 @@ class SemanticIntentDetector:
             "缺陷处理效率", "响应时间分析",
             "quality analysis", "defect age", "transfer count",
             "processing time", "complexity", "efficiency",
-            "质量", "年龄", "转移", "效率", "处理时间"
+            "质量", "年龄", "转移", "效率", "处理时间",
+            "处理效率", "响应时间", "问题质量", "处理慢",
+            "longrunner", "长期票", "长周期问题",
+            "处理周期", "解决速度", "修复速度",
+            "效率怎么样", "处理得快不快",
+            "long running", "resolution time", "turnaround",
+            "积压情况", "处理瓶颈", "效率分析"
         ],
         'test': [
             "测试覆盖率如何？", "通过率怎么样？", "失败测试分析",
@@ -94,40 +123,65 @@ class SemanticIntentDetector:
             "测试用例执行情况", "testcase execution status", "test cases execution",
             "test coverage", "pass rate", "failure analysis",
             "test execution", "test results", "testing trend",
-            "测试", "覆盖率", "通过率", "失败", "执行", "测试用例", "testcase", "test cases"
+            "测试", "覆盖率", "通过率", "失败", "执行", "测试用例", "testcase", "test cases",
+            "测试结果", "测试情况", "用例执行", "通过率怎么样",
+            "test run", "manual run", "manual runs",
+            "执行状态", "run status", "test results",
+            "测试通过多少", "失败率", "blocked测试",
+            "测试进度", "测试完成情况", "用例运行情况",
+            "test progress", "execution summary",
+            "跑了多少测试", "测试报告"
         ],
         'dashboard': [
             "看板指标", "KPI数据", "关键指标",
             "业务图表", "汇总数据", "核心指标",
             "dashboard metrics", "kpi summary", "key indicators",
             "business charts", "overview metrics",
-            "看板", "指标", "KPI", "图表", "汇总"
+            "看板", "指标", "KPI", "图表", "汇总",
+            "关键数据", "核心指标", "dashboard",
+            "绩效指标", "度量", "metrics",
+            "主要数据", "数据面板", "KPI看板"
         ],
         'matrix': [
             "矩阵分布", "1A缺陷有多少？", "矩阵热点分析",
             "哪些矩阵区域问题多？", "严重性和优先级矩阵",
             "matrix distribution", "1A defects", "matrix hotspots",
             "severity priority matrix", "quadrant analysis",
-            "矩阵", "1A", "1B", "热点", "分布"
+            "矩阵", "1A", "1B", "热点", "分布",
+            "严重度分布", "象限分析", "矩阵图",
+            "2A缺陷", "3B有多少", "矩阵情况",
+            "matrix view", "risk matrix",
+            "哪个象限多", "矩阵气泡图", "matrix bubble",
+            "1C", "2B", "3A", "4E"
         ],
         'cross': [
             "缺陷和测试关联", "综合风险分析", "缺陷测试对比",
             "关联分析", "cross analysis", "defect test correlation",
-            "关联", "综合", "交叉", "对比"
+            "关联", "综合", "交叉", "对比",
+            "综合分析", "交叉对比", "多维度分析",
+            "correlation", "cross reference",
+            "测试和缺陷关系", "联动分析",
+            "综合来看", "全方面分析"
         ],
         'tester': [
             "测试人员效率", "谁发现最多缺陷？", "tester分析",
             "测试团队表现", "个人产出分析",
             "tester performance", "who found most defects",
             "testing team analysis", "individual productivity",
-            "测试人员", "效率", "发现", "产出", "团队"
+            "测试人员", "效率", "发现", "产出", "团队",
+            "谁提的bug多", "哪个测试人员最活跃",
+            "提票人分析", "谁发现的缺陷",
+            "tester ranking", "top testers",
+            "发现人", "reporter分析", "detected by",
+            "谁的缺陷最多", "测试贡献",
+            "人员产出", "个人分析"
         ]
     }
 
     # 置信度阈值
-    CONFIDENCE_HIGH = 0.6
-    CONFIDENCE_LOW = 0.4
-    CONFIDENCE_CLARIFICATION = 0.25
+    CONFIDENCE_HIGH = 0.5
+    CONFIDENCE_LOW = 0.3
+    CONFIDENCE_CLARIFICATION = 0.2
 
     def __init__(self):
         self._vectorizer: Optional[TfidfVectorizer] = None

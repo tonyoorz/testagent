@@ -194,7 +194,16 @@
         "tester",
         "domain",
         "matrix",
-        "software_version"
+        "software_version",
+        "ecu_pingpong_count",
+        "domain_pingpong_count",
+        "topissue_risk_score",
+        "topissue_recommend_reason",
+        "topissue_display",
+        "classification",
+        "complexity",
+        "child_count",
+        "severity_group"
       ],
       "can_answer": [
         "不同时间/项目/AIDA/FV下缺陷数量趋势如何",

@@ -700,6 +700,62 @@ def build_deterministic_sql(
                 like_group = " OR ".join([f"LOWER(CAST({c} AS TEXT)) LIKE LOWER('%{safe_tok}%')" for c in searchable])
                 where_parts.append(f"({like_group})")
 
+    # === 数值约束注入 ===
+    # 从用户查询中提取的数值阈值（ECU乒乓次数、风险分、处理天数等）
+    numeric_constraints = hints.get("numeric_constraints") or []
+    if numeric_constraints:
+        for constraint in numeric_constraints:
+            field = str(constraint.get("field") or "").strip()
+            op = str(constraint.get("op") or ">=").strip()
+            value = constraint.get("value")
+            if not field or value is None:
+                continue
+            # 映射字段名到实际表列
+            _field_to_col = {
+                "ecu_pingpong_count": next((c for c in ["ecu_pingpong_count", "ECU Pingpong"] if c in cols), ""),
+                "domain_pingpong_count": next((c for c in ["domain_pingpong_count"] if c in cols), ""),
+                "topissue_risk_score": next((c for c in ["topissue_risk_score"] if c in cols), ""),
+                "child_count": next((c for c in ["child_count"] if c in cols), ""),
+                "processing_days": next((c for c in ["processing_days"] if c in cols), ""),
+            }
+            col_name = _field_to_col.get(field, "")
+            if col_name:
+                where_parts.append(f"CAST({col_name} AS INTEGER) {op} {int(value)}")
+
+    # === 缺陷表测试人员聚合（短板2修复） ===
+    # 当用户问“哪个测试人员发现最多缺陷”时，在缺陷表上聚合
+    if hints.get("wants_tester_defects") and table_name == "octane_defects":
+        tester_col = next((c for c in ["tester", "detected_by", "reporter", "found_by", "author_name", "owner"] if c in cols), "")
+        severity_col = next((c for c in ["severity_group", "severity", "severity_level"] if c in cols), "")
+        if tester_col:
+            tester_expr = _coalesced_text_expr(tester_col)
+            if severity_col:
+                severity_expr = _coalesced_text_expr(severity_col)
+                severe_expr = (
+                    f"SUM(CASE WHEN LOWER(CAST({severity_col} AS TEXT)) LIKE '%critical%' "
+                    f"OR LOWER(CAST({severity_col} AS TEXT)) LIKE '%严重%" "
+                    f"THEN 1 ELSE 0 END) AS severe_count"
+                )
+                return (
+                    f"SELECT {tester_expr} AS tester, "
+                    "COUNT(*) AS defect_count, "
+                    f"{severe_expr}, "
+                    f"ROUND(100.0 * {severe_expr} / NULLIF(COUNT(*), 0), 2) AS severe_rate "
+                    f'FROM "{table_name}" '
+                    f"{where_sql} "
+                    "GROUP BY 1 "
+                    "ORDER BY defect_count DESC "
+                    "LIMIT 30"
+                )
+            return (
+                f"SELECT {tester_expr} AS tester, COUNT(*) AS defect_count "
+                f'FROM "{table_name}" '
+                f"{where_sql} "
+                "GROUP BY 1 "
+                "ORDER BY defect_count DESC "
+                "LIMIT 30"
+            )
+
     where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
     if table_name == "octane_defect_histories" and history_question:

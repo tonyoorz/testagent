@@ -1,0 +1,222 @@
+{
+  "schema_version": "1.0",
+  "concepts": [
+    {
+      "id": "matrix_severity_levels",
+      "name": "Matrix 严重度等级",
+      "description": "缺陷严重性矩阵的完整等级体系，从 tags 字段提取 matrix- 前缀标签后生成 matrix_display。",
+      "source_file": "defect_matrix.py",
+      "levels": [
+        {"code": "1A", "score": 30, "category": "High Severity", "row": 1},
+        {"code": "1B", "score": 28, "category": "High Severity", "row": 1},
+        {"code": "1C", "score": 26, "category": "High Severity", "row": 1},
+        {"code": "1D", "score": 24, "category": "High Severity", "row": 1},
+        {"code": "1E", "score": 22, "category": "High Severity", "row": 1},
+        {"code": "2A", "score": 20, "category": "High Severity", "row": 2},
+        {"code": "2B", "score": 18, "category": "High Severity", "row": 2},
+        {"code": "3A", "score": 16, "category": "High Severity", "row": 2},
+        {"code": "2C", "score": 14, "category": "Medium Severity", "row": 2},
+        {"code": "2D", "score": 14, "category": "Medium Severity", "row": 2},
+        {"code": "2E", "score": 12, "category": "Medium Severity", "row": 2},
+        {"code": "3B", "score": 10, "category": "Medium Severity", "row": 3},
+        {"code": "3C", "score": 8, "category": "Medium Severity", "row": 3},
+        {"code": "3D", "score": 6, "category": "Medium Severity", "row": 3},
+        {"code": "4A", "score": 4, "category": "Medium Severity", "row": 4},
+        {"code": "3E", "score": 2, "category": "Low Severity", "row": 3},
+        {"code": "4B", "score": 2, "category": "Low Severity", "row": 4},
+        {"code": "4C", "score": 2, "category": "Low Severity", "row": 4},
+        {"code": "4D", "score": 2, "category": "Low Severity", "row": 4},
+        {"code": "4E", "score": 2, "category": "Low Severity", "row": 4}
+      ],
+      "severe_matrices": ["1A", "1B", "1C", "1D", "1E", "2A", "2B", "2C", "3A"],
+      "scoring_rule": "线性递减：从1A=30分到3E/4x=2分",
+      "aliases": ["矩阵等级", "matrix level", "severity matrix", "严重度矩阵"]
+    },
+    {
+      "id": "ecu_pingpong_effect",
+      "name": "ECU 乒乓效应",
+      "description": "缺陷在不同 ECU 之间来回转派的现象，反映跨系统协调复杂性。ECU 转移次数越多，说明问题涉及的系统越多，解决难度越大。",
+      "source_file": "data_processor.py",
+      "field": "ecu_pingpong_count",
+      "thresholds": [
+        {"condition": ">=5 次", "score": 30, "level": "Extremely High", "meaning": "跨5+个ECU流转，极度复杂的协调问题"},
+        {"condition": ">=3 次", "score": 24, "level": "High", "meaning": "跨3+个ECU流转，需要多团队协作"},
+        {"condition": ">=1 次", "score": 20, "level": "Medium", "meaning": "至少跨1个ECU，有协调需求"},
+        {"condition": "0 次", "score": 0, "level": "None", "meaning": "未发生ECU转移"}
+      ],
+      "business_meaning": "ECU乒乓效应是TopIssue风险评分的8个维度之一（权重30分）。高频乒乓通常意味着：1）问题根因定位困难 2）责任归属不清晰 3）需要升级管理关注。",
+      "aliases": ["ECU乒乓", "ECU转移", "ECU transfer", "ECU bounce", "ecu_pingpong", "跨ECU"]
+    },
+    {
+      "id": "domain_pingpong_effect",
+      "name": "Domain 乒乓效应",
+      "description": "缺陷在不同 Domain（开发团队/解决方案集群）之间来回转派，反映跨团队协调复杂性。",
+      "source_file": "data_processor.py",
+      "field": "domain_pingpong_count",
+      "thresholds": [
+        {"condition": ">=5 次", "score": 20, "level": "Extremely High"},
+        {"condition": ">=3 次", "score": 14, "level": "High"},
+        {"condition": ">=1 次", "score": 10, "level": "Medium"},
+        {"condition": "0 次", "score": 0, "level": "None"}
+      ],
+      "aliases": ["Domain乒乓", "Domain转移", "Domain transfer", "domain_pingpong", "跨团队"]
+    },
+    {
+      "id": "defect_status_flow",
+      "name": "缺陷状态流转",
+      "description": "缺陷从创建到关闭的完整生命周期状态流转。",
+      "source_file": "defect_explore.py, data_processor.py",
+      "statuses": [
+        {"code": "01", "name": "New", "description": "新建缺陷，尚未分配"},
+        {"code": "02", "name": "Investigation", "description": "调查中，正在分析问题"},
+        {"code": "03", "name": "In Progress", "description": "处理中，开发团队正在修复"},
+        {"code": "04", "name": "Waiting for Info", "description": "等待补充信息"},
+        {"code": "05", "name": "Deferred", "description": "推迟处理"},
+        {"code": "06", "name": "Resolved", "description": "已解决，等待验证"},
+        {"code": "07", "name": "Closed", "description": "已关闭"},
+        {"code": "08", "name": "Verified", "description": "已验证确认"}
+      ],
+      "resolved_statuses": ["06-Resolved", "07-Closed", "08-Verified"],
+      "field_priority": ["status", "status_phase", "phase", "status.name", "phase.name"],
+      "aliases": ["状态流转", "缺陷生命周期", "defect lifecycle", "status flow", "状态变更"]
+    },
+    {
+      "id": "topissue_recommendation_template",
+      "name": "TopIssue 推荐理由模板",
+      "description": "基于4个核心评估维度生成推荐理由的模板，用于解释为什么某个缺陷被评为高风险。",
+      "source_file": "risk assessment/TopIssue_Risk_Scoring_Algorithm.md",
+      "dimensions": [
+        {
+          "name": "SEVERITY",
+          "dimensions_used": ["Matrix Severity", "Classification Labels"],
+          "templates": {
+            "critical": "Critical severity issue - Matrix Level {matrix_level} ({category}, {score}pts)",
+            "blocking": "Blocking issue - {classification} ({score}pts)",
+            "high": "High severity issue - Matrix Level {matrix_level} ({score}pts)"
+          },
+          "example": "SEVERITY: Critical severity issue - Matrix Level Matrix-1A (High Severity, 30pts); Showstopper Confirmed (30pts)"
+        },
+        {
+          "name": "HIGH RUNNER",
+          "dimensions_used": ["ECU Transfer Count", "Domain Transfer Count"],
+          "templates": {
+            "extremely_high": "Extreme system transfer complexity - ECU Transfer {count} times ({score}pts), Domain Transfer {domain_count} times ({domain_score}pts)",
+            "high": "System transfer complexity detected - ECU Transfer {count} times ({score}pts)",
+            "medium": "Moderate transfer activity - ECU Transfer {count} times ({score}pts)"
+          },
+          "example": "HIGH RUNNER: System transfer complexity detected - ECU Transfer 9 times (30pts)"
+        },
+        {
+          "name": "COMPLEXITY",
+          "dimensions_used": ["Parent Complexity", "Child Complexity"],
+          "templates": {
+            "extremely_high": "Extremely high structural complexity - Master has {child_count} children ({score}pts)",
+            "high": "High structural complexity - {child_count} related tickets ({score}pts)",
+            "medium": "Moderate complexity - {child_count} related ticket(s) ({score}pts)"
+          },
+          "example": "COMPLEXITY: Extremely high structural complexity - Master has 5 children (30pts)"
+        },
+        {
+          "name": "LONG RUNNER",
+          "dimensions_used": ["Processing Cycle", "Shift PU Status"],
+          "templates": {
+            "long_cycle": "Long-term processing - Open for {days} days ({score}pts)",
+            "deferred": "Deferred fix identified - Shift PU status active ({score}pts)",
+            "medium": "Extended timeline - Open for {days} days ({score}pts)"
+          },
+          "example": "LONG RUNNER: Long-term processing - Open for 30+ days (20pts)"
+        }
+      ],
+      "risk_level_templates": {
+        "extremely_high": "🔴 EXTREMELY HIGH RISK: Immediate attention required |",
+        "high": "🟠 HIGH RISK: Urgent handling needed |",
+        "medium": "🟡 MEDIUM RISK (TopIssue): Priority handling recommended |",
+        "low": "🟢 LOW RISK: Normal processing appropriate |",
+        "minimal": "⚪ MINIMAL RISK: Routine processing appropriate |"
+      },
+      "aliases": ["推荐理由", "recommendation", "风险评估理由", "risk reason"]
+    },
+    {
+      "id": "risk_level_thresholds",
+      "name": "风险等级阈值",
+      "description": "TopIssue 风险评分的风险等级分层阈值，总分200分制。",
+      "source_file": "risk assessment/TopIssue_Risk_Scoring_Algorithm.md",
+      "thresholds": [
+        {"level": "Extremely High", "min_score": 140, "max_score": 200, "emoji": "🔴", "action": "Critical issues requiring immediate attention"},
+        {"level": "High Risk", "min_score": 100, "max_score": 139, "emoji": "🟠", "action": "Serious issues requiring urgent handling"},
+        {"level": "Medium Risk (TopIssue)", "min_score": 60, "max_score": 99, "emoji": "🟡", "action": "Important issues requiring priority handling"},
+        {"level": "Low Risk", "min_score": 30, "max_score": 59, "emoji": "🟢", "action": "General issues requiring normal handling"},
+        {"level": "No Risk", "min_score": 0, "max_score": 29, "emoji": "⚪", "action": "Minor issues with standard processing"}
+      ],
+      "topissue_threshold": 60,
+      "aliases": ["风险阈值", "risk threshold", "风险分级", "risk level"]
+    },
+    {
+      "id": "topissue_scoring_dimensions",
+      "name": "TopIssue 8维评分体系",
+      "description": "TopIssue 风险评分的8个评估维度及其权重，总分200分。",
+      "source_file": "risk assessment/TopIssue_Risk_Scoring_Algorithm.md",
+      "dimensions": [
+        {
+          "id": 1,
+          "name": "Matrix Severity",
+          "weight": 30,
+          "scoring": "linear",
+          "description": "从 tags 中提取 matrix- 前缀，线性递减打分：1A=30, 1B=28, ..., 4E=2"
+        },
+        {
+          "id": 2,
+          "name": "Classification Labels",
+          "weight": 30,
+          "scoring": "threshold",
+          "description": "Showstopper_Confirmed=30, Preventing Maturity Grade ConDrive=30, Showstopper_Candidate=20, Obstructing Maturity Grade ConDrive=10, Homologation L-labelled=10, Other=0"
+        },
+        {
+          "id": 3,
+          "name": "ECU Transfer Count",
+          "weight": 30,
+          "scoring": "threshold",
+          "description": ">=5次=30, >=3次=24, >=1次=20, 0=0"
+        },
+        {
+          "id": 4,
+          "name": "Domain Transfer Count",
+          "weight": 20,
+          "scoring": "threshold",
+          "description": ">=5次=20, >=3次=14, >=1次=10, 0=0"
+        },
+        {
+          "id": 5,
+          "name": "Parent Complexity",
+          "weight": 30,
+          "scoring": "threshold",
+          "description": ">=5子票=30, >=3子票=20, >=1子票=10, 0=0"
+        },
+        {
+          "id": 6,
+          "name": "Child Complexity",
+          "weight": 30,
+          "scoring": "threshold",
+          "description": "Master的子票数>=5=30, >=3=20, >=1=10, 0=0"
+        },
+        {
+          "id": 7,
+          "name": "Processing Cycle",
+          "weight": 20,
+          "scoring": "threshold",
+          "description": ">=30天=20, >=15天=14, >=7天=6, <7天=0"
+        },
+        {
+          "id": 8,
+          "name": "Shift PU Status",
+          "weight": 10,
+          "scoring": "binary",
+          "description": "有值=10（推迟修复标识），无值=0"
+        }
+      ],
+      "total_max_score": 200,
+      "formula": "5×30 + 2×20 + 1×10 = 200",
+      "inheritance": "Child票会额外计算Master票的风险分，取两者中更高值"
+    }
+  ]
+}
