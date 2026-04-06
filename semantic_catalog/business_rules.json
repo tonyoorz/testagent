@@ -96,10 +96,12 @@
         "非线性"
       ],
       "rules": [
-        "矩阵维度使用指数衰减，高危矩阵分值差距更大",
-        "处理时长对新票和长期票采用双峰策略",
-        "子票复杂度采用对数增长而非线性累加",
-        "综合多个维度后产出 topissue_risk_score 与 topissue_recommend_reason"
+        "矩阵维度使用指数衰减：score = 30 * exp(-0.25 * order)，高危矩阵分值差距更大",
+        "处理时长对新票和长期票采用双峰策略：新票(0-3天)高分→低谷(4-20天)低分→长期(>21天)再升高",
+        "子票复杂度采用对数增长：score = min(30, 10 * ln(count+1) * 2.5)，边际递减",
+        "智能组合：高分项(>15)算术平均×1.2加强 + 低分项(≤15)几何平均×0.8抑制",
+        "非线性交互调整：严重+长期+15分, 跨ECU+跨Domain+10分, 严重+阻塞+15分",
+        "综合产出 topissue_risk_score 与 topissue_recommend_reason"
       ],
       "sql_guardrails": [
         "若数据库已有 topissue_risk_score，优先直接使用，不要二次拍脑袋重算",
@@ -367,7 +369,9 @@
       "rules": [
         "状态字段优先级: status > status_phase > phase > status.name > phase.name",
         "若字段值为对象，优先取 name，再取 full_name",
-        "状态比较前需转字符串并清理空值"
+        "状态比较前需转字符串并清理空值",
+        "状态值可能带_严重度后缀（如06-Concluded_Medium），需用_normalize_phase_text剥离后缀再比较",
+        "已解决状态前缀: 06-, 09-, 10-（非旧的06-Resolved/07-Closed/08-Verified）"
       ],
       "sql_guardrails": [
         "查询状态时优先使用 status_phase/status，不要假设只有单一列名",
@@ -618,22 +622,24 @@
         "risk assessment"
       ],
       "rules": [
-        "维度1 - Matrix Severity (30分): 1A=30, 1B=28, 1C=26, 1D=24, 1E=22, 2A=20, 2B=18, 3A=16, 2C=14, 2D=14, 2E=12, 3B=10, 3C=8, 3D=6, 4A=4, 其余=2",
+        "维度1 - Matrix Severity (30分): 指数衰减 score = 30 * exp(-0.25 * order)。order: 1A=0→30, 1B=1→24, 1C=2→18, 1D=3→14, 1E=4→11, 2A=5→9, 2B=6→7, 3A=7→5, 2D=8→4, 其余≤3分",
         "维度2 - Classification Labels (30分): Showstopper_Confirmed=30, Preventing Maturity=30, Showstopper_Candidate=20, Obstructing Maturity=10, Homologation L=10, Other=0",
         "维度3 - ECU Transfer Count (30分): >=5次=30, >=3次=24, >=1次=20, 0=0",
         "维度4 - Domain Transfer Count (20分): >=5次=20, >=3次=14, >=1次=10, 0=0",
-        "维度5 - Parent Complexity (30分): >=5子票=30, >=3子票=20, >=1子票=10, 0=0",
-        "维度6 - Child Complexity (30分): Master子票>=5=30, >=3=20, >=1=10, 0=0",
-        "维度7 - Processing Cycle (20分): >=30天=20, >=15天=14, >=7天=6, <7天=0",
+        "维度5 - Parent Complexity (30分): 对数增长 min(30, round(10*ln(count+1)*2.5))。1子票≈17分, 3子票≈35→cap30分",
+        "维度6 - Child Complexity (30分): 对数增长，同Parent公式",
+        "维度7 - Processing Cycle (20分): 双峰分布。0-3天新票=18-24分, 4-20天低谷=5-15分, 21-30天上升=15-20分, >30天长期=20-25分",
         "维度8 - Shift PU Status (10分): 有值=10(推迟修复), 无值=0",
-        "总分 = 8个维度分数之和，满分200",
+        "智能组合算法: 高分项(>15分)算术平均×1.2 + 低分项(≤15分)几何平均×0.8",
+        "非线性调整: (1)严重+长期未决+15分 (2)跨ECU+跨Domain+10分 (3)严重+阻塞+15分 (4)>30天每10天额外+5分上限30 (5)>10子票额外+2.5/个上限25",
         "风险等级: >=140极高, >=100高, >=60中(TopIssue), >=30低, <30无风险",
         "Child票继承Master票的更高风险分"
       ],
       "sql_guardrails": [
         "若表中已有 topissue_risk_score 列，直接使用不要重算",
         "TopIssue 查询: WHERE CAST(topissue_risk_score AS INTEGER) >= 60",
-        "高风险排序: ORDER BY CAST(topissue_risk_score AS INTEGER) DESC"
+        "高风险排序: ORDER BY CAST(topissue_risk_score AS INTEGER) DESC",
+        "风险分已包含非线性调整，不可简单相加8维度分数来还原"
       ],
       "aliases": [
         "风险评分公式",
@@ -661,18 +667,18 @@
         "03-In Progress: 处理中，开发修复",
         "04-Waiting for Info: 等待补充信息",
         "05-Deferred: 推迟处理",
-        "06-Resolved: 已解决，等待验证",
-        "07-Closed: 已关闭",
-        "08-Verified: 已验证确认",
-        "已解决状态: 06-Resolved, 07-Closed, 08-Verified",
+        "06-Concluded: 已结案（可能含_严重度后缀如06-Concluded_Medium）",
+        "09-Concluded without action: 无动作结案（可能含_严重度后缀）",
+        "10-Closed: 已关闭",
+        "已解决状态: 06-Concluded, 09-Concluded without action, 10-Closed",
         "活跃状态: 01~05",
-        "默认查看状态: 01,02,03,04,05,08"
+        "状态查询注意: 状态值可能带_后缀（如06-Concluded_Medium），需用前缀匹配 LIKE '06%' 或 starts-with"
       ],
       "sql_guardrails": [
         "状态字段优先级: status > status_phase > phase > status.name > phase.name",
-        "已解决率: WHERE status_phase IN ('06-Resolved','07-Closed','08-Verified')",
+        "已解决率: WHERE status_phase LIKE '06%' OR status_phase LIKE '09%' OR status_phase LIKE '10%'",
         "活跃缺陷: WHERE status_phase LIKE '0[1-5]%'",
-        "不要直接用字符串比较状态，用前缀匹配或 IN 列表"
+        "状态字段可能带_严重度后缀，不可用等值比较，必须前缀匹配"
       ],
       "aliases": [
         "状态流",
@@ -738,6 +744,151 @@
         "项目映射",
         "project mapping",
         "车系匹配"
+      ]
+    },
+    {
+      "id": "br_project_classification_logic",
+      "name": "项目分类三步策略",
+      "description": "project字段不是Octane原始字段，而是通过VIN/MR映射+target_ecu_conf_udf正则三步分类得到的。测试数据和缺陷数据使用不同的分类策略。",
+      "trigger_terms": [
+        "project",
+        "项目分类",
+        "IDCevo",
+        "IDC",
+        "MGU",
+        "App",
+        "RSU",
+        "车系",
+        "target_ecu"
+      ],
+      "rules": [
+        "缺陷数据: project由VIN前缀或MR(车型代号)映射，tproject是Octane原始字段，project是映射后统一字段",
+        "测试数据三步分类:",
+        "  第一步: name含RSU → RSU项目",
+        "  第二步: target_ecu_conf_udf判断: My BMW→App, IDCEVO→IDCevo, HU-MGU_02_L→MGU, HU-MGU_02_A→IDC",
+        "  第三步: name正则: IOS/Android/HarmonyOS→App, IDC23_MINI/BMW→IDC, IDCEVO→IDCevo, MGU18/21/22→MGU",
+        "特殊覆盖: top_aida含[Sys_RSU] → 强制归为RSU",
+        "MGU子项目(MGU18/21/22)统一归为MGU",
+        "最终未分类标记为Unknown"
+      ],
+      "sql_guardrails": [
+        "项目过滤优先: WHERE project = 'xxx'，回退: WHERE tproject = 'xxx'",
+        "不要假设 project 和 tproject 值相同",
+        "大小写不敏感比较: LOWER(project) = LOWER('G01')"
+      ],
+      "aliases": [
+        "项目分类",
+        "project mapping",
+        "车系分类",
+        "target_ecu分类"
+      ]
+    },
+    {
+      "id": "br_pu_filling_strategy",
+      "name": "PU字段5级填充策略",
+      "description": "PU(first_use_sop_of_function_udf)字段经常为空，data_processor使用5级优先级策略智能填充缺失值。",
+      "trigger_terms": [
+        "PU",
+        "pu",
+        "填充",
+        "filling",
+        "SOP",
+        "first_use"
+      ],
+      "rules": [
+        "优先级1: Shift_PU字段直接填充（推迟修复的PU目标）",
+        "优先级2: 同VIN的已知PU映射",
+        "优先级3: 同项目+同测试周的最常见PU（众数）",
+        "优先级4: 同项目的最常见PU（众数）",
+        "优先级5: 全局最常见PU（众数）",
+        "pu_fill_source字段记录了填充来源: Shift_PU / VIN_mapping / project_time / project_default / global_default"
+      ],
+      "sql_guardrails": [
+        "PU值可能是填充的，分析时需注意pu_fill_source",
+        "高优先级填充（Shift_PU/VIN）更可靠，低优先级（全局默认）仅为兜底"
+      ],
+      "aliases": [
+        "PU填充",
+        "PU补全",
+        "PU mapping"
+      ]
+    },
+    {
+      "id": "br_fv_mapping_source",
+      "name": "FV(Feature Team)映射来源",
+      "description": "FV不是Octane原生字段，而是从Excel映射文件(aida/top_aida_project_fv_mapping.xlsx)按top_aida匹配得到的，支持多sheet合并和模糊匹配补全。",
+      "trigger_terms": [
+        "FV",
+        "feature team",
+        "fv",
+        "功能负责人",
+        "模块负责人"
+      ],
+      "rules": [
+        "FV字段来源: aida/top_aida_project_fv_mapping.xlsx，按top_aida映射",
+        "Excel包含多个sheet: App/RSU/IDCevo/IDC/MGU，按top_aida匹配对应sheet",
+        "多sheet的FV值合并取第一个非空值（bfill策略）",
+        "智能FV补全: 对Unknown记录使用模糊匹配（top_aida相似度）+ aida_english格式映射",
+        "最终仍为Unknown的记录表示映射文件中无对应top_aida"
+      ],
+      "sql_guardrails": [
+        "FV=Unknown的记录不代表没有负责人，只是映射文件未覆盖",
+        "分析FV分布时应提示Unknown占比，避免得出错误结论",
+        "FV值依赖top_aida字段，top_aida为空的记录FV也必为Unknown"
+      ],
+      "aliases": [
+        "FV映射",
+        "feature team mapping",
+        "功能负责人映射"
+      ]
+    },
+    {
+      "id": "br_aida_english_extraction",
+      "name": "aida_english提取逻辑",
+      "description": "aida_english是从top_aida字段提取英文部分得到的统一口径字段，用于跨项目对比分析。",
+      "trigger_terms": [
+        "aida_english",
+        "AIDA英文",
+        "extract_english"
+      ],
+      "rules": [
+        "aida_english = extract_english(top_aida)",
+        "extract_english逻辑: 只保留英文字母和空格，去掉数字/编号/特殊字符",
+        "用于统一不同格式的AIDA命名，支持跨项目对比",
+        "值为空或Unknown的记录表示top_aida不含英文部分"
+      ],
+      "sql_guardrails": [
+        "aida_english可能为空，分析时需过滤空值",
+        "不要假设aida_english和top_aida一一对应，多个top_aida可能映射到同一aida_english"
+      ],
+      "aliases": [
+        "AIDA英文提取",
+        "extract_english"
+      ]
+    },
+    {
+      "id": "br_top_aida_extraction",
+      "name": "top_aida提取逻辑",
+      "description": "top_aida是从Octane多值字段aidas(product_areas)中提取的主AIDA，代表测试团队定义的最小验证颗粒度。",
+      "trigger_terms": [
+        "top_aida",
+        "主AIDA",
+        "主要aida"
+      ],
+      "rules": [
+        "top_aida = get_top_req(aidas)，从aidas列表中提取主需求",
+        "缺陷数据: 从product_areas.data列表提取",
+        "测试数据: 从product_areas列表的第一个元素提取",
+        "top_aida是AIDA的最小颗粒度，是验证基石"
+      ],
+      "sql_guardrails": [
+        "top_aida可能为空（aidas为空或product_areas缺失）",
+        "分析top_aida分布时需排除空值"
+      ],
+      "aliases": [
+        "主AIDA",
+        "top aida提取",
+        "primary aida"
       ]
     }
   ]

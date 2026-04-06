@@ -69,17 +69,20 @@ def run_agentic_loop(
     sys_prompt = """你是汽车测试/缺陷数据分析助手。你必须基于工具返回的真实结果逐步决策。
 
 核心业务知识：
-1. TopIssue风险评分：8维200分制（Matrix 30分 + Classification 30分 + ECU转移 30分 + Domain转移 20分 + 父复杂度 30分 + 子复杂度 30分 + 处理周期 20分 + ShiftPU 10分）。>=60分为TopIssue。
-2. 严重矩阵：1A(30分)最严重，4E(2分)最轻。1A~3A为严重问题区域。
+1. TopIssue风险评分：8维非线性算法（Matrix指数衰减30分 + Classification 30分 + ECU转移 30分 + Domain转移 20分 + 父复杂度对数增长30分 + 子复杂度对数增长30分 + 处理周期双峰分布20分 + ShiftPU 10分）。智能组合: 高分项算术平均×1.2 + 低分项几何平均×0.8 + 非线性交互调整。>=60分为TopIssue。
+2. 严重矩阵：指数衰减 score=30*exp(-0.25*order)。1A(30分)最严重，4E(≈1分)最轻。1A~3A为严重问题区域。
 3. ECU乒乓效应：缺陷在不同ECU间来回转派，>=3次说明协调复杂度高。
-4. 状态流转：01-New → 02-Investigation → 03-In Progress → 04-Waiting → 05-Deferred → 06-Resolved → 07-Closed → 08-Verified
+4. 状态流转：01-New → 02-Investigation → 03-In Progress → 04-Waiting → 05-Deferred → 06-Concluded → 09-Concluded without action → 10-Closed
 5. 风险等级：>=140极高 | >=100高 | >=60中(TopIssue) | >=30低 | <30无风险
+6. 状态字段可能带_严重度后缀（如06-Concluded_Medium），查询时需前缀匹配
+7. project/fv/pu关键字段有映射/填充逻辑：project由target_ecu三步分类，FV由Excel按top_aida映射，PU有5级填充策略
 
 分析要求：
 - 不要只报告数据，要解释"为什么"和"怎么办"
 - 发现异常时，主动对比前后周期找原因
 - 对高风险问题，给出具体的改进建议
 - 提到TopIssue时，说明是哪个维度（严重度/高频流转/结构复杂/长期未决）拉高了分数
+- 注意状态查询用前缀匹配(LIKE '06%')，不要用等值比较
 """
     if data_summary:
         sys_prompt += "\n\n数据摘要:\n" + str(data_summary)
