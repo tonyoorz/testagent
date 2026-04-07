@@ -232,6 +232,29 @@ _STRONG_STRUCTURED_QUERY_TERMS = (
     "同比",
 )
 
+_PROJECT_DIMENSION_TERMS = (
+    "各项目",
+    "项目",
+    "project",
+    "projects",
+    "团队",
+    "team",
+    "teams",
+)
+
+_PROJECT_ANALYSIS_TERMS = (
+    "对比",
+    "比较",
+    "分析",
+    "分布",
+    "情况",
+    "compare",
+    "comparison",
+    "breakdown",
+    "overview",
+    "across",
+)
+
 
 def _contains_any(text: str, terms: tuple) -> bool:
     return any(term in text for term in terms)
@@ -420,6 +443,13 @@ def extract_query_hints(
     wants_test_coverage = bool(shared_hints.get("wants_test_coverage"))
     wants_recommendation = bool(shared_hints.get("wants_recommendation"))
     wants_analysis = bool(shared_hints.get("wants_analysis"))
+    wants_project_breakdown = bool(shared_hints.get("wants_project_breakdown"))
+
+    project_dimension_requested = _contains_any(ql, _PROJECT_DIMENSION_TERMS)
+    project_analysis_requested = _contains_any(ql, _PROJECT_ANALYSIS_TERMS)
+    if project_dimension_requested and project_analysis_requested:
+        wants_project_breakdown = True
+        wants_analysis = True
 
     wants_feature_breakdown = any(
         k in ql
@@ -458,6 +488,7 @@ def extract_query_hints(
         wants_feature_breakdown = wants_feature_breakdown or bool(semantic_hints.get("wants_feature_breakdown"))
         wants_aida_dist = wants_aida_dist or bool(semantic_hints.get("wants_aida_dist"))
         wants_showstopper = wants_showstopper or bool(semantic_hints.get("wants_showstopper"))
+        wants_project_breakdown = wants_project_breakdown or bool(semantic_hints.get("wants_project_breakdown"))
 
         semantic_month = semantic_hints.get("month_number")
         if month_number is None and isinstance(semantic_month, int) and 1 <= semantic_month <= 12:
@@ -465,6 +496,9 @@ def extract_query_hints(
 
     wants_showstopper_candidate = ("candidate" in ql) or bool(semantic_hints.get("wants_showstopper_candidate"))
     preferred_dimension = str(semantic_hints.get("preferred_dimension") or "").strip()
+    if preferred_dimension in {"project", "tproject", "team"}:
+        wants_project_breakdown = True
+        wants_analysis = True
 
     return {
         "entity_tokens": dedup_tokens[:6],
@@ -484,6 +518,7 @@ def extract_query_hints(
         "wants_test_coverage": wants_test_coverage,
         "wants_recommendation": wants_recommendation,
         "wants_analysis": wants_analysis,
+        "wants_project_breakdown": wants_project_breakdown,
         "month_number": month_number,
         "preferred_dimension": preferred_dimension,
         "columns": set(shared_hints.get("columns") or columns or []),
@@ -517,6 +552,7 @@ def decide_query_execution_strategy(
         "wants_topissue": "topissue",
         "wants_test_coverage": "test_coverage",
         "wants_efficiency": "efficiency",
+        "wants_project_breakdown": "project_breakdown",
     }
     for key, label in structured_hint_keys.items():
         if hints.get(key):
@@ -710,6 +746,142 @@ def build_deterministic_sql(
         elif "fetched_at" in cols:
             order_sql = " ORDER BY fetched_at DESC"
         return f'SELECT {", ".join(history_select)} FROM "{table_name}"{where_sql}{order_sql} LIMIT 120'
+
+    if hints.get("wants_project_breakdown"):
+        preferred_dimension = str(hints.get("preferred_dimension") or "").strip()
+        project_col = preferred_dimension if preferred_dimension in cols else ""
+        if not project_col:
+            project_col = next((c for c in ["project", "tproject", "team", "aida_english", "top_aida", "ecu"] if c in cols), "")
+
+        if project_col:
+            project_expr = _coalesced_text_expr(project_col)
+
+            if table_name == "octane_manual_runs":
+                status_col = "run_status" if "run_status" in cols else ("status" if "status" in cols else ("execution_status" if "execution_status" in cols else ""))
+                status_text_expr = f"LOWER(CAST({status_col} AS TEXT))" if status_col else ""
+                testcase_col = next(
+                    (c for c in ["test_id", "test_name", "testcase", "test_case", "case_id", "case_name", "name"] if c in cols),
+                    "",
+                )
+                testcase_count_sql = (
+                    f"{_count_distinct_text_expr(testcase_col)} AS testcase_count, " if testcase_col else ""
+                )
+                if status_col:
+                    passed_expr = (
+                        "SUM(CASE WHEN ("
+                        f"{status_text_expr} IN ('passed','pass') "
+                        f"OR {status_text_expr} LIKE 'pass%')"
+                        " THEN 1 ELSE 0 END)"
+                    )
+                    failed_expr = (
+                        "SUM(CASE WHEN ("
+                        f"{status_text_expr} IN ('failed','failure') "
+                        f"OR {status_text_expr} LIKE 'fail%')"
+                        " THEN 1 ELSE 0 END)"
+                    )
+                    blocked_expr = (
+                        "SUM(CASE WHEN ("
+                        f"{status_text_expr} IN ('blocked','requires attention','requires_attention','attention required') "
+                        f"OR {status_text_expr} LIKE '%block%' "
+                        f"OR {status_text_expr} LIKE '%require%attention%' "
+                        f"OR {status_text_expr} LIKE '%attention required%')"
+                        " THEN 1 ELSE 0 END)"
+                    )
+                    return (
+                        f"SELECT {project_expr} AS project, "
+                        f"{testcase_count_sql}"
+                        "COUNT(*) AS run_count, "
+                        f"{passed_expr} AS passed_count, "
+                        f"{failed_expr} AS failed_count, "
+                        f"{blocked_expr} AS blocked_count, "
+                        f"ROUND(100.0 * {passed_expr} / NULLIF(COUNT(*), 0), 2) AS pass_rate "
+                        f'FROM "{table_name}" '
+                        f"{where_sql} "
+                        "GROUP BY 1 "
+                        "ORDER BY run_count DESC, pass_rate DESC "
+                        "LIMIT 30"
+                    )
+
+                return (
+                    f"SELECT {project_expr} AS project, "
+                    f"{testcase_count_sql}"
+                    "COUNT(*) AS run_count "
+                    f'FROM "{table_name}" '
+                    f"{where_sql} "
+                    "GROUP BY 1 "
+                    "ORDER BY run_count DESC "
+                    "LIMIT 30"
+                )
+
+            status_candidates = [c for c in ["status_phase", "phase", "status"] if c in cols]
+            status_text_expr = ""
+            if status_candidates:
+                if len(status_candidates) == 1:
+                    status_text_expr = f"LOWER(CAST({status_candidates[0]} AS TEXT))"
+                else:
+                    status_text_expr = f"LOWER(CAST(COALESCE({', '.join(status_candidates)}) AS TEXT))"
+
+            tester_col = next(
+                (c for c in ["detected_by", "tester", "run_by", "author", "reporter", "owner", "found_by", "author_name"] if c in cols),
+                "",
+            )
+            severity_col = next((c for c in ["severity_group", "severity", "priority"] if c in cols), "")
+
+            select_parts: List[str] = [
+                f"{project_expr} AS project",
+                "COUNT(*) AS defect_count",
+            ]
+            if tester_col:
+                select_parts.append(f"{_count_distinct_text_expr(tester_col)} AS active_tester_count")
+
+            if severity_col:
+                severity_text_expr = f"LOWER(CAST({severity_col} AS TEXT))"
+                high_expr = (
+                    "SUM(CASE WHEN ("
+                    f"{severity_text_expr} IN ('high','critical','s1','s2','p1') "
+                    f"OR {severity_text_expr} LIKE '%high%' "
+                    f"OR {severity_text_expr} LIKE '%critical%' "
+                    f"OR {severity_text_expr} LIKE '%p1%')"
+                    " THEN 1 ELSE 0 END)"
+                )
+                select_parts.append(f"{high_expr} AS high_risk_count")
+
+            if status_text_expr:
+                draft_expr = (
+                    "SUM(CASE WHEN ("
+                    f"{status_text_expr} LIKE '%draft%' "
+                    f"OR {status_text_expr} LIKE '%new%' "
+                    f"OR {status_text_expr} LIKE '%pre-analysis%' "
+                    f"OR {status_text_expr} LIKE '%analysis%')"
+                    " THEN 1 ELSE 0 END)"
+                )
+                progress_expr = (
+                    "SUM(CASE WHEN ("
+                    f"{status_text_expr} LIKE '%progress%' "
+                    f"OR {status_text_expr} LIKE '%fix%' "
+                    f"OR {status_text_expr} LIKE '%processing%')"
+                    " THEN 1 ELSE 0 END)"
+                )
+                closed_expr = (
+                    "SUM(CASE WHEN ("
+                    f"{status_text_expr} LIKE '%closed%' "
+                    f"OR {status_text_expr} LIKE '%resolved%' "
+                    f"OR {status_text_expr} LIKE '%conclud%' "
+                    f"OR {status_text_expr} LIKE '%fixed%')"
+                    " THEN 1 ELSE 0 END)"
+                )
+                select_parts.append(f"{draft_expr} AS early_stage_count")
+                select_parts.append(f"{progress_expr} AS in_progress_count")
+                select_parts.append(f"{closed_expr} AS closed_count")
+
+            return (
+                f"SELECT {', '.join(select_parts)} "
+                f'FROM "{table_name}" '
+                f"{where_sql} "
+                "GROUP BY 1 "
+                "ORDER BY defect_count DESC "
+                "LIMIT 30"
+            )
 
     if hints.get("wants_aida_dist"):
         preferred_dimension = str(hints.get("preferred_dimension") or "").strip()

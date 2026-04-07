@@ -101,6 +101,15 @@ class DeterministicSQLServiceTests(unittest.TestCase):
                 hints = extract_query_hints(phrase, ["creation_time", "status", "run_by", "test_id"])
                 self.assertTrue(hints.get("wants_test_coverage"))
 
+    def test_extract_query_hints_marks_project_breakdown_for_compare_analysis(self):
+        hints = extract_query_hints(
+            "请对比分析各项目的缺陷与测试情况",
+            ["team", "project", "status_phase", "defect_id", "detected_by", "creation_time"],
+        )
+
+        self.assertTrue(hints.get("wants_project_breakdown"))
+        self.assertTrue(hints.get("wants_analysis"))
+
     def test_extract_query_hints_filters_confirmation_reply_tokens(self):
         hints = extract_query_hints(
             "继续",
@@ -118,6 +127,17 @@ class DeterministicSQLServiceTests(unittest.TestCase):
 
         self.assertNotIn("%继续%", sql)
         self.assertIn('FROM "octane_defects"', sql)
+
+    def test_build_deterministic_sql_groups_project_comparison_query_by_project(self):
+        sql = build_deterministic_sql(
+            question="请对比分析各项目的缺陷与测试情况",
+            table_name="octane_defects",
+            columns=["team", "status_phase", "severity_group", "defect_id", "detected_by", "creation_time"],
+        )
+        self.assertIn("AS project", sql)
+        self.assertIn("defect_count", sql)
+        self.assertIn("active_tester_count", sql)
+        self.assertIn("GROUP BY 1", sql)
 
     def test_build_deterministic_sql_for_manual_runs_uses_pass_rate_aggregation(self):
         sql = build_deterministic_sql(
