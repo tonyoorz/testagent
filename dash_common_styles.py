@@ -6,126 +6,128 @@ import plotly.graph_objects as go
 from dash import html, dcc
 
 # 全局样式常量
-DARK_BG = '#000000'
-DARK_ACCENT = '#333333'
-HIGHLIGHT_COLOR = '#330000'
-TEXT_COLOR = '#ffffff'
-BORDER_COLOR = '#555555'
+DARK_BG = '#111827'
+DARK_ACCENT = '#1F2937'
+HIGHLIGHT_COLOR = '#3B82F6'
+TEXT_COLOR = '#F9FAFB'
+BORDER_COLOR = '#374151'
 
 # 新增: 浅色主题常量
-LIGHT_BG = '#F0F0F0' # 使用柔和的浅灰色背景
-LIGHT_TEXT_COLOR = '#1E1E1E' # 深灰色文本，而不是纯黑
-LIGHT_BORDER_COLOR = '#CCCCCC'
-LIGHT_ACCENT_BG = '#E0E0E0' # 浅色主题的强调背景
+LIGHT_BG = '#F3F4F6' # 使用柔和的浅灰色背景
+LIGHT_TEXT_COLOR = '#111827' # 深灰色文本
+LIGHT_BORDER_COLOR = '#E5E7EB'
+LIGHT_ACCENT_BG = '#FFFFFF' # 浅色主题的强调背景
 
 # 新增: 筛选器和标签的样式常量
 LABEL_STYLE_DARK = {
     'color': TEXT_COLOR,
-    'marginBottom': '5px',
-    'display': 'block'
+    'marginBottom': '8px',
+    'display': 'block',
+    'fontWeight': '500',
+    'fontSize': '14px'
 }
 
 LABEL_STYLE_LIGHT = {
-    'color': LIGHT_TEXT_COLOR,
-    'marginBottom': '5px',
-    'display': 'block'
+    'color': '#4B5563',
+    'marginBottom': '8px',
+    'display': 'block',
+    'fontWeight': '500',
+    'fontSize': '14px'
 }
 
-# Dropdown 样式调整 (主要针对背景、文字、边框、占位符)
-# Dash 的 dcc.Dropdown 内部元素的样式控制比较复杂，
-# 有些深层样式可能需要通过 assets/ .css 文件来覆盖
-DROPDOWN_STYLE_DARK = {
-    # 'backgroundColor': DARK_ACCENT, # 下拉框本身的背景色，但Dash默认实现可能覆盖
-    # 'color': TEXT_COLOR,           # 下拉框文字颜色
-    # 'border': f'1px solid {BORDER_COLOR}' # 边框
-    # 大部分Dropdown的内部样式由Dash的默认CSS控制，这里设置的可能不完全生效
-    # 建议在 assets 文件夹中添加更具体的CSS规则
-}
-
-DROPDOWN_STYLE_LIGHT = {
-    # 'backgroundColor': LIGHT_BG, 
-    # 'color': LIGHT_TEXT_COLOR,
-    # 'border': f'1px solid {LIGHT_BORDER_COLOR}'
-    # 同上，主要通过CSS控制更佳
-}
+# Dropdown 样式调整
+DROPDOWN_STYLE_DARK = {}
+DROPDOWN_STYLE_LIGHT = {}
 
 # 主容器样式
 MAIN_CONTAINER_STYLE = {
     'backgroundColor': DARK_BG, 
     'minHeight': '100vh', 
-    'padding': '20px', 
-    'fontFamily': 'Arial, sans-serif',
-    'color': TEXT_COLOR # 默认文字颜色 (针对深色背景)
+    'padding': '24px', 
+    'fontFamily': "'Inter', sans-serif",
+    'color': TEXT_COLOR
 }
 
 # 新增: 浅色主容器样式
 LIGHT_MAIN_CONTAINER_STYLE = {
     'backgroundColor': LIGHT_BG,
     'minHeight': '100vh',
-    'padding': '20px',
-    'fontFamily': 'Arial, sans-serif',
-    'color': LIGHT_TEXT_COLOR # 浅色背景下的文字颜色
+    'padding': '24px',
+    'fontFamily': "'Inter', sans-serif",
+    'color': LIGHT_TEXT_COLOR
 }
 
 # 标题样式
 TITLE_STYLE = {
-    'textAlign': 'center', 
+    'textAlign': 'left', 
     'color': TEXT_COLOR, 
-    'marginBottom': '30px', 
-    'marginTop': '20px'
+    'marginBottom': '24px', 
+    'marginTop': '0',
+    'fontWeight': '600'
 }
 
 LIGHT_TITLE_STYLE = {
-    'textAlign': 'center',
+    'textAlign': 'left',
     'color': LIGHT_TEXT_COLOR,
-    'marginBottom': '30px',
-    'marginTop': '20px'
+    'marginBottom': '24px',
+    'marginTop': '0',
+    'fontWeight': '600'
 }
 
 # 子标题样式
 SUBTITLE_STYLE = {
-    'textAlign': 'center', 
-    'color': TEXT_COLOR, 
-    'marginBottom': '20px'
+    'textAlign': 'left', 
+    'color': '#9CA3AF', 
+    'marginBottom': '16px',
+    'fontWeight': '500'
 }
 
 LIGHT_SUBTITLE_STYLE = {
-    'textAlign': 'center',
-    'color': LIGHT_TEXT_COLOR,
-    'marginBottom': '20px'
+    'textAlign': 'left',
+    'color': '#6B7280',
+    'marginBottom': '16px',
+    'fontWeight': '500'
 }
 
 # 图表容器样式
 CHART_CONTAINER_STYLE = {
-    'padding': '20px', 
-    'backgroundColor': DARK_BG, 
-    'borderRadius': '8px', 
-    'marginBottom': '20px'
+    'padding': '24px', 
+    'backgroundColor': DARK_ACCENT, 
+    'borderRadius': '16px', 
+    'marginBottom': '24px',
+    'border': f'1px solid {BORDER_COLOR}',
+    'boxShadow': '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
 }
 
 LIGHT_CHART_CONTAINER_STYLE = {
-    'padding': '20px',
+    'padding': '24px',
     'backgroundColor': '#FFFFFF',
-    'borderRadius': '8px',
-    'marginBottom': '20px',
+    'borderRadius': '16px',
+    'marginBottom': '24px',
+    'border': f'1px solid {LIGHT_BORDER_COLOR}',
+    'boxShadow': '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
     'color': LIGHT_TEXT_COLOR
 }
 
 # 内容容器样式
 CONTENT_CONTAINER_STYLE = {
-    'padding': '20px', 
-    'backgroundColor': DARK_BG, 
-    'borderRadius': '8px', 
-    'marginBottom': '20px', 
-    'display': 'block'
+    'padding': '24px', 
+    'backgroundColor': DARK_ACCENT, 
+    'borderRadius': '16px', 
+    'marginBottom': '24px', 
+    'display': 'block',
+    'border': f'1px solid {BORDER_COLOR}',
+    'boxShadow': '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
 }
 
 LIGHT_CONTENT_CONTAINER_STYLE = {
-    'padding': '20px',
+    'padding': '24px',
     'backgroundColor': '#FFFFFF',
-    'borderRadius': '8px',
-    'marginBottom': '20px',
+    'borderRadius': '16px',
+    'marginBottom': '24px',
     'display': 'block',
+    'border': f'1px solid {LIGHT_BORDER_COLOR}',
+    'boxShadow': '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
     'color': LIGHT_TEXT_COLOR
 }
 

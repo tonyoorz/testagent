@@ -29,8 +29,8 @@ class PageComponentManager:
         """创建加载页面"""
         return html.Div([
             html.Div([
-                html.I(className="fas fa-spinner fa-spin", style={'fontSize': '48px', 'color': '#3498db'}),
-                html.H3(message, style={'marginTop': '20px', 'color': '#666'})
+                html.I(className="fas fa-spinner fa-spin", style={'fontSize': '48px', 'color': '#3B82F6'}),
+                html.H3(message, style={'marginTop': '20px', 'color': '#4B5563', 'fontWeight': '500'})
             ], style={
                 'textAlign': 'center',
                 'padding': '100px 0',
@@ -46,10 +46,10 @@ class PageComponentManager:
         """创建错误页面"""
         return html.Div([
             html.Div([
-                html.I(className="fas fa-exclamation-triangle", style={'fontSize': '48px', 'color': '#e74c3c'}),
-                html.H3("出现错误", style={'marginTop': '20px', 'color': '#e74c3c'}),
-                html.P(error_message, style={'color': '#666', 'marginTop': '10px'}),
-                html.Button("重新尝试", className="btn btn-primary", style={'marginTop': '20px'})
+                html.I(className="fas fa-exclamation-triangle", style={'fontSize': '48px', 'color': '#EF4444'}),
+                html.H3("出现错误", style={'marginTop': '20px', 'color': '#EF4444'}),
+                html.P(error_message, style={'color': '#4B5563', 'marginTop': '10px'}),
+                html.Button("重新尝试", className="btn btn-primary", style={'marginTop': '20px', 'backgroundColor': '#3B82F6', 'border': 'none', 'padding': '10px 20px', 'borderRadius': '8px'})
             ], style={
                 'textAlign': 'center',
                 'padding': '100px 0',
@@ -65,13 +65,13 @@ class PageComponentManager:
         """创建即将推出页面"""
         return html.Div([
             html.Div([
-                html.I(className="fas fa-tools", style={'fontSize': '48px', 'color': '#f39c12'}),
-                html.H3(f"{module_name} 模块", style={'marginTop': '20px', 'color': '#333'}),
-                html.P("该功能正在开发中，敬请期待！", style={'color': '#666', 'marginTop': '10px', 'fontSize': '16px'}),
+                html.I(className="fas fa-tools", style={'fontSize': '48px', 'color': '#F59E0B'}),
+                html.H3(f"{module_name} 模块", style={'marginTop': '20px', 'color': '#111827'}),
+                html.P("该功能正在开发中，敬请期待！", style={'color': '#4B5563', 'marginTop': '10px', 'fontSize': '16px'}),
                 html.Div([
                     html.I(className="fas fa-clock", style={'marginRight': '8px'}),
                     html.Span("预计完成时间：即将推出")
-                ], style={'color': '#999', 'marginTop': '20px'})
+                ], style={'color': '#9CA3AF', 'marginTop': '20px'})
             ], style={
                 'textAlign': 'center',
                 'padding': '100px 0',
@@ -205,123 +205,70 @@ class PageComponentManager:
         return html.Div([
             html.Div([
                 html.H1("数据大屏", style={
-                    'textAlign': 'center',
-                    'color': 'white',
-                    'marginBottom': '30px',
-                    'fontSize': '36px'
+                    'textAlign': 'left',
+                    'marginBottom': '30px'
                 }),
                 
                 # KPI卡片区域
                 html.Div([
                     html.Div([
-                        html.H3("12,345", style={'color': '#3498db', 'fontSize': '32px', 'margin': '0'}),
-                        html.P("总缺陷数", style={'color': '#bdc3c7', 'margin': '5px 0'})
-                    ], style={
-                        'backgroundColor': 'rgba(255,255,255,0.1)',
-                        'padding': '20px',
-                        'borderRadius': '10px',
-                        'textAlign': 'center',
-                        'width': '23%',
-                        'display': 'inline-block',
-                        'margin': '0 1%'
-                    }),
+                        html.H4("12,345", className="kpi-value"),
+                        html.P("总缺陷数", className="kpi-label")
+                    ], className="kpi-card"),
                     
                     html.Div([
-                        html.H3("94.7%", style={'color': '#2ecc71', 'fontSize': '32px', 'margin': '0'}),
-                        html.P("解决率", style={'color': '#bdc3c7', 'margin': '5px 0'})
-                    ], style={
-                        'backgroundColor': 'rgba(255,255,255,0.1)',
-                        'padding': '20px',
-                        'borderRadius': '10px',
-                        'textAlign': 'center',
-                        'width': '23%',
-                        'display': 'inline-block',
-                        'margin': '0 1%'
-                    }),
+                        html.H4("94.7%", className="kpi-value"),
+                        html.P("解决率", className="kpi-label")
+                    ], className="kpi-card"),
                     
                     html.Div([
-                        html.H3("156", style={'color': '#e74c3c', 'fontSize': '32px', 'margin': '0'}),
-                        html.P("严重缺陷", style={'color': '#bdc3c7', 'margin': '5px 0'})
-                    ], style={
-                        'backgroundColor': 'rgba(255,255,255,0.1)',
-                        'padding': '20px',
-                        'borderRadius': '10px',
-                        'textAlign': 'center',
-                        'width': '23%',
-                        'display': 'inline-block',
-                        'margin': '0 1%'
-                    }),
+                        html.H4("156", className="kpi-value"),
+                        html.P("严重缺陷", className="kpi-label")
+                    ], className="kpi-card"),
                     
                     html.Div([
-                        html.H3("89.2%", style={'color': '#f39c12', 'fontSize': '32px', 'margin': '0'}),
-                        html.P("测试覆盖率", style={'color': '#bdc3c7', 'margin': '5px 0'})
-                    ], style={
-                        'backgroundColor': 'rgba(255,255,255,0.1)',
-                        'padding': '20px',
-                        'borderRadius': '10px',
-                        'textAlign': 'center',
-                        'width': '23%',
-                        'display': 'inline-block',
-                        'margin': '0 1%'
-                    })
-                ], style={'marginBottom': '40px'}),
+                        html.H4("89.2%", className="kpi-value"),
+                        html.P("测试覆盖率", className="kpi-label")
+                    ], className="kpi-card")
+                ], className="kpi-grid"),
                 
                 # 图表区域
                 html.Div([
                     html.Div([
-                        html.H4("缺陷趋势", style={'color': 'white', 'marginBottom': '20px'}),
+                        html.H4("缺陷趋势", style={'marginBottom': '20px'}),
                         dcc.Graph(
                             figure=go.Figure().add_trace(
                                 go.Scatter(x=list(range(12)), y=[100, 120, 130, 110, 140, 135, 145, 150, 160, 155, 165, 170],
-                                          mode='lines+markers', line=dict(color='#3498db', width=3))
+                                          mode='lines+markers', line=dict(color='#3B82F6', width=3))
                             ).update_layout(
                                 plot_bgcolor='rgba(0,0,0,0)',
                                 paper_bgcolor='rgba(0,0,0,0)',
-                                font=dict(color='white'),
-                                xaxis=dict(gridcolor='rgba(255,255,255,0.2)'),
-                                yaxis=dict(gridcolor='rgba(255,255,255,0.2)'),
-                                height=300
+                                margin=dict(l=40, r=20, t=20, b=40),
+                                xaxis=dict(gridcolor='#E5E7EB'),
+                                yaxis=dict(gridcolor='#E5E7EB'),
+                                height=350
                             )
                         )
-                    ], style={
-                        'width': '48%',
-                        'display': 'inline-block',
-                        'backgroundColor': 'rgba(255,255,255,0.1)',
-                        'padding': '20px',
-                        'borderRadius': '10px',
-                        'marginRight': '2%'
-                    }),
+                    ], className="chart-container card", style={'flex': '1', 'minWidth': '400px', 'marginRight': '15px'}),
                     
                     html.Div([
-                        html.H4("项目分布", style={'color': 'white', 'marginBottom': '20px'}),
+                        html.H4("项目分布", style={'marginBottom': '20px'}),
                         dcc.Graph(
                             figure=go.Figure().add_trace(
                                 go.Pie(labels=['IDC', 'MGU', 'App', 'RSU'], values=[45, 25, 20, 10],
-                                      marker=dict(colors=['#3498db', '#2ecc71', '#f39c12', '#e74c3c']))
+                                      marker=dict(colors=['#3B82F6', '#10B981', '#F59E0B', '#EF4444']),
+                                      hole=0.4)
                             ).update_layout(
                                 plot_bgcolor='rgba(0,0,0,0)',
                                 paper_bgcolor='rgba(0,0,0,0)',
-                                font=dict(color='white'),
-                                height=300
+                                margin=dict(l=20, r=20, t=20, b=20),
+                                height=350
                             )
                         )
-                    ], style={
-                        'width': '48%',
-                        'display': 'inline-block',
-                        'backgroundColor': 'rgba(255,255,255,0.1)',
-                        'padding': '20px',
-                        'borderRadius': '10px',
-                        'marginLeft': '2%'
-                    })
-                ])
+                    ], className="chart-container card", style={'flex': '1', 'minWidth': '400px'})
+                ], style={'display': 'flex', 'flexWrap': 'wrap'})
                 
-            ], style={
-                'background': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                'minHeight': '100vh',
-                'padding': '40px',
-                'margin': '-20px',  # 抵消父容器的padding
-                'marginTop': '-110px'  # 抵消顶部margin
-            })
+            ], className="main-content-wrapper")
         ])
     
     def get_page_component(self, nav_id: str) -> html.Div:
