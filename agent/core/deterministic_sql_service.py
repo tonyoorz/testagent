@@ -733,7 +733,7 @@ def build_deterministic_sql(
                 severity_expr = _coalesced_text_expr(severity_col)
                 severe_expr = (
                     f"SUM(CASE WHEN LOWER(CAST({severity_col} AS TEXT)) LIKE '%critical%' "
-                    f"OR LOWER(CAST({severity_col} AS TEXT)) LIKE '%严重%" "
+                    f"OR LOWER(CAST({severity_col} AS TEXT)) LIKE '%严重%' "
                     f"THEN 1 ELSE 0 END) AS severe_count"
                 )
                 return (

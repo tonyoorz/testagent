@@ -6535,6 +6535,13 @@ class IntelligentAgent:
 
         logger.info(f"智能 Agent 初始化完成 (类型: {dashboard_type})")
 
+        # P0 Framework: Tracer + Self-Corrector + Registry
+        try:
+            from agent.core.integration import patch_agent
+            patch_agent(self)
+        except Exception as _patch_err:
+            logger.debug(f"Framework patch skipped: {_patch_err}")
+
     def _is_positive_confirmation(self, text: str) -> bool:
         s = str(text or "").strip().lower()
         if not s:
@@ -6675,6 +6682,14 @@ class IntelligentAgent:
         """
         start_time = datetime.now()
 
+        # P0 Tracer: wrap the entire process() call
+        _tracer = None
+        try:
+            from agent.core.integration import create_tracer
+            _tracer = create_tracer(question or "")
+        except Exception:
+            pass
+
         qtext = (question or "").strip()
         confirmed_now = False
         pending = self._pending_execution_confirmation
@@ -6808,7 +6823,12 @@ class IntelligentAgent:
             })
 
         # 2. 准备上下文
+        if _tracer:
+            _ctx_span = _tracer.span("context_preparation").__enter__()
         context, prepared_data = self.context_manager.prepare_context(analysis_question, data)
+        self._last_context = context  # for self-corrector
+        if _tracer:
+            _ctx_span.__exit__(None, None, None)
         if semantic_term_adapter:
             context["semantic_term_adapter"] = semantic_term_adapter
         if semantic_term_hints:
@@ -6916,6 +6936,13 @@ class IntelligentAgent:
                 analysis_trace["agentic_stop_reason"] = stop_reason
                 context["analysis_trace"] = analysis_trace
                 self.memory.add_message('assistant', final_text, {'tools_used': [r.get('tool') for r in exec_rows], 'execution_time': (datetime.now() - start_time).total_seconds()})
+                # P0 Tracer: finish on agentic path
+                if _tracer:
+                    try:
+                        _tracer.set_meta(mode="agentic", tools_used=[r.get("tool") for r in exec_rows])
+                        _tracer.finish(answer_summary=final_text[:500])
+                    except Exception:
+                        pass
                 return self._normalize_response_payload(
                     {
                         "text": final_text,
@@ -6970,7 +6997,11 @@ class IntelligentAgent:
                 plan = reused_plan
             self._pending_execution_confirmation = None
         if plan is None:
+            if _tracer:
+                _plan_span = _tracer.span("task_planning").__enter__()
             plan = self.task_planner.plan(analysis_question, context)
+            if _tracer:
+                _plan_span.__exit__(None, None, None)
 
         if (not confirmed_now) and self._should_require_step_confirmation(plan, context):
             self._pending_execution_confirmation = {
@@ -7009,7 +7040,7 @@ class IntelligentAgent:
         analysis_trace["plan"] = serialize_plan_trace(plan)
 
         # 6. 执行计划
-        execution_results = self.task_planner.execute_plan(plan, prepared_data, context=context, progress_cb=progress_cb)
+        execution_results = self.task_planner.execute_plan(plan, prepared_data, context=context, progress_cb=progress_cb, _tracer=_tracer)
         analysis_trace["execution"] = [r.get("trace") for r in (execution_results or []) if isinstance(r, dict) and r.get("trace")]
         context["analysis_trace"] = analysis_trace
 
@@ -7038,6 +7069,17 @@ class IntelligentAgent:
             'tools_used': [r['tool'] for r in execution_results],
             'execution_time': (datetime.now() - start_time).total_seconds()
         })
+
+        # P0 Tracer: finish trace
+        if _tracer:
+            try:
+                _tracer.set_meta(
+                    mode=str(context.get('analysis_trace', {}).get('mode', 'unknown')),
+                    tools_used=[r['tool'] for r in execution_results],
+                )
+                _tracer.finish(answer_summary=str(answer.get('text', ''))[:500])
+            except Exception:
+                pass
 
         return self._normalize_response_payload(answer, execution_results=execution_results)
 

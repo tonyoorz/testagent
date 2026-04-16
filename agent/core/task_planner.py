@@ -973,6 +973,7 @@ class TaskPlanner:
         context: Optional[Dict[str, Any]] = None,
         progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
         _replan_depth: int = 0,
+        _tracer: Any = None,
     ) -> List[Dict[str, Any]]:
         """执行计划"""
         results = []
@@ -1024,10 +1025,20 @@ class TaskPlanner:
                 except Exception:
                     pass
             start = time.perf_counter()
-            if hasattr(self.tool_executor, "execute_with_retry"):
-                result = self.tool_executor.execute_with_retry(tool_name, data, **params)
-            else:
-                result = self.tool_executor.execute_tool(tool_name, data, **params)
+            _tool_span = None
+            if _tracer and hasattr(_tracer, "span"):
+                _tool_span = _tracer.span(tool_name, **{k: v for k, v in params.items() if isinstance(v, (str, int, float, bool))})
+                _tool_span.__enter__()
+            try:
+                if hasattr(self.tool_executor, "execute_with_retry"):
+                    result = self.tool_executor.execute_with_retry(tool_name, data, **params)
+                else:
+                    result = self.tool_executor.execute_tool(tool_name, data, **params)
+            except Exception as _tool_err:
+                result = {"success": False, "tool": tool_name, "error": str(_tool_err)}
+            finally:
+                if _tool_span:
+                    _tool_span.__exit__(None, None, None)
 
             if tool_name == "analyze_test_run" and isinstance(result, dict) and result.get("success") is False:
                 current_group = str((params or {}).get("group_by") or "").strip().lower()
@@ -1041,6 +1052,25 @@ class TaskPlanner:
                         params = alt_params
                         result = alt_result
                         break
+            # P0 Self-Correction: LLM-driven correction on failure
+            if isinstance(result, dict) and result.get("success") is False:
+                corrector = getattr(self, "_self_corrector", None)
+                if corrector is not None:
+                    try:
+                        corrected = corrector.try_correct(
+                            tool_name=tool_name,
+                            original_params=params,
+                            error_message=str(result.get("error", "")),
+                            context=context or {},
+                            data=data,
+                            available_tools=getattr(self.tool_executor, "tools", {}),
+                        )
+                        if isinstance(corrected, dict) and corrected.get("success") is True:
+                            result = corrected
+                            logger.info(f"Self-correction succeeded for {tool_name}")
+                    except Exception as _sc_err:
+                        logger.debug(f"Self-correction skipped for {tool_name}: {_sc_err}")
+
             duration_ms = int((time.perf_counter() - start) * 1000)
             self._record_tool_selector_feedback(
                 tool_name=tool_name,
