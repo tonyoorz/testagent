@@ -7009,6 +7009,13 @@ class IntelligentAgent:
         # 4. 获取相关知识
         knowledge_context = self.knowledge_base.get_knowledge_context(analysis_question)
 
+        # Streaming: emit intent_detected
+        if progress_cb:
+            try:
+                progress_cb({"event": "intent_detected", "intents": list(context.get("intents") or []), "mode": mode})
+            except Exception:
+                pass
+
         # 5. 规划任务（若用户刚确认，则复用待确认计划）
         plan = None
         if isinstance(pending, dict) and self._is_positive_confirmation((qtext or "").strip()):
@@ -7022,6 +7029,12 @@ class IntelligentAgent:
             plan = self.task_planner.plan(analysis_question, context)
             if _tracer:
                 _plan_span.__exit__(None, None, None)
+            # Streaming: emit plan_created
+            if progress_cb:
+                try:
+                    progress_cb({"event": "plan_created", "steps": [{"tool": s.get("tool"), "desc": s.get("description", "")} for s in (plan or [])]})
+                except Exception:
+                    pass
 
         if (not confirmed_now) and self._should_require_step_confirmation(plan, context):
             self._pending_execution_confirmation = {
