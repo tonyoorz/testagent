@@ -6533,6 +6533,19 @@ class IntelligentAgent:
         self.task_planner = TaskPlanner(self.tool_executor, tool_selector=self.smart_tool_selector)
         self._pending_execution_confirmation: Optional[Dict[str, Any]] = None
 
+        # 数据分析增强模块
+        from agent.core.data_profiler import DataProfiler
+        from agent.core.proactive_insights import ProactiveInsightEngine
+        from agent.core.query_memory import QueryMemory
+        from agent.core.code_interpreter import CodeInterpreter
+
+        self._data_profiler = DataProfiler()
+        self._proactive_engine = ProactiveInsightEngine()
+        self._query_memory = QueryMemory()
+        self._code_interpreter = CodeInterpreter(db_path=db_path)
+        self._last_profile = None  # 缓存最近一次数据画像
+        self._proactive_sent = False  # 是否已发送主动洞察
+
         logger.info(f"智能 Agent 初始化完成 (类型: {dashboard_type})")
 
         # P0 Framework: Tracer + Self-Corrector + Registry
@@ -7016,6 +7029,55 @@ class IntelligentAgent:
             except Exception:
                 pass
 
+        # === 数据分析增强 ===
+
+        # Data Profiling: 首次分析时自动画像
+        _profile_summary = ""
+        if prepared_data is not None:
+            try:
+                _df = prepared_data if isinstance(prepared_data, pd.DataFrame) else (list(prepared_data.values())[0] if isinstance(prepared_data, dict) and prepared_data else None)
+                if _df is not None and (self._last_profile is None or self._last_profile[0] != id(_df)):
+                    _profile = self._data_profiler.profile(_df, dataset_name=context.get("primary_dataset", "data"))
+                    _profile_summary = self._data_profiler.generate_summary(_profile, max_length=1000)
+                    self._last_profile = (id(_df), _profile, _profile_summary)
+                    # 注入到 context
+                    context["data_profile_summary"] = _profile_summary
+                    context["data_profile"] = self._data_profiler.profile_to_dict(_profile)
+                elif self._last_profile:
+                    _profile_summary = self._last_profile[2]
+                    context["data_profile_summary"] = _profile_summary
+            except Exception as _dp_err:
+                logger.debug(f"Data profiling skipped: {_dp_err}")
+
+        # Query Memory: 查找相似历史成功查询
+        _memory_match = None
+        try:
+            _memory_match = self._query_memory.find_similar(analysis_question, intents=list(context.get("intents") or []))
+            if _memory_match and _memory_match.quality >= 0.6:
+                context["memory_match"] = {
+                    "similarity": round(_memory_match.similarity, 2),
+                    "quality": round(_memory_match.quality, 2),
+                    "plan": _memory_match.suggested_plan,
+                }
+                logger.info(f"QueryMemory match: similarity={_memory_match.similarity:.2f}, quality={_memory_match.quality:.2f}")
+        except Exception as _qm_err:
+            logger.debug(f"QueryMemory lookup skipped: {_qm_err}")
+
+        # Proactive Insights: 首次查询时主动推送
+        _proactive_text = ""
+        if not self._proactive_sent and self._last_profile:
+            try:
+                _df_for_insights = prepared_data if isinstance(prepared_data, pd.DataFrame) else (list(prepared_data.values())[0] if isinstance(prepared_data, dict) and prepared_data else None)
+                if _df_for_insights is not None:
+                    _insights = self._proactive_engine.analyze(_df_for_insights, data_profile=self._last_profile[1])
+                    if _insights:
+                        _proactive_text = self._proactive_engine.format_insights(_insights)
+                        context["proactive_insights"] = _proactive_text
+                        self._proactive_sent = True
+                        logger.info(f"Proactive insights: {len(_insights)} items")
+            except Exception as _pi_err:
+                logger.debug(f"Proactive insights skipped: {_pi_err}")
+
         # 5. 规划任务（若用户刚确认，则复用待确认计划）
         plan = None
         if isinstance(pending, dict) and self._is_positive_confirmation((qtext or "").strip()):
@@ -7024,11 +7086,22 @@ class IntelligentAgent:
                 plan = reused_plan
             self._pending_execution_confirmation = None
         if plan is None:
-            if _tracer:
-                _plan_span = _tracer.span("task_planning").__enter__()
-            plan = self.task_planner.plan(analysis_question, context)
-            if _tracer:
-                _plan_span.__exit__(None, None, None)
+            # Query Memory 复用: 如果历史方案质量够高，直接复用
+            if _memory_match and _memory_match.quality >= 0.7 and _memory_match.suggested_plan:
+                plan = _memory_match.suggested_plan
+                logger.info(f"Reused plan from QueryMemory (quality={_memory_match.quality:.2f})")
+                if progress_cb:
+                    try:
+                        progress_cb({"event": "plan_reused", "source": "query_memory", "quality": round(_memory_match.quality, 2)})
+                    except Exception:
+                        pass
+
+            if plan is None:
+                if _tracer:
+                    _plan_span = _tracer.span("task_planning").__enter__()
+                plan = self.task_planner.plan(analysis_question, context)
+                if _tracer:
+                    _plan_span.__exit__(None, None, None)
             # Streaming: emit plan_created
             if progress_cb:
                 try:
@@ -7113,6 +7186,32 @@ class IntelligentAgent:
                     answer['text'] = str(answer.get('text', '')) + GuardrailPipeline().format_output_warnings(_out_results)
         except Exception:
             pass
+
+        # Proactive Insights: 附加在首次回答末尾
+        if _proactive_text and answer.get('text'):
+            answer['text'] = str(answer['text']) + "\n\n---\n" + _proactive_text
+            _proactive_text = ""  # 只附加一次
+
+        # Query Memory: 记录本次成功查询
+        try:
+            _plan_for_memory = []
+            for step in (plan or []):
+                if isinstance(step, dict) and step.get("tool"):
+                    _plan_for_memory.append({"tool": step["tool"], "params": step.get("params", {}), "description": step.get("description", "")})
+            _tools_for_memory = list(set(r.get("tool") for r in execution_results if r.get("tool")))
+            _has_success = any(isinstance(r.get("result"), dict) and r.get("result", {}).get("success") for r in execution_results)
+            if _tools_for_memory:
+                self._query_memory.record(
+                    question=analysis_question,
+                    plan=_plan_for_memory,
+                    tools_used=_tools_for_memory,
+                    success=_has_success,
+                    result_quality=0.8 if _has_success else 0.3,
+                    intents=list(context.get("intents") or []),
+                    dataset=str(context.get("primary_dataset") or ""),
+                )
+        except Exception as _qm_err:
+            logger.debug(f"QueryMemory record skipped: {_qm_err}")
 
         # P0 Tracer: finish trace
         if _tracer:
