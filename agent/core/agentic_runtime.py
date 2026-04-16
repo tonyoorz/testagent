@@ -8,34 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 def _to_json_schema(params: Any) -> Dict[str, Any]:
-    props: Dict[str, Any] = {}
-    if not isinstance(params, dict):
-        return {"type": "object", "properties": {}, "additionalProperties": True}
-
-    type_map = {
-        "string": "string",
-        "integer": "integer",
-        "number": "number",
-        "boolean": "boolean",
-        "array": "array",
-        "object": "object",
-    }
-    for pname, pdef in params.items():
-        if not isinstance(pdef, dict):
-            props[str(pname)] = {"type": "string"}
-            continue
-
-        ptype = type_map.get(str(pdef.get("type") or "string").lower(), "string")
-        item: Dict[str, Any] = {"type": ptype}
-        if pdef.get("description"):
-            item["description"] = str(pdef.get("description"))
-        if isinstance(pdef.get("enum"), list) and pdef.get("enum"):
-            item["enum"] = list(pdef.get("enum"))
-        if ptype == "array" and isinstance(pdef.get("items"), dict):
-            item["items"] = dict(pdef.get("items"))
-        props[str(pname)] = item
-
-    return {"type": "object", "properties": props, "additionalProperties": True}
+    """Deprecated: use ToolExecutor.normalize_params_to_json_schema instead."""
+    from agent.core.tool_executor import ToolExecutor
+    return ToolExecutor.normalize_params_to_json_schema(params if isinstance(params, dict) else {})
 
 
 def build_tool_specs(tools_schema: Dict[str, Any]) -> List[Dict[str, Any]]:

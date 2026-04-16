@@ -14,6 +14,45 @@ logger = logging.getLogger(__name__)
 class ToolExecutor:
     """工具执行器 - 管理所有工具的注册和执行"""
 
+    @staticmethod
+    def normalize_params_to_json_schema(params: dict) -> dict:
+        """将扁平参数定义转为标准 JSON Schema。
+
+        Input:  {"dimension": {"type": "string", "description": "..."}}
+        Output: {"type": "object", "properties": {"dimension": {"type": "string", "description": "..."}}, "required": []}
+        """
+        if not isinstance(params, dict):
+            return {"type": "object", "properties": {}, "additionalProperties": True}
+
+        # Already in JSON Schema format?
+        if params.get("type") == "object" and "properties" in params:
+            return params
+
+        type_map = {
+            "string": "string", "integer": "integer", "number": "number",
+            "boolean": "boolean", "array": "array", "object": "object",
+        }
+        props = {}
+        required = []
+        for pname, pdef in params.items():
+            if not isinstance(pdef, dict):
+                props[str(pname)] = {"type": "string"}
+                continue
+            ptype = type_map.get(str(pdef.get("type") or "string").lower(), "string")
+            item = {"type": ptype}
+            if pdef.get("description"):
+                item["description"] = str(pdef.get("description"))
+            if isinstance(pdef.get("enum"), list) and pdef.get("enum"):
+                item["enum"] = list(pdef.get("enum"))
+            if ptype == "array" and isinstance(pdef.get("items"), dict):
+                item["items"] = dict(pdef.get("items"))
+            props[str(pname)] = item
+            # No default → required
+            if "default" not in pdef:
+                required.append(str(pname))
+
+        return {"type": "object", "properties": props, "required": required, "additionalProperties": True}
+
     def __init__(
         self,
         llm: Any = None,
@@ -202,7 +241,10 @@ class ToolExecutor:
         return output
 
     def get_tool_schema(self, tool_name: str = None) -> Dict[str, Any]:
-        """获取工具的 schema，用于 LLM 理解"""
+        """获取工具的 schema，用于 LLM 理解。
+
+        返回标准 JSON Schema 格式（OpenAI function calling 兼容）。
+        """
         if tool_name:
             if tool_name not in self.tools:
                 return {}
@@ -210,12 +252,12 @@ class ToolExecutor:
             return {
                 "name": tool.name,
                 "description": tool.description,
-                "parameters": tool.parameters,
+                "parameters": self.normalize_params_to_json_schema(tool.parameters),
             }
         return {
             tool.name: {
                 "description": tool.description,
-                "parameters": tool.parameters,
+                "parameters": self.normalize_params_to_json_schema(tool.parameters),
             }
             for tool in self.tools.values()
         }
