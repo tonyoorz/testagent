@@ -3297,6 +3297,15 @@ class IntelligentAgent:
         self._last_profile = None  # 缓存最近一次数据画像
         self._proactive_sent = False  # 是否已发送主动洞察
 
+        # P0 Framework: Context Provider Chain
+        try:
+            from agent.core.context_provider import create_default_context_chain
+            self._context_chain = create_default_context_chain(memory=self.memory)
+            logger.info(f"✅ ContextChain initialized: {self._context_chain.provider_names}")
+        except Exception as e:
+            self._context_chain = None
+            logger.warning(f"Failed to initialize ContextChain: {e}")
+
         logger.info(f"智能 Agent 初始化完成 (类型: {dashboard_type})")
 
         # P0 Framework: Tracer + Self-Corrector + Registry
@@ -3658,33 +3667,16 @@ class IntelligentAgent:
             internal_template_route=internal_template_route,
         )
 
-        semantic_catalog_enabled = False
-        try:
-            from semantic_catalog.term_adapter import is_semantic_catalog_enabled
-
-            semantic_catalog_enabled = is_semantic_catalog_enabled()
-        except Exception:
-            semantic_catalog_enabled = (os.getenv("AGENT_SEMANTIC_CATALOG_ENABLED", "1") or "1").strip().lower() not in {"0", "false", "no", "off"}
-
-        if semantic_catalog_enabled:
+        # P0 Framework: Context Provider Chain
+        if self._context_chain:
             try:
-                from semantic_catalog.runtime import build_semantic_context
-
-                dashboard = self.dashboard_type
-                cols = []
-                if isinstance(prepared_data, dict):
-                    primary = context.get("primary_dataset") or ("defects" if "defects" in prepared_data else next(iter(prepared_data.keys()), None))
-                    df = prepared_data.get(primary) if primary else None
-                    if isinstance(df, pd.DataFrame):
-                        cols = [str(c) for c in df.columns.tolist()]
-                elif isinstance(prepared_data, pd.DataFrame):
-                    cols = [str(c) for c in prepared_data.columns.tolist()]
-                db_path = getattr(self.tool_executor, "_db_path", None)
-                context["semantic_context"] = build_semantic_context(
-                    question=analysis_question, dashboard=dashboard, dataframe_columns=cols, max_each=6, db_path=db_path
-                )
-            except Exception as e:
-                context["semantic_context"] = f"语义目录加载失败: {e}"
+                _use_context_chain = os.getenv("AGENT_USE_CONTEXT_CHAIN", "1") == "1"
+                if _use_context_chain:
+                    _ctx_updates = self._context_chain.build(prepared_data, analysis_question, base=context)
+                    context.update(_ctx_updates)
+                    logger.debug(f"ContextChain injected: {list(_ctx_updates.keys())}")
+            except Exception as _chain_err:
+                logger.warning(f"ContextChain failed, falling back to manual: {_chain_err}")
 
         # === Unified Execution Engine ===
         # All modes (rule/agentic/hybrid) share the same execution loop.
@@ -3692,23 +3684,14 @@ class IntelligentAgent:
         _use_unified_engine = os.getenv("AGENT_UNIFIED_ENGINE", "1") == "1"
 
 
-        # 3. 获取相关历史
-        relevant_history = self.memory.get_relevant_history(question)
-        if os.getenv("AGENT_MEMORY_DEBUG", "0") == "1":
-            used = []
-            for h in (relevant_history or [])[:5]:
-                used.append({
-                    "role": h.get("role"),
-                    "from_memory": bool(h.get("from_memory")),
-                    "kind": h.get("kind"),
-                    "tags": h.get("tags") or [],
-                    "content": (h.get("content") or "")[:160],
-                })
-            context["memory_debug"] = {
-                "short_term_size": len(self.memory.short_term or []),
-                "long_term_size": len(self.memory.long_term or []),
-                "used": used,
-            }
+        # Legacy: relevant_history is now handled by HistoryProvider in ContextChain
+        # Extract it if needed for downstream code
+        relevant_history = []
+        if "relevant_history" in context and context["relevant_history"]:
+            relevant_history = context["relevant_history"]
+        if not relevant_history:
+            # Fallback if ContextChain didn't run
+            relevant_history = self.memory.get_relevant_history(question)
 
         # 4. 获取相关知识
         knowledge_context = self.knowledge_base.get_knowledge_context(analysis_question)
