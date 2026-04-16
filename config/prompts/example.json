@@ -1,0 +1,9 @@
+[
+  {
+    "name": "custom_example",
+    "template": "这是一个自定义 prompt 示例。变量: {{variable}}",
+    "version": "1.0",
+    "description": "示例 - 删除此文件或替换为你的自定义 prompt",
+    "tags": ["example"]
+  }
+]
