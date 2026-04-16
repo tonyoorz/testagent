@@ -1089,9 +1089,9 @@ class TaskPlanner:
                     gate["action"] = "stop"
             results.append(
                 {
-                    "step": step["step"],
+                    "step": step.get("step", idx + 1),
                     "tool": tool_name,
-                    "description": step["description"],
+                    "description": step.get("description", ""),
                     "result": result,
                     "trace": {
                         "tool": tool_name,

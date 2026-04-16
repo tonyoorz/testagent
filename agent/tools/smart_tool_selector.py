@@ -21,6 +21,7 @@ from dataclasses import dataclass, asdict
 import logging
 from collections import defaultdict
 import pandas as pd
+from analysis_utils import pick_risk_score_column, top_counts, time_series_counts, severity_rate_by, compute_defect_explore_kpis, defect_quality_stats, stacked_top_counts, nunique_by, longrunner_phase_statistics, inflow_outflow_summary, word_frequencies, defect_wordcloud_source
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logging.basicConfig(level=logging.INFO)
