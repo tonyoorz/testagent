@@ -3686,71 +3686,11 @@ class IntelligentAgent:
             except Exception as e:
                 context["semantic_context"] = f"语义目录加载失败: {e}"
 
-        if mode == "agentic":
-            tool_call_max = int(os.getenv("AGENT_TOOL_CALL_MAX", "8") or 8)
-            tool_call_max = max(0, min(tool_call_max, 100))
-            max_iters = int(os.getenv("AGENT_AGENTIC_MAX_ITERS", "6") or 6)
-            max_iters = max(1, min(max_iters, 20))
-            exec_rows = []
-            try:
-                llm = self.tool_executor._llm
-                if not llm or not getattr(llm, "client", None):
-                    raise RuntimeError("agentic 模式缺少可用 LLM client")
-                tools_schema = self.tool_executor.get_tool_schema() or {}
-                tool_specs = build_tool_specs(tools_schema)
-                agentic_result = run_agentic_loop(
-                    llm_client=llm.client,
-                    llm_model=getattr(llm, "model", None),
-                    tool_specs=tool_specs,
-                    question=analysis_question,
-                    data_summary=str(context.get("data_summary") or ""),
-                    execute_tool=lambda tool_name, args: self.tool_executor.execute_tool(
-                        tool_name,
-                        prepared_data,
-                        **(args if isinstance(args, dict) else {}),
-                    ),
-                    tool_call_max=tool_call_max,
-                    max_iters=max_iters,
-                )
-                exec_rows = list(agentic_result.get("execution_rows") or [])
-                stop_reason = str(agentic_result.get("stop_reason") or "")
-                final_text = str(agentic_result.get("final_text") or "")
+        # === Unified Execution Engine ===
+        # All modes (rule/agentic/hybrid) share the same execution loop.
+        # Agentic mode auto-degrades to rule if no LLM available.
+        _use_unified_engine = os.getenv("AGENT_UNIFIED_ENGINE", "1") == "1"
 
-                analysis_trace["execution"] = exec_rows
-                analysis_trace["agentic_stop_reason"] = stop_reason
-                context["analysis_trace"] = analysis_trace
-                self.memory.add_message('assistant', final_text, {'tools_used': [r.get('tool') for r in exec_rows], 'execution_time': (datetime.now() - start_time).total_seconds()})
-                # P0 Tracer: finish on agentic path
-                if _tracer:
-                    try:
-                        _tracer.set_meta(mode="agentic", tools_used=[r.get("tool") for r in exec_rows])
-                        _tracer.finish(answer_summary=final_text[:500])
-                    except Exception:
-                        pass
-                return self._normalize_response_payload(
-                    {
-                        "text": final_text,
-                        "insights": [],
-                        "visualizations": [],
-                        "tools_used": [r.get("tool") for r in exec_rows],
-                        "context": context,
-                    },
-                    execution_results=[{"tool": r.get("tool"), "result": {"success": bool(r.get("success"))}} for r in exec_rows],
-                )
-            except Exception as e:
-                analysis_trace["execution"] = exec_rows
-                context["analysis_trace"] = analysis_trace
-                err = str(e)
-                logger.warning(f"Agentic模式失败，降级到rule模式继续处理: {err}")
-                analysis_trace["agentic_fallback"] = {
-                    "to_mode": "rule",
-                    "reason": err,
-                    "partial_execution_count": len(exec_rows),
-                }
-                analysis_trace["mode"] = "rule"
-                context["analysis_trace"] = analysis_trace
-                context["agentic_error"] = err
-                mode = "rule"
 
         # 3. 获取相关历史
         relevant_history = self.memory.get_relevant_history(question)
@@ -3896,9 +3836,46 @@ class IntelligentAgent:
                 pass
         analysis_trace["plan"] = serialize_plan_trace(plan)
 
-        # 6. 执行计划
-        execution_results = self.task_planner.execute_plan(plan, prepared_data, context=context, progress_cb=progress_cb, _tracer=_tracer)
-        analysis_trace["execution"] = [r.get("trace") for r in (execution_results or []) if isinstance(r, dict) and r.get("trace")]
+        # 6. 执行计划 — 统一执行引擎
+        _exec_answer_text = ""
+        if _use_unified_engine:
+            try:
+                from agent.core.execution_engine import UnifiedExecutionEngine
+                _engine = UnifiedExecutionEngine(self)
+                _exec_result = _engine.run(
+                    question=analysis_question,
+                    data=prepared_data,
+                    context=context,
+                    mode=mode,
+                    plan=plan,
+                    progress_cb=progress_cb,
+                    tracer=_tracer,
+                )
+                # Convert unified results to legacy format
+                execution_results = []
+                for s in _exec_result.steps:
+                    execution_results.append({
+                        "step": execution_results.__len__() + 1 if execution_results else 1,
+                        "tool": s.tool,
+                        "description": "",
+                        "result": s.result if isinstance(s.result, dict) else {"success": s.success},
+                        "trace": {
+                            "tool": s.tool,
+                            "params": s.params,
+                            "duration_ms": s.duration_ms,
+                            "gate": {"enabled": False, "action": "none", "reason": ""},
+                        },
+                    })
+                _exec_answer_text = _exec_result.answer_text
+                analysis_trace["execution"] = [{"tool": s.tool, "params": s.params, "duration_ms": s.duration_ms} for s in _exec_result.steps]
+                logger.info(f"Unified engine: mode={_exec_result.mode_used}, steps={len(_exec_result.steps)}, duration={_exec_result.total_duration_ms}ms")
+            except Exception as _engine_err:
+                logger.warning(f"Unified engine failed, falling back to legacy: {_engine_err}")
+                execution_results = self.task_planner.execute_plan(plan, prepared_data, context=context, progress_cb=progress_cb, _tracer=_tracer)
+                analysis_trace["execution"] = [r.get("trace") for r in (execution_results or []) if isinstance(r, dict) and r.get("trace")]
+        else:
+            execution_results = self.task_planner.execute_plan(plan, prepared_data, context=context, progress_cb=progress_cb, _tracer=_tracer)
+            analysis_trace["execution"] = [r.get("trace") for r in (execution_results or []) if isinstance(r, dict) and r.get("trace")]
         context["analysis_trace"] = analysis_trace
 
         # 7. 生成综合答案
@@ -3907,13 +3884,17 @@ class IntelligentAgent:
                 progress_cb({"event": "synthesize"})
             except Exception:
                 pass
-        answer = self._generate_answer(
-            question=question,
-            context=context,
-            execution_results=execution_results,
-            knowledge_context=knowledge_context,
-            relevant_history=relevant_history
-        )
+        # Agentic mode may have generated answer text directly
+        if _exec_answer_text:
+            answer = {"text": _exec_answer_text, "insights": [], "visualizations": []}
+        else:
+            answer = self._generate_answer(
+                question=question,
+                context=context,
+                execution_results=execution_results,
+                knowledge_context=knowledge_context,
+                relevant_history=relevant_history
+            )
         try:
             ctx_obj = answer.get("context") if isinstance(answer, dict) else None
             if isinstance(ctx_obj, dict):
