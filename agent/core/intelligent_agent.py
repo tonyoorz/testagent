@@ -6691,6 +6691,26 @@ class IntelligentAgent:
             pass
 
         qtext = (question or "").strip()
+
+        # P1 Guardrails: input check
+        _guardrail_results = []
+        try:
+            from agent.core.guardrails import GuardrailPipeline
+            if GuardrailPipeline.is_enabled():
+                _pipeline = GuardrailPipeline()
+                _proceed, _guardrail_results = _pipeline.check_input(question or "")
+                if not _proceed:
+                    if _tracer:
+                        _tracer.set_meta(guardrails="blocked")
+                        _tracer.finish()
+                    return self._normalize_response_payload({
+                        "text": _pipeline.format_input_block_message(_guardrail_results),
+                        "insights": [], "visualizations": [], "tools_used": [],
+                        "context": {"guardrails": "blocked", "details": [r.reason for r in _guardrail_results if r.should_block]},
+                    })
+        except Exception:
+            pass
+
         confirmed_now = False
         pending = self._pending_execution_confirmation
         if isinstance(pending, dict):
@@ -7069,6 +7089,17 @@ class IntelligentAgent:
             'tools_used': [r['tool'] for r in execution_results],
             'execution_time': (datetime.now() - start_time).total_seconds()
         })
+
+        # P1 Guardrails: output check
+        try:
+            from agent.core.guardrails import GuardrailPipeline
+            if GuardrailPipeline.is_enabled():
+                _out_results = GuardrailPipeline().check_output(str(answer.get('text', '')), execution_results)
+                _out_warns = [r for r in _out_results if r.action.value == "warn"]
+                if _out_warns:
+                    answer['text'] = str(answer.get('text', '')) + GuardrailPipeline().format_output_warnings(_out_results)
+        except Exception:
+            pass
 
         # P0 Tracer: finish trace
         if _tracer:
