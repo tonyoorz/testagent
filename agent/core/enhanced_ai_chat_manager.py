@@ -2192,18 +2192,8 @@ class EnhancedAIChatManager:
                         result.get('tools_used', []),
                         result.get('insights', [])
                     )
-
-                    chunk_size = 60
-                    for end in range(0, len(formatted), chunk_size):
-                        partial = formatted[:end + chunk_size]
-                        with streaming_lock:
-                            streaming_data[task_id]['status'] = 'processing'
-                            streaming_data[task_id]['response'] = partial
-                            streaming_data[task_id]['progress'] = '智能Agent正在输出...'
-                            streaming_data[task_id]['last_update'] = time.time()
-                        time.sleep(0.05)
-
                     with streaming_lock:
+                        streaming_data[task_id]['response'] = formatted
                         streaming_data[task_id]['status'] = 'completed'
                         streaming_data[task_id]['progress'] = '完成'
                         streaming_data[task_id]['last_update'] = time.time()
@@ -2371,17 +2361,9 @@ class EnhancedAIChatManager:
             threading.Thread(target=worker, daemon=True).start()
 
         def _stream_text_response(task_id: str, text: str, progress_text: str = '正在输出结果...'):
-            chunk_size = 90
             content = str(text or "").strip()
-            for end in range(0, len(content), chunk_size):
-                partial = content[:end + chunk_size]
-                with streaming_lock:
-                    streaming_data[task_id]['status'] = 'processing'
-                    streaming_data[task_id]['response'] = partial
-                    streaming_data[task_id]['progress'] = progress_text
-                    streaming_data[task_id]['last_update'] = time.time()
-                time.sleep(0.02)
             with streaming_lock:
+                streaming_data[task_id]['response'] = content
                 streaming_data[task_id]['status'] = 'completed'
                 streaming_data[task_id]['progress'] = '完成'
                 streaming_data[task_id]['last_update'] = time.time()
@@ -2607,7 +2589,7 @@ class EnhancedAIChatManager:
             suggestion_lines: List[str] = ["[Suggestions / Inference]"]
             if row_count == 0:
                 suggestion_lines.append("- 当前查询命中为0，可尝试放宽时间范围、状态或模块筛选")
-            if (safe_total is not None) and (safe_total > row_count):
+            if (safe_total is not None) and (safe_total > row_count) and int(sample_limit) > 0:
                 suggestion_lines.append(
                     f"- 为保证响应速度，回答详情按样本返回（上限 {int(sample_limit)} 条），已提供全量命中总数"
                 )
@@ -2639,7 +2621,12 @@ class EnhancedAIChatManager:
                 normalized_question = str(question or "").strip()
                 stage = "init"
                 summary_sql_mode = "agent"
-                summary_row_limit = max(1, int((os.getenv("CHAT_SUMMARY_ROW_LIMIT", "120") or "120").strip() or "120"))
+                summary_row_limit_raw = (os.getenv("CHAT_SUMMARY_ROW_LIMIT", "120") or "120").strip() or "120"
+                try:
+                    summary_row_limit = int(summary_row_limit_raw)
+                except Exception:
+                    summary_row_limit = 120
+                summary_unlimited = summary_row_limit <= 0
                 started_at = time.time()
                 tool_executor = getattr(self.intelligent_agent, 'tool_executor', None) if self.intelligent_agent else None
                 tool_sql_succeeded = False
@@ -2709,6 +2696,26 @@ class EnhancedAIChatManager:
                     except Exception as sem_err:
                         logger.debug(f"语义术语映射失败，继续使用原始问题: {sem_err}")
 
+                    scope_team = str(
+                        os.getenv("CHAT_SUMMARY_SCOPE_TEAM")
+                        or os.getenv("OCTANE_TEAM")
+                        or "DTSV_China"
+                    ).strip()
+                    if scope_team and scope_team.lower() not in {"*", "all", "any", "none", "off", "false", "0"}:
+                        existing_scope_team = str(semantic_hints.get("scope_team") or "").strip()
+                        if not existing_scope_team:
+                            semantic_hints["scope_team"] = scope_team
+                        _append_db_event(
+                            kind="context_ready",
+                            title="团队作用域已应用",
+                            status="ok",
+                            summary=f"scope_team={str(semantic_hints.get('scope_team') or scope_team)}",
+                            details={
+                                "scope_team": str(semantic_hints.get("scope_team") or scope_team),
+                                "source": "CHAT_SUMMARY_SCOPE_TEAM/OCTANE_TEAM/default",
+                            },
+                        )
+
                     with streaming_lock:
                         streaming_data.setdefault(task_id, {})
                         streaming_data[task_id]['status'] = 'processing'
@@ -2716,19 +2723,21 @@ class EnhancedAIChatManager:
                         streaming_data[task_id]['last_update'] = time.time()
 
                     _mark_stage("load_schema")
-                    target_table = guess_target_table(normalized_question)
+                    raw_target_table = guess_target_table(question)
+                    normalized_target_table = guess_target_table(normalized_question)
+                    target_table = normalized_target_table or raw_target_table or "octane_defects"
+                    if raw_target_table == "octane_manual_runs":
+                        target_table = "octane_manual_runs"
                     all_tables: List[str] = []
                     col_preview: List[str] = []
 
                     if tool_executor:
                         execution_path.append("schema:tool")
                         try:
-                            schema_out = tool_executor.execute_tool("get_sqlite_schema", None, table="")
+                            schema_out = tool_executor.execute_tool("get_sqlite_schema", None, table=target_table)
                             schema_result = schema_out.get("result") if isinstance(schema_out, dict) and schema_out.get("success") is True else {}
                             table_map = (schema_result or {}).get("tables") or {}
                             all_tables = [str(t) for t in table_map.keys()]
-                            if all_tables and target_table not in all_tables:
-                                target_table = all_tables[0]
                             if target_table in table_map and isinstance(table_map.get(target_table), list):
                                 col_preview = [str((c or {}).get("name") or "") for c in table_map.get(target_table) if isinstance(c, dict)]
                                 col_preview = [c for c in col_preview if c][:30]
@@ -2760,6 +2769,9 @@ class EnhancedAIChatManager:
                             conn.close()
                             raise RuntimeError("数据库无可用业务表")
                         if target_table not in all_tables:
+                            if raw_target_table == "octane_manual_runs" or normalized_target_table == "octane_manual_runs":
+                                conn.close()
+                                raise RuntimeError("数据库缺少 octane_manual_runs 表，无法回答测试用例执行问题")
                             target_table = all_tables[0]
 
                         cur.execute(f'PRAGMA table_info("{target_table}")')
@@ -2833,6 +2845,7 @@ class EnhancedAIChatManager:
                             table_name=target_table,
                             columns=col_preview,
                             semantic_hints=semantic_hints,
+                            row_limit=summary_row_limit,
                         )
                     elif use_agent_sql:
                         execution_path.append("sql_generate:tool")
@@ -2849,7 +2862,8 @@ class EnhancedAIChatManager:
                         )
                         if bool(agent_query_out.get("success")):
                             sql = str(agent_query_out.get("sql") or "").strip()
-                            out_rows = list(agent_query_out.get("rows") or [])
+                            if not summary_unlimited:
+                                out_rows = list(agent_query_out.get("rows") or [])
                             exp = agent_query_out.get("business_explanation")
                             if isinstance(exp, dict):
                                 business_explanation = exp
@@ -2878,6 +2892,7 @@ class EnhancedAIChatManager:
                             table_name=target_table,
                             columns=col_preview,
                             semantic_hints=semantic_hints,
+                            row_limit=summary_row_limit,
                         )
 
                     sql_clean = sanitize_select_sql(sql_text=sql, table_name=target_table, default_limit=50)
@@ -2888,7 +2903,9 @@ class EnhancedAIChatManager:
 
                     if not out_rows:
                         _mark_stage("run_sql_tool")
-                        if tool_executor:
+                        if summary_unlimited:
+                            local_fallback_reason = "CHAT_SUMMARY_ROW_LIMIT<=0，启用无上限本地查询"
+                        elif tool_executor:
                             execution_path.append("sql_run:tool")
                             try:
                                 tool_run = tool_executor.execute_tool("run_sqlite_query", None, sql=sql_clean, limit=summary_row_limit)
@@ -2973,6 +2990,7 @@ class EnhancedAIChatManager:
                                 columns=col_preview,
                                 entity_tokens_override=[],
                                 semantic_hints=semantic_hints,
+                                row_limit=summary_row_limit,
                             )
                             broad_sql_clean = broad_sql.strip().rstrip(';')
                             if not broad_sql_clean or not re.match(r"^\s*(select|with)\b", broad_sql_clean, flags=re.IGNORECASE):
@@ -3085,7 +3103,8 @@ class EnhancedAIChatManager:
                             semantic_hints=semantic_hints,
                         )
                         if bool(agent_fallback_out.get("success")):
-                            out_rows = list(agent_fallback_out.get("rows") or [])
+                            if not summary_unlimited:
+                                out_rows = list(agent_fallback_out.get("rows") or [])
                             sql_clean = str(agent_fallback_out.get("sql") or sql_clean)
                             exp = agent_fallback_out.get("business_explanation")
                             if isinstance(exp, dict):
@@ -3708,6 +3727,13 @@ class EnhancedAIChatManager:
 
             chat_messages.append({
                 "role": "assistant",
+                "content": "AI正在思考...",
+                "type": "reasoning",
+                "task_id": task_id,
+                "agent_used": False
+            })
+            chat_messages.append({
+                "role": "assistant",
                 "content": "",
                 "type": "stream_response",
                 "task_id": task_id,
@@ -3796,10 +3822,7 @@ class EnhancedAIChatManager:
             current_ts = time.time()
 
             reasoning_content = build_stream_reasoning_content(stream_data, now_ts=current_ts)
-            timeline_content = build_timeline_view_models(stream_data, now_ts=current_ts)
-            terminal_timeline_event = build_terminal_timeline_event(stream_data, now_ts=current_ts)
-            if terminal_timeline_event:
-                timeline_content = timeline_content + [terminal_timeline_event]
+            status = stream_data.get('status')
 
             show_details = bool(show_reasoning and 'show' in (show_reasoning or []))
             chat_messages = [
@@ -3809,32 +3832,36 @@ class EnhancedAIChatManager:
                     and msg.get('type') in {'reasoning', 'timeline'}
                 )
             ]
-            if show_details:
-                if reasoning_content:
-                    chat_messages.append({
-                        "role": "assistant",
-                        "type": "reasoning",
-                        "task_id": current_task_id,
-                        "agent_used": False,
-                        "content": reasoning_content
-                    })
-                if timeline_content:
-                    chat_messages.append({
-                        "role": "assistant",
-                        "type": "timeline",
-                        "task_id": current_task_id,
-                        "agent_used": False,
-                        "content": timeline_content
-                    })
-                chat_messages = _trim_chat_messages(chat_messages)
 
-            response_content = stream_data.get('response') or ''
             response_index = -1
             for i in range(len(chat_messages) - 1, -1, -1):
                 if chat_messages[i].get('type') == 'stream_response' and chat_messages[i].get('task_id') == current_task_id:
                     response_index = i
                     break
-            if response_index != -1:
+
+            if show_details:
+                if reasoning_content:
+                    reasoning_message = {
+                        "role": "assistant",
+                        "type": "reasoning",
+                        "task_id": current_task_id,
+                        "agent_used": False,
+                        "content": reasoning_content
+                    }
+                    if response_index != -1:
+                        chat_messages.insert(response_index, reasoning_message)
+                        response_index += 1
+                    else:
+                        chat_messages.append(reasoning_message)
+                chat_messages = _trim_chat_messages(chat_messages)
+                if response_index == -1:
+                    for i in range(len(chat_messages) - 1, -1, -1):
+                        if chat_messages[i].get('type') == 'stream_response' and chat_messages[i].get('task_id') == current_task_id:
+                            response_index = i
+                            break
+
+            response_content = stream_data.get('response') or ''
+            if response_index != -1 and status == 'completed':
                 chat_messages[response_index]["content"] = response_content
             chat_messages = _trim_chat_messages(chat_messages)
 
@@ -3852,7 +3879,6 @@ class EnhancedAIChatManager:
             if isinstance(streamed_conversation_state, dict) and streamed_conversation_state:
                 updated_conversation_state = streamed_conversation_state
 
-            status = stream_data.get('status')
             last_update = float(stream_data.get('last_update') or 0)
             if status == 'processing' and last_update > 0 and max_stale_seconds > 0:
                 if (time.time() - last_update) > max_stale_seconds:

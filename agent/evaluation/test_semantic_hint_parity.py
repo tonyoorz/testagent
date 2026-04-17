@@ -153,6 +153,16 @@ class SemanticHintParityTests(unittest.TestCase):
         self.assertEqual(runtime.get("month_number"), 3)
         self.assertEqual(runtime.get("preferred_dimension"), "top_aida")
 
+    def test_testcase_summary_phrase_is_recognized_as_manual_run_coverage(self):
+        question = "上周团队测试用例情况"
+        columns = ["creation_time", "status", "run_by", "test_id", "run_team"]
+
+        shared = build_deterministic_query_hints(question, columns)
+        runtime = extract_query_hints(question, columns)
+
+        self.assertTrue(bool(shared.get("wants_test_coverage")))
+        self.assertTrue(bool(runtime.get("wants_test_coverage")))
+
 
 if __name__ == "__main__":
     unittest.main()

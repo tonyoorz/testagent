@@ -18,6 +18,47 @@ _FEATURE_DIMENSION_HINTS = {
     "service",
 }
 
+_GENERIC_ASCII_COLUMN_ALIASES = {
+    "id",
+    "name",
+    "status",
+    "year",
+    "spec",
+    "raw",
+    "json",
+    "program",
+    "team",
+}
+
+_ZH_MEANING_ALIAS_SKIP_TERMS = {
+    "字段",
+    "数据",
+    "用于",
+    "表示",
+    "主要",
+    "原始",
+    "完整",
+    "格式",
+    "时间",
+    "状态",
+}
+
+_NON_GROUPABLE_DIMENSIONS = {
+    "id",
+    "defect_id",
+    "mr_id",
+    "test_id",
+    "raw_json",
+    "year",
+    "spec",
+    "creation_time",
+    "last_modified",
+    "started",
+    "finished",
+    "fetched_at",
+    "version_stamp",
+}
+
 _UNIFIED_INTENT_CACHE_MAXSIZE = 128
 _UNIFIED_INTENT_ADAPTER_CACHE: "OrderedDict[Tuple[str, str, str, bool], Dict[str, Any]]" = OrderedDict()
 
@@ -131,6 +172,158 @@ def _collect_dimension_aliases(datasets: Sequence[Dict[str, Any]]) -> List[Tuple
     return pairs
 
 
+def _collect_meaning_aliases(meaning: Any) -> List[str]:
+    text = str(meaning or "").strip()
+    if not text:
+        return []
+
+    primary = re.split(r"[（(,，;；。:：]", text, maxsplit=1)[0].strip()
+    if not primary:
+        return []
+
+    candidates: List[str] = [primary]
+    for sep in ["/", "、", "|"]:
+        if sep in primary:
+            candidates.extend([part.strip() for part in primary.split(sep) if part.strip()])
+
+    out: List[str] = []
+    seen = set()
+    for candidate in candidates:
+        if not candidate:
+            continue
+        lowered = candidate.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        if candidate.isascii() and len(candidate) <= 2:
+            continue
+        if any(skip in candidate for skip in _ZH_MEANING_ALIAS_SKIP_TERMS):
+            continue
+        out.append(candidate)
+    return out
+
+
+def _collect_optimized_column_aliases(datasets: Sequence[Dict[str, Any]]) -> List[Tuple[str, str, str]]:
+    pairs: List[Tuple[str, str, str]] = []
+    for ds in datasets:
+        ds_id = str(ds.get("id") or "").strip()
+        optimized = ds.get("optimized_table") if isinstance(ds.get("optimized_table"), dict) else {}
+        columns = optimized.get("columns") if isinstance(optimized.get("columns"), list) else []
+
+        for col in columns:
+            if not isinstance(col, dict):
+                continue
+            canonical = str(col.get("name") or "").strip()
+            if not canonical:
+                continue
+
+            alias_candidates: List[str] = [
+                canonical,
+                canonical.replace("_", " "),
+                canonical.replace("_", "-"),
+            ]
+
+            octane_source = str(col.get("octane_source") or "").strip()
+            if octane_source:
+                source_base = octane_source.split(".")[0].strip()
+                if source_base:
+                    alias_candidates.append(source_base)
+
+            alias_candidates.extend(_collect_meaning_aliases(col.get("meaning")))
+
+            dedup_aliases: List[str] = []
+            seen = set()
+            for alias in alias_candidates:
+                text = str(alias or "").strip()
+                if not text:
+                    continue
+                lowered = text.lower()
+                if lowered in seen:
+                    continue
+                seen.add(lowered)
+                dedup_aliases.append(text)
+
+            for alias in dedup_aliases:
+                alias_lower = alias.lower()
+                if alias_lower.isascii() and len(alias_lower) <= 2:
+                    continue
+                if alias_lower in _GENERIC_ASCII_COLUMN_ALIASES:
+                    continue
+                pairs.append((alias_lower, canonical, ds_id))
+
+    pairs.sort(key=lambda x: len(x[0]), reverse=True)
+    return pairs
+
+
+def _collect_semantic_aliases(datasets: Sequence[Dict[str, Any]]) -> List[Tuple[str, str, str]]:
+    combined = _collect_dimension_aliases(datasets)
+    combined.extend(_collect_optimized_column_aliases(datasets))
+
+    dedup: List[Tuple[str, str, str]] = []
+    seen = set()
+    for alias_lower, canonical, ds_id in combined:
+        key = (alias_lower, canonical, ds_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append((alias_lower, canonical, ds_id))
+    dedup.sort(key=lambda x: len(x[0]), reverse=True)
+    return dedup
+
+
+def _pick_preferred_dimension(matched_dimensions: Sequence[str], asks_feature_breakdown: bool) -> str:
+    dims = [str(d).strip() for d in (matched_dimensions or []) if str(d).strip()]
+    if not dims:
+        return "top_aida" if asks_feature_breakdown else ""
+
+    feature_priority = ["top_aida", "aida_english", "aida", "product_area", "service", "module", "domain"]
+    for candidate in feature_priority:
+        if candidate in dims:
+            return candidate
+
+    if asks_feature_breakdown:
+        return "top_aida"
+
+    general_priority = [
+        "project",
+        "tproject",
+        "team",
+        "run_team",
+        "status_phase",
+        "status",
+        "phase",
+        "severity",
+        "problem_severity",
+        "blocking_reason",
+        "solution_cluster",
+        "release",
+        "software_version",
+        "execution_sw_version",
+        "test_phase",
+        "testing_tool_type",
+        "target_ecu_conf",
+        "set_field",
+        "lead_model",
+        "assigned_ecu",
+        "tester",
+        "run_by",
+        "owner",
+        "author",
+    ]
+    for candidate in general_priority:
+        if candidate in dims:
+            return candidate
+
+    for candidate in dims:
+        c = candidate.lower()
+        if c in _NON_GROUPABLE_DIMENSIONS:
+            continue
+        if c.endswith("_id"):
+            continue
+        return candidate
+    return ""
+
+
 def _collect_rule_terms(catalog: Dict[str, Any]) -> List[Tuple[str, str]]:
     terms: List[Tuple[str, str]] = []
     for rule in (catalog.get("business_rules") or []):
@@ -159,6 +352,10 @@ def merge_semantic_hints(*hints_list: Optional[Dict[str, Any]]) -> Dict[str, Any
     for hints in hints_list:
         if not isinstance(hints, dict):
             continue
+
+        scope_team = str(hints.get("scope_team") or "").strip()
+        if scope_team and not str(merged.get("scope_team") or "").strip():
+            merged["scope_team"] = scope_team
 
         for key in ["wants_feature_breakdown", "wants_aida_dist", "wants_showstopper", "wants_showstopper_candidate"]:
             if bool(hints.get(key)):
@@ -330,6 +527,12 @@ def build_unified_query_intent(
     if preferred_dimension:
         semantic_constraints["preferred_dimension"] = preferred_dimension
 
+    mapped_dimensions = merged_hints.get("mapped_dimensions")
+    if isinstance(mapped_dimensions, list):
+        normalized_dims = _dedup_text_list(mapped_dimensions, limit=16)
+        if normalized_dims:
+            semantic_constraints["mapped_dimensions"] = normalized_dims
+
     if isinstance(month_number, int) and 1 <= month_number <= 12:
         semantic_constraints["month_number"] = month_number
 
@@ -399,7 +602,7 @@ def adapt_question_with_semantic_terms(
         return out
 
     selected_datasets = _select_datasets(catalog, table_name=table_name)
-    alias_rows = _collect_dimension_aliases(selected_datasets)
+    alias_rows = _collect_semantic_aliases(selected_datasets)
     rule_rows = _collect_rule_terms(catalog)
 
     q_lower = q.lower()
@@ -431,14 +634,7 @@ def adapt_question_with_semantic_terms(
     asks_feature_breakdown = any(token in q_lower for token in ["功能", "哪些功能", "模块", "feature", "features", "module", "service", "aida"])
     asks_showstopper = any(token in q_lower for token in ["showstopper", "show stopper", "候选", "candidate"])
 
-    preferred_dimension = ""
-    for candidate in ["top_aida", "aida_english", "aida", "product_area", "service", "module", "domain"]:
-        if candidate in matched_dimensions:
-            preferred_dimension = candidate
-            break
-
-    if not preferred_dimension and asks_feature_breakdown:
-        preferred_dimension = "top_aida"
+    preferred_dimension = _pick_preferred_dimension(matched_dimensions, asks_feature_breakdown)
 
     hints = {
         "wants_feature_breakdown": bool(asks_feature_breakdown or (set(matched_dimensions) & _FEATURE_DIMENSION_HINTS)),

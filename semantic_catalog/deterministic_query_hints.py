@@ -62,6 +62,11 @@ _MANUAL_RUN_DIRECT_TERMS = (
     "test case execution",
     "test cases execution",
     "case execution",
+    "测试用例情况",
+    "用例情况",
+    "testcase status",
+    "test case status",
+    "test cases status",
 )
 
 _MANUAL_RUN_CONTEXT_TERMS = (
@@ -109,6 +114,16 @@ _MANUAL_RUN_CASE_TERMS = (
     "test cases",
     "case",
     "cases",
+)
+
+_MANUAL_RUN_CASE_SUMMARY_TERMS = (
+    "测试用例情况",
+    "用例情况",
+    "case status",
+    "cases status",
+    "testcase status",
+    "test case status",
+    "test cases status",
 )
 
 _MANUAL_RUN_ENTITY_SKIP_TERMS = {
@@ -230,6 +245,8 @@ def _contains_any(text: str, terms: tuple) -> bool:
 def _is_manual_run_question(question_text: str) -> bool:
     q = (question_text or "").lower()
     if _contains_any(q, _MANUAL_RUN_DIRECT_TERMS):
+        return True
+    if _contains_any(q, _MANUAL_RUN_CASE_TERMS) and _contains_any(q, _MANUAL_RUN_CASE_SUMMARY_TERMS):
         return True
     if _contains_any(q, _MANUAL_RUN_CONTEXT_TERMS) and _contains_any(q, _MANUAL_RUN_EXECUTION_TERMS):
         return True

@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from semantic_catalog.deterministic_query_hints import build_deterministic_query_hints
@@ -24,6 +25,16 @@ _CONFIRMATION_REPLY_TERMS = {
     "ok", "yes", "y", "proceed", "continue",
     "取消", "停止", "不执行", "算了", "否", "不要",
     "no", "n", "cancel", "stop",
+}
+
+_SCOPE_TEAM_DISABLED_TOKENS = {
+    "*",
+    "all",
+    "any",
+    "none",
+    "off",
+    "false",
+    "0",
 }
 
 _MANUAL_RUN_DIRECT_TERMS = (
@@ -55,6 +66,11 @@ _MANUAL_RUN_DIRECT_TERMS = (
     "test case execution",
     "test cases execution",
     "case execution",
+    "测试用例情况",
+    "用例情况",
+    "testcase status",
+    "test case status",
+    "test cases status",
 )
 
 _MANUAL_RUN_CONTEXT_TERMS = (
@@ -103,6 +119,183 @@ _MANUAL_RUN_CASE_TERMS = (
     "case",
     "cases",
 )
+
+_MANUAL_RUN_CASE_SUMMARY_TERMS = (
+    "测试用例情况",
+    "用例情况",
+    "case status",
+    "cases status",
+    "testcase status",
+    "test case status",
+    "test cases status",
+)
+
+_RELATIVE_PERIOD_ALIASES: Dict[str, tuple] = {
+    "last_week": ("上周", "上星期", "上一周", "last week"),
+    "this_week": ("本周", "这周", "本星期", "this week"),
+    "last_month": ("上月", "上个月", "last month"),
+    "this_month": ("本月", "这个月", "this month"),
+}
+
+_MATRIX_LEVEL_TOKEN_PATTERN = re.compile(r"^[1-5][a-e]?$", re.IGNORECASE)
+
+
+def _normalize_relative_period(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    for canonical, aliases in _RELATIVE_PERIOD_ALIASES.items():
+        for alias in aliases:
+            if text == alias.lower():
+                return canonical
+    if text in _RELATIVE_PERIOD_ALIASES:
+        return text
+    return ""
+
+
+def _normalize_week_year(value: Any) -> Optional[int]:
+    try:
+        year = int(value)
+    except Exception:
+        return None
+    if 2000 <= year <= 2100:
+        return year
+    return None
+
+
+def _normalize_week_number(value: Any) -> Optional[int]:
+    try:
+        week_number = int(value)
+    except Exception:
+        return None
+    if 1 <= week_number <= 53:
+        return week_number
+    return None
+
+
+def _normalize_rolling_days(value: Any) -> Optional[int]:
+    try:
+        days = int(value)
+    except Exception:
+        return None
+    if 1 <= days <= 366:
+        return days
+    return None
+
+
+def _normalize_matrix_level(value: Any) -> str:
+    token = str(value or "").strip().lower()
+    token = token.replace(" ", "").replace("-", "")
+    if token.startswith("matrix"):
+        token = token[6:]
+    if token.startswith("矩阵"):
+        token = token[2:]
+    if _MATRIX_LEVEL_TOKEN_PATTERN.match(token):
+        return token
+    return ""
+
+
+def _extract_matrix_levels_from_question(question_text: str) -> List[str]:
+    q = str(question_text or "")
+    ql = q.lower()
+    levels: List[str] = []
+
+    for match in re.finditer(r"(?:matrix|矩阵)\s*([1-5](?:[a-e])?)", ql, flags=re.IGNORECASE):
+        normalized = _normalize_matrix_level(match.group(1))
+        if normalized:
+            levels.append(normalized)
+
+    if ("matrix" in ql) or ("矩阵" in q):
+        for match in re.finditer(r"\b([1-5][a-e])\b", ql, flags=re.IGNORECASE):
+            normalized = _normalize_matrix_level(match.group(1))
+            if normalized:
+                levels.append(normalized)
+
+    dedup_levels: List[str] = []
+    seen = set()
+    for item in levels:
+        if item and item not in seen:
+            seen.add(item)
+            dedup_levels.append(item)
+    return dedup_levels[:6]
+
+
+def _extract_explicit_week_scope(question_text: str) -> Dict[str, Any]:
+    q = str(question_text or "")
+    ql = q.lower()
+
+    patterns_with_year = [
+        re.search(r"\b(20\d{2})\s*[-_/]?\s*(?:cw|w)\s*([0-4]?\d|5[0-3])\b", ql),
+        re.search(r"(20\d{2})\s*年\s*第?\s*([0-4]?\d|5[0-3])\s*(?:周|星期)", q),
+    ]
+    for match in patterns_with_year:
+        if not match:
+            continue
+        year = _normalize_week_year(match.group(1))
+        week_number = _normalize_week_number(match.group(2))
+        if year is not None and week_number is not None:
+            return {
+                "week_year": year,
+                "week_number": week_number,
+                "test_week": f"{year}-CW{week_number:02d}",
+            }
+
+    patterns_without_year = [
+        re.search(r"\b(?:cw|w)\s*([0-4]?\d|5[0-3])\b", ql),
+        re.search(r"第?\s*([0-4]?\d|5[0-3])\s*(?:周|星期)", q),
+    ]
+    for match in patterns_without_year:
+        if not match:
+            continue
+        week_number = _normalize_week_number(match.group(1))
+        if week_number is None:
+            continue
+        iso_year = int(datetime.now().isocalendar()[0])
+        return {
+            "week_year": iso_year,
+            "week_number": week_number,
+            "test_week": f"{iso_year}-CW{week_number:02d}",
+        }
+
+    return {}
+
+
+def _extract_time_scope_from_question(question_text: str) -> Dict[str, Any]:
+    q = str(question_text or "")
+    ql = q.lower()
+
+    out: Dict[str, Any] = {
+        "relative_period": "",
+        "rolling_days": None,
+        "week_year": None,
+        "week_number": None,
+        "test_week": "",
+    }
+
+    if any(token in q for token in ["最近一周", "近一周"]) or any(token in ql for token in ["last 7 days", "past 7 days", "recent 7 days"]):
+        out["rolling_days"] = 7
+
+    zh_days = re.search(r"(?:最近|近|过去)\s*(\d{1,3})\s*天", q)
+    en_days = re.search(r"\b(?:last|past|recent)\s*(\d{1,3})\s*days?\b", ql)
+    day_match = zh_days or en_days
+    if day_match:
+        days = _normalize_rolling_days(day_match.group(1))
+        if days is not None:
+            out["rolling_days"] = days
+
+    relative_period = ""
+    for canonical, aliases in _RELATIVE_PERIOD_ALIASES.items():
+        if any(alias in q for alias in aliases if not alias.isascii()) or any(alias in ql for alias in aliases if alias.isascii()):
+            relative_period = canonical
+            break
+    if relative_period:
+        out["relative_period"] = relative_period
+
+    explicit_week = _extract_explicit_week_scope(q)
+    if explicit_week:
+        out.update(explicit_week)
+
+    return out
 
 _HISTORY_DIRECT_TERMS = (
     "history",
@@ -272,6 +465,16 @@ def _has_strong_structured_intent(question_text: str) -> bool:
     return False
 
 
+def _extract_scope_team_from_hints(semantic_hints: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(semantic_hints, dict):
+        return ""
+    for key in ["scope_team", "force_team", "team_scope"]:
+        value = str(semantic_hints.get(key) or "").strip()
+        if value and value.lower() not in _SCOPE_TEAM_DISABLED_TOKENS:
+            return value
+    return ""
+
+
 def _normalize_entity_token(token: Any) -> str:
     text = str(token or "").strip().lower()
     return text.strip(" \t\r\n,，。.!！？、；;:：")
@@ -281,12 +484,16 @@ def _is_noise_entity_token(token: Any) -> bool:
     normalized = _normalize_entity_token(token)
     if not normalized:
         return True
+    if _normalize_matrix_level(normalized):
+        return True
     return normalized in _EN_STOP_WORDS or normalized in _CONFIRMATION_REPLY_TERMS
 
 
 def _is_manual_run_question(question_text: str) -> bool:
     q = (question_text or "").lower()
     if _contains_any(q, _MANUAL_RUN_DIRECT_TERMS):
+        return True
+    if _contains_any(q, _MANUAL_RUN_CASE_TERMS) and _contains_any(q, _MANUAL_RUN_CASE_SUMMARY_TERMS):
         return True
     if _contains_any(q, _MANUAL_RUN_CONTEXT_TERMS) and _contains_any(q, _MANUAL_RUN_EXECUTION_TERMS):
         return True
@@ -330,14 +537,58 @@ def _extract_semantic_hints_from_unified_intent(unified_intent: Dict[str, Any]) 
                 preferred_dimension = str(value or "").strip()
                 if preferred_dimension:
                     merged["preferred_dimension"] = preferred_dimension
+            elif key == "mapped_dimensions" and isinstance(value, list):
+                normalized_dims = [str(item or "").strip() for item in value if str(item or "").strip()]
+                if normalized_dims:
+                    merged["mapped_dimensions"] = normalized_dims[:16]
             elif key == "month_number" and isinstance(value, int) and 1 <= value <= 12:
                 merged["month_number"] = value
+            elif key == "week_year":
+                normalized_year = _normalize_week_year(value)
+                if normalized_year is not None:
+                    merged["week_year"] = normalized_year
+            elif key == "week_number":
+                normalized_week = _normalize_week_number(value)
+                if normalized_week is not None:
+                    merged["week_number"] = normalized_week
+            elif key == "rolling_days":
+                normalized_days = _normalize_rolling_days(value)
+                if normalized_days is not None:
+                    merged["rolling_days"] = normalized_days
+            elif key == "relative_period":
+                normalized_period = _normalize_relative_period(value)
+                if normalized_period:
+                    merged["relative_period"] = normalized_period
+            elif key == "test_week":
+                test_week = str(value or "").strip()
+                if test_week:
+                    merged["test_week"] = test_week
 
     time_scope = unified_intent.get("time_scope")
     if isinstance(time_scope, dict):
         month_number = time_scope.get("month_number")
         if isinstance(month_number, int) and 1 <= month_number <= 12 and merged.get("month_number") is None:
             merged["month_number"] = month_number
+
+        week_year = _normalize_week_year(time_scope.get("week_year"))
+        if week_year is not None and merged.get("week_year") is None:
+            merged["week_year"] = week_year
+
+        week_number = _normalize_week_number(time_scope.get("week_number"))
+        if week_number is not None and merged.get("week_number") is None:
+            merged["week_number"] = week_number
+
+        rolling_days = _normalize_rolling_days(time_scope.get("rolling_days"))
+        if rolling_days is not None and merged.get("rolling_days") is None:
+            merged["rolling_days"] = rolling_days
+
+        relative_period = _normalize_relative_period(time_scope.get("relative_period") or time_scope.get("period"))
+        if relative_period and not merged.get("relative_period"):
+            merged["relative_period"] = relative_period
+
+        test_week = str(time_scope.get("test_week") or "").strip()
+        if test_week and not str(merged.get("test_week") or "").strip():
+            merged["test_week"] = test_week
 
     return merged
 
@@ -351,6 +602,16 @@ def _is_meaningful_semantic_value(key: str, value: Any) -> bool:
         return bool(str(value or "").strip())
     if key == "month_number":
         return _is_valid_month_number(value)
+    if key == "week_year":
+        return _normalize_week_year(value) is not None
+    if key == "week_number":
+        return _normalize_week_number(value) is not None
+    if key == "rolling_days":
+        return _normalize_rolling_days(value) is not None
+    if key == "relative_period":
+        return bool(_normalize_relative_period(value))
+    if key == "test_week":
+        return bool(str(value or "").strip())
     if key == "entity_tokens" and isinstance(value, list):
         return any(str(token or "").strip() for token in value)
     if isinstance(value, bool):
@@ -451,6 +712,10 @@ def extract_query_hints(
         wants_project_breakdown = True
         wants_analysis = True
 
+    if guess_target_table(q) == "octane_manual_runs":
+        wants_test_coverage = True
+        wants_analysis = True
+
     wants_feature_breakdown = any(
         k in ql
         for k in ["功能", "哪些功能", "模块", "领域", "feature", "features", "module", "service", "aida"]
@@ -474,6 +739,14 @@ def extract_query_hints(
         except Exception:
             month_number = None
 
+    parsed_time_scope = _extract_time_scope_from_question(q)
+    relative_period = str(parsed_time_scope.get("relative_period") or "").strip()
+    rolling_days = _normalize_rolling_days(parsed_time_scope.get("rolling_days"))
+    week_year = _normalize_week_year(parsed_time_scope.get("week_year"))
+    week_number = _normalize_week_number(parsed_time_scope.get("week_number"))
+    test_week = str(parsed_time_scope.get("test_week") or "").strip()
+    matrix_levels = _extract_matrix_levels_from_question(q)
+
     if semantic_hints:
         semantic_tokens = semantic_hints.get("entity_tokens")
         if isinstance(semantic_tokens, list):
@@ -494,8 +767,54 @@ def extract_query_hints(
         if month_number is None and isinstance(semantic_month, int) and 1 <= semantic_month <= 12:
             month_number = semantic_month
 
+        semantic_relative_period = _normalize_relative_period(semantic_hints.get("relative_period"))
+        if not relative_period and semantic_relative_period:
+            relative_period = semantic_relative_period
+
+        semantic_rolling_days = _normalize_rolling_days(semantic_hints.get("rolling_days"))
+        if rolling_days is None and semantic_rolling_days is not None:
+            rolling_days = semantic_rolling_days
+
+        semantic_week_year = _normalize_week_year(semantic_hints.get("week_year"))
+        if week_year is None and semantic_week_year is not None:
+            week_year = semantic_week_year
+
+        semantic_week_number = _normalize_week_number(semantic_hints.get("week_number"))
+        if week_number is None and semantic_week_number is not None:
+            week_number = semantic_week_number
+
+        semantic_test_week = str(semantic_hints.get("test_week") or "").strip()
+        if not test_week and semantic_test_week:
+            test_week = semantic_test_week
+
+        semantic_matrix_levels = semantic_hints.get("matrix_levels")
+        if isinstance(semantic_matrix_levels, list):
+            seen_levels = {lvl for lvl in matrix_levels}
+            for item in semantic_matrix_levels:
+                normalized_level = _normalize_matrix_level(item)
+                if normalized_level and normalized_level not in seen_levels:
+                    seen_levels.add(normalized_level)
+                    matrix_levels.append(normalized_level)
+
+        semantic_time_scope = semantic_hints.get("time_scope") if isinstance(semantic_hints.get("time_scope"), dict) else {}
+        if semantic_time_scope:
+            if not relative_period:
+                relative_period = _normalize_relative_period(semantic_time_scope.get("relative_period") or semantic_time_scope.get("period"))
+            if rolling_days is None:
+                rolling_days = _normalize_rolling_days(semantic_time_scope.get("rolling_days"))
+            if week_year is None:
+                week_year = _normalize_week_year(semantic_time_scope.get("week_year"))
+            if week_number is None:
+                week_number = _normalize_week_number(semantic_time_scope.get("week_number"))
+            if not test_week:
+                test_week = str(semantic_time_scope.get("test_week") or "").strip()
+
     wants_showstopper_candidate = ("candidate" in ql) or bool(semantic_hints.get("wants_showstopper_candidate"))
+    if matrix_levels:
+        wants_matrix = True
+        wants_matrix_severity = True
     preferred_dimension = str(semantic_hints.get("preferred_dimension") or "").strip()
+    scope_team = _extract_scope_team_from_hints(semantic_hints)
     if preferred_dimension in {"project", "tproject", "team"}:
         wants_project_breakdown = True
         wants_analysis = True
@@ -520,7 +839,14 @@ def extract_query_hints(
         "wants_analysis": wants_analysis,
         "wants_project_breakdown": wants_project_breakdown,
         "month_number": month_number,
+        "relative_period": relative_period,
+        "rolling_days": rolling_days,
+        "week_year": week_year,
+        "week_number": week_number,
+        "test_week": test_week,
+        "matrix_levels": matrix_levels,
         "preferred_dimension": preferred_dimension,
+        "scope_team": scope_team,
         "columns": set(shared_hints.get("columns") or columns or []),
     }
 
@@ -621,6 +947,7 @@ def build_deterministic_sql(
     columns: List[str],
     entity_tokens_override: Optional[List[str]] = None,
     semantic_hints: Optional[Dict[str, Any]] = None,
+    row_limit: Optional[int] = 120,
 ) -> str:
     hints = extract_query_hints(
         question,
@@ -632,6 +959,15 @@ def build_deterministic_sql(
     if entity_tokens_override is not None:
         hints["entity_tokens"] = [str(t).strip() for t in (entity_tokens_override or []) if str(t).strip()][:6]
 
+    def _limit_clause(limit_value: Optional[int], default_limit: int = 120) -> str:
+        try:
+            resolved = int(default_limit if limit_value is None else limit_value)
+        except Exception:
+            resolved = int(default_limit)
+        if resolved <= 0:
+            return ""
+        return f" LIMIT {resolved}"
+
     cols = hints["columns"]
 
     def _esc_like(token: str) -> str:
@@ -642,6 +978,30 @@ def build_deterministic_sql(
 
     def _count_distinct_text_expr(col_name: str) -> str:
         return f"COUNT(DISTINCT NULLIF(TRIM(CAST({col_name} AS TEXT)), ''))"
+
+    def _is_groupable_dimension(col_name: str) -> bool:
+        lowered = str(col_name or "").strip().lower()
+        if not lowered:
+            return False
+        if lowered in {
+            "id",
+            "defect_id",
+            "mr_id",
+            "test_id",
+            "raw_json",
+            "year",
+            "spec",
+            "creation_time",
+            "last_modified",
+            "started",
+            "finished",
+            "fetched_at",
+            "version_stamp",
+        }:
+            return False
+        if lowered.endswith("_id"):
+            return False
+        return True
 
     select_cols: List[str] = []
     for col in [
@@ -679,8 +1039,123 @@ def build_deterministic_sql(
 
     where_parts: List[str] = []
 
+    scope_team = str(hints.get("scope_team") or "").strip()
+    if scope_team:
+        scope_col = ""
+        if table_name == "octane_manual_runs":
+            scope_col = next((c for c in ["run_team", "team", "project", "tproject"] if c in cols), "")
+        elif table_name == "octane_defect_histories":
+            scope_col = next((c for c in ["team"] if c in cols), "")
+        else:
+            scope_col = next((c for c in ["team", "problem_finder_team", "project", "tproject"] if c in cols), "")
+
+        if scope_col:
+            safe_scope_team = _esc_like(scope_team)
+            where_parts.append(f"LOWER(TRIM(CAST({scope_col} AS TEXT))) = LOWER('{safe_scope_team}')")
+
+    week_col_for_filter = "test_week" if "test_week" in cols else ""
+    if table_name == "octane_manual_runs":
+        time_col_candidates = ["finished", "started", "creation_time", "last_modified", "fetched_at", "finished_udf_dt", "finished_udf", "tcreationtime"]
+    elif table_name == "octane_defect_histories":
+        time_col_candidates = ["fetched_at"]
+    else:
+        time_col_candidates = ["creation_time", "last_modified", "fetched_at"]
+    time_col_for_range = next((c for c in time_col_candidates if c in cols), "")
+
+    relative_period = _normalize_relative_period(hints.get("relative_period"))
+    rolling_days = _normalize_rolling_days(hints.get("rolling_days"))
+    week_year = _normalize_week_year(hints.get("week_year"))
+    week_number = _normalize_week_number(hints.get("week_number"))
+    test_week_value = str(hints.get("test_week") or "").strip()
+
+    now_date = datetime.now().date()
+    week_filter_year = week_year
+    week_filter_number = week_number
+    range_start: Optional[datetime] = None
+    range_end: Optional[datetime] = None
+
+    if week_number is not None:
+        if week_year is None:
+            week_year = int(now_date.isocalendar()[0])
+        try:
+            start_date = datetime.fromisocalendar(week_year, week_number, 1).date()
+            end_date = start_date + timedelta(days=7)
+            range_start = datetime.combine(start_date, datetime.min.time())
+            range_end = datetime.combine(end_date, datetime.min.time())
+            week_filter_year = week_year
+            week_filter_number = week_number
+            if not test_week_value:
+                test_week_value = f"{week_year}-CW{week_number:02d}"
+        except Exception:
+            range_start = None
+            range_end = None
+
+    if range_start is None and range_end is None:
+        if relative_period in {"last_week", "this_week"}:
+            this_monday = now_date - timedelta(days=now_date.weekday())
+            if relative_period == "last_week":
+                start_date = this_monday - timedelta(days=7)
+                end_date = this_monday
+            else:
+                start_date = this_monday
+                end_date = this_monday + timedelta(days=7)
+            range_start = datetime.combine(start_date, datetime.min.time())
+            range_end = datetime.combine(end_date, datetime.min.time())
+            iso = start_date.isocalendar()
+            week_filter_year = int(iso[0])
+            week_filter_number = int(iso[1])
+            if not test_week_value:
+                test_week_value = f"{week_filter_year}-CW{week_filter_number:02d}"
+        elif relative_period in {"last_month", "this_month"}:
+            month_start = now_date.replace(day=1)
+            if relative_period == "last_month":
+                end_date = month_start
+                prev_month_last_day = month_start - timedelta(days=1)
+                start_date = prev_month_last_day.replace(day=1)
+            else:
+                start_date = month_start
+                if month_start.month == 12:
+                    end_date = month_start.replace(year=month_start.year + 1, month=1, day=1)
+                else:
+                    end_date = month_start.replace(month=month_start.month + 1, day=1)
+            range_start = datetime.combine(start_date, datetime.min.time())
+            range_end = datetime.combine(end_date, datetime.min.time())
+        elif rolling_days is not None:
+            start_date = now_date - timedelta(days=max(0, rolling_days - 1))
+            end_date = now_date + timedelta(days=1)
+            range_start = datetime.combine(start_date, datetime.min.time())
+            range_end = datetime.combine(end_date, datetime.min.time())
+
+    if range_start is not None and range_end is not None and time_col_for_range:
+        time_expr = f"date(CAST({time_col_for_range} AS TEXT))"
+        where_parts.append(f"{time_expr} >= '{range_start.date().isoformat()}'")
+        where_parts.append(f"{time_expr} < '{range_end.date().isoformat()}'")
+    elif week_col_for_filter and week_filter_number is not None:
+        normalized_week_year = week_filter_year if week_filter_year is not None else int(now_date.isocalendar()[0])
+        normalized_week = week_filter_number
+        week_candidates = [
+            f"{normalized_week_year}-CW{normalized_week:02d}",
+            f"{normalized_week_year}-W{normalized_week:02d}",
+            f"{normalized_week_year}CW{normalized_week:02d}",
+            f"{normalized_week_year}W{normalized_week:02d}",
+            f"CW{normalized_week:02d}",
+            f"W{normalized_week:02d}",
+        ]
+        if test_week_value:
+            week_candidates.insert(0, test_week_value)
+        dedup_candidates: List[str] = []
+        seen_candidates = set()
+        for item in week_candidates:
+            normalized_item = str(item or "").strip().lower()
+            if not normalized_item or normalized_item in seen_candidates:
+                continue
+            seen_candidates.add(normalized_item)
+            dedup_candidates.append(str(item).strip())
+        in_values = ", ".join([f"LOWER('{_esc_like(item)}')" for item in dedup_candidates])
+        where_parts.append(f"LOWER(TRIM(CAST({week_col_for_filter} AS TEXT))) IN ({in_values})")
+
     month_number = hints.get("month_number")
-    time_col_for_month = next((c for c in ["creation_time", "last_modified", "fetched_at"] if c in cols), "")
+    time_col_for_month = next((c for c in ["creation_time", "last_modified", "fetched_at", "finished", "started", "finished_udf_dt", "finished_udf", "tcreationtime"] if c in cols), "")
     if isinstance(month_number, int) and (1 <= month_number <= 12) and time_col_for_month:
         where_parts.append(f"strftime('%m', {time_col_for_month}) = '{month_number:02d}'")
 
@@ -705,6 +1180,30 @@ def build_deterministic_sql(
             where_parts.append("topissue_display IS NOT NULL AND CAST(topissue_display AS TEXT) <> ''")
         elif "severity_group" in cols:
             where_parts.append("LOWER(CAST(severity_group AS TEXT)) IN ('critical','high','s1','s2')")
+
+    matrix_levels_for_filter: List[str] = []
+    seen_matrix_levels = set()
+    for item in (hints.get("matrix_levels") or []):
+        normalized_level = _normalize_matrix_level(item)
+        if not normalized_level or normalized_level in seen_matrix_levels:
+            continue
+        seen_matrix_levels.add(normalized_level)
+        matrix_levels_for_filter.append(normalized_level)
+
+    if matrix_levels_for_filter:
+        matrix_cols = [c for c in ["topissue_display", "risk_matrix", "risk_zone"] if c in cols]
+        if matrix_cols:
+            matrix_col_conditions: List[str] = []
+            for col in matrix_cols:
+                normalized_col = f"LOWER(REPLACE(REPLACE(TRIM(CAST({col} AS TEXT)), ' ', ''), '-', ''))"
+                matrix_value_conditions: List[str] = []
+                for level in matrix_levels_for_filter:
+                    safe_level = _esc_like(level)
+                    matrix_value_conditions.append(f"{normalized_col} = '{safe_level}'")
+                    matrix_value_conditions.append(f"{normalized_col} = 'matrix{safe_level}'")
+                    matrix_value_conditions.append(f"{normalized_col} LIKE '%{safe_level}%'")
+                matrix_col_conditions.append("(" + " OR ".join(matrix_value_conditions) + ")")
+            where_parts.append("(" + " OR ".join(matrix_col_conditions) + ")")
 
     if hints["entity_tokens"]:
         person_fields = [
@@ -745,13 +1244,13 @@ def build_deterministic_sql(
                 order_sql = " ORDER BY COALESCE(total_count, 0) DESC, fetched_at DESC"
         elif "fetched_at" in cols:
             order_sql = " ORDER BY fetched_at DESC"
-        return f'SELECT {", ".join(history_select)} FROM "{table_name}"{where_sql}{order_sql} LIMIT 120'
+        return f'SELECT {", ".join(history_select)} FROM "{table_name}"{where_sql}{order_sql}{_limit_clause(row_limit)}'
 
     if hints.get("wants_project_breakdown"):
         preferred_dimension = str(hints.get("preferred_dimension") or "").strip()
         project_col = preferred_dimension if preferred_dimension in cols else ""
         if not project_col:
-            project_col = next((c for c in ["project", "tproject", "team", "aida_english", "top_aida", "ecu"] if c in cols), "")
+            project_col = next((c for c in ["run_team", "project", "tproject", "team", "aida_english", "top_aida", "ecu"] if c in cols), "")
 
         if project_col:
             project_expr = _coalesced_text_expr(project_col)
@@ -957,6 +1456,51 @@ def build_deterministic_sql(
                 "LIMIT 20"
             )
 
+    if hints.get("wants_distribution"):
+        preferred_dimension = str(hints.get("preferred_dimension") or "").strip()
+        distribution_col = ""
+        if preferred_dimension in cols and _is_groupable_dimension(preferred_dimension):
+            distribution_col = preferred_dimension
+        if not distribution_col:
+            distribution_col = next(
+                (
+                    c
+                    for c in [
+                        "status_phase",
+                        "phase",
+                        "status",
+                        "severity_group",
+                        "severity",
+                        "project",
+                        "tproject",
+                        "team",
+                        "run_team",
+                        "top_aida",
+                        "aida_english",
+                        "blocking_reason",
+                        "domain",
+                        "solution_cluster",
+                        "release",
+                        "software_version",
+                        "testing_tool_type",
+                        "test_phase",
+                    ]
+                    if c in cols
+                ),
+                "",
+            )
+
+        if distribution_col:
+            distribution_expr = _coalesced_text_expr(distribution_col)
+            return (
+                f"SELECT {distribution_expr} AS dimension, COUNT(*) AS record_count "
+                f'FROM "{table_name}" '
+                f"{where_sql} "
+                "GROUP BY 1 "
+                "ORDER BY record_count DESC "
+                "LIMIT 30"
+            )
+
     if hints.get("wants_analysis"):
         if hints.get("wants_test_coverage"):
             status_col = "run_status" if "run_status" in cols else ("status" if "status" in cols else ("execution_status" if "execution_status" in cols else ""))
@@ -1111,4 +1655,4 @@ def build_deterministic_sql(
 
     order_col = "creation_time" if "creation_time" in cols else ("last_modified" if "last_modified" in cols else None)
     order_sql = f" ORDER BY {order_col} DESC" if order_col else ""
-    return f'SELECT {", ".join(select_cols)} FROM "{table_name}"{where_sql}{order_sql} LIMIT 120'
+    return f'SELECT {", ".join(select_cols)} FROM "{table_name}"{where_sql}{order_sql}{_limit_clause(row_limit)}'

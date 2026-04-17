@@ -45,6 +45,12 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional static HTML template path; when set, output HTML will copy this template",
     )
+    parser.add_argument(
+        "--lang",
+        choices=["zh", "en"],
+        default="zh",
+        help="Output language for generated report files",
+    )
     return parser.parse_args()
 
 
@@ -61,6 +67,130 @@ def series_value(df: pd.DataFrame, year: str, column: str, default=0):
         return default
     value = filtered.iloc[0][column]
     return value if pd.notna(value) else default
+
+
+def localize_html_text(html: str, lang: str) -> str:
+    if lang != "en":
+        return html
+
+    replacements = [
+        ("lang=\"zh-CN\"", "lang=\"en\""),
+        ("2024 vs 2025 KPI Analysis Report（Custom）", "2024 vs 2025 KPI Analysis Report"),
+        ("测试与缺陷双视角年度对比（2024 / 2025）", "Annual Comparison from Testing and Defect Perspectives (2024 / 2025)"),
+        ("生成时间", "Generated At"),
+        ("2024 执行总量", "2024 Test Executions"),
+        ("2025 执行总量", "2025 Test Executions"),
+        ("2024 缺陷总量", "2024 Defects"),
+        ("2025 缺陷总量", "2025 Defects"),
+        ("A. 测试类指标（Testing Cluster）", "A. Testing Metrics (Testing Cluster)"),
+        ("B. 缺陷类指标（Defect Cluster）", "B. Defect Metrics (Defect Cluster)"),
+        ("C. 关键洞察", "C. Key Insights"),
+        ("A. 测试类指标", "A. Testing Metrics"),
+        ("B. 缺陷类指标", "B. Defect Metrics"),
+        ("A1. 核心指标概览", "A1. Core KPI Overview"),
+        ("A2. 覆盖矩阵（项目 × 车型 × 配置）", "A2. Coverage Matrix (Project x Model x Configuration)"),
+        ("Release 趋势图（CW01-CW13，纵轴=测试通过率）", "Release Trend (CW01-CW13, Y-axis = Pass Rate)"),
+        ("A3. 车型覆盖", "A3. Model Coverage"),
+        ("A4. 测试执行与缺陷关联", "A4. Test Execution and Defect Linkage"),
+        ("B1. 核心缺陷指标概览", "B1. Core Defect KPI Overview"),
+        ("B2. CWA Blocking Reason 分布（两年并列，百分比=占当年CWA总量；Total=占当年Defect）", "B2. CWA Blocking Reason Distribution (two-year view; % = share of yearly CWA total; Total = share of yearly defects)"),
+        ("B3. CWA 三色聚类（Green / Yellow / Red）", "B3. CWA Three-color Cluster (Green / Yellow / Red)"),
+        ("B4. Ticket Matrix 分布图（2024 vs 2025，占比=占当年Matrix总量）", "B4. Ticket Matrix Distribution (2024 vs 2025, % = share of yearly matrix total)"),
+        ("B5. 提票人 Top15（2024+2025）", "B5. Top 15 Submitters (2024+2025)"),
+        ("C. 2025 跨团队纵向对比（含 DTSV）", "C. 2025 Cross-team Longitudinal Comparison (including DTSV)"),
+        ("C1. Showstopper Confirmed 团队对比（数量+占比）", "C1. Showstopper Confirmed Team Comparison (count + share)"),
+        ("C2. Phase 09(CWA) 团队对比（数量+占比）", "C2. Phase 09 (CWA) Team Comparison (count + share)"),
+        ("执行总量", "Execution Volume"),
+        ("Pass率", "Pass Rate"),
+        ("Failed率", "Failed Rate"),
+        ("Blocked率（Requires Attention）", "Blocked Rate (Requires Attention)"),
+        ("关联缺陷数", "Defect-linked Executions"),
+        ("缺陷总量", "Defect Volume"),
+        ("指标", "Metric"),
+        ("变化", "Change"),
+        ("项目", "Project"),
+        ("车型", "Model"),
+        ("配置", "Configuration"),
+        ("说明", "Notes"),
+        ("排名", "Rank"),
+        ("提票人", "Submitter"),
+        ("合计", "Total"),
+        ("年份", "Year"),
+        ("团队", "Team"),
+        ("总Defect", "Total Defects"),
+        ("占比", "Share"),
+        ("2024占比", "2024 Share"),
+        ("2025占比", "2025 Share"),
+        ("Yellow（可接受）", "Yellow (acceptable)"),
+        ("Red（不可接受）", "Red (unacceptable)"),
+        ("占执行", "of executions"),
+        ("占缺陷", "of defects"),
+        ("关键洞察", "Key Insights"),
+        ("数据来源", "Data Source"),
+        ("生成脚本", "Generator"),
+        ("暂无可展示数据", "No data available"),
+    ]
+
+    localized = html
+    for src, dst in replacements:
+        localized = localized.replace(src, dst)
+    return localized
+
+
+def localized_sheet_names(lang: str) -> list[str]:
+    if lang == "en":
+        return [
+            "1-Overview",
+            "2-MR-Quality",
+            "3-Project-Coverage",
+            "4-Model-Coverage",
+            "5-Defect-Linkage",
+            "6-Severity",
+            "7-CWA-Analysis",
+            "8-ECU-Comparison",
+            "9-Model-Defect-Comparison",
+        ]
+    return [
+        "1-概览",
+        "2-MR执行质量",
+        "3-Project覆盖",
+        "4-车型覆盖对比",
+        "5-缺陷关联分析",
+        "6-缺陷严重程度",
+        "7-CWA分析",
+        "8-ECU分布对比",
+        "9-车型缺陷对比",
+    ]
+
+
+def localize_df_columns(df: pd.DataFrame, lang: str) -> pd.DataFrame:
+    if lang != "en" or df is None or df.empty:
+        return df
+
+    col_map = {
+        "年份": "Year",
+        "总执行": "Total Executions",
+        "Passed率": "Pass Rate",
+        "Failed率": "Failed Rate",
+        "Requires Attention率": "Requires Attention Rate",
+        "执行次数": "Executions",
+        "占比": "Share",
+        "车型": "Model",
+        "2024年": "2024",
+        "2025年": "2025",
+        "变化": "Change",
+        "变化率": "Change Rate",
+        "关联缺陷数": "Defect-linked Executions",
+        "关联缺陷率": "Defect-linked Rate",
+        "其中Failed": "Failed among Linked",
+        "其中Passed": "Passed among Linked",
+        "缺陷总数": "Total Defects",
+        "BI-4及以下": "BI-4 and Below",
+        "数量": "Count",
+        "缺陷数": "Defects",
+        "指标": "Metric",
+    }
+    return df.rename(columns=col_map)
 
 
 args = parse_args()
@@ -498,42 +628,55 @@ output_file = to_repo_path(args.output_xlsx)
 output_file.parent.mkdir(parents=True, exist_ok=True)
 
 with pd.ExcelWriter(str(output_file), engine='openpyxl') as writer:
+    sheet_names = localized_sheet_names(args.lang)
+
     # Sheet 1: 概览
-    overview_data = {
-        '指标': ['缺陷总数', 'MR测试执行', 'DTSV_China发现缺陷', '测试通过率', '真实缺陷解决率(06-Concluded)'],
-        '2024年': [len(df_defect_2024), len(df_mr_2024), len(df_defect_2024),
-                   f"{(series_value(df_mr_summary, '2024', 'Passed', 0)/len(df_mr_2024)*100):.1f}%" if len(df_mr_2024)>0 else 'N/A',
-                   f"{(series_value(df_severity, '2024', '06-Concluded', 0)/len(df_defect_2024)*100):.1f}%" if len(df_defect_2024)>0 else 'N/A'],
-        '2025年': [len(df_defect_2025), len(df_mr_2025), len(df_defect_2025)-47,
-                   f"{(series_value(df_mr_summary, '2025', 'Passed', 0)/len(df_mr_2025)*100):.1f}%" if len(df_mr_2025)>0 else 'N/A',
-                   f"{(series_value(df_severity, '2025', '06-Concluded', 0)/len(df_defect_2025)*100):.1f}%" if len(df_defect_2025)>0 else 'N/A']
-    }
+    if args.lang == "en":
+        overview_data = {
+            'Metric': ['Total Defects', 'MR Executions', 'DTSV_China Detected Defects', 'Test Pass Rate', 'Resolved Defect Rate (06-Concluded)'],
+            '2024': [len(df_defect_2024), len(df_mr_2024), len(df_defect_2024),
+                     f"{(series_value(df_mr_summary, '2024', 'Passed', 0)/len(df_mr_2024)*100):.1f}%" if len(df_mr_2024)>0 else 'N/A',
+                     f"{(series_value(df_severity, '2024', '06-Concluded', 0)/len(df_defect_2024)*100):.1f}%" if len(df_defect_2024)>0 else 'N/A'],
+            '2025': [len(df_defect_2025), len(df_mr_2025), len(df_defect_2025)-47,
+                     f"{(series_value(df_mr_summary, '2025', 'Passed', 0)/len(df_mr_2025)*100):.1f}%" if len(df_mr_2025)>0 else 'N/A',
+                     f"{(series_value(df_severity, '2025', '06-Concluded', 0)/len(df_defect_2025)*100):.1f}%" if len(df_defect_2025)>0 else 'N/A']
+        }
+    else:
+        overview_data = {
+            '指标': ['缺陷总数', 'MR测试执行', 'DTSV_China发现缺陷', '测试通过率', '真实缺陷解决率(06-Concluded)'],
+            '2024年': [len(df_defect_2024), len(df_mr_2024), len(df_defect_2024),
+                       f"{(series_value(df_mr_summary, '2024', 'Passed', 0)/len(df_mr_2024)*100):.1f}%" if len(df_mr_2024)>0 else 'N/A',
+                       f"{(series_value(df_severity, '2024', '06-Concluded', 0)/len(df_defect_2024)*100):.1f}%" if len(df_defect_2024)>0 else 'N/A'],
+            '2025年': [len(df_defect_2025), len(df_mr_2025), len(df_defect_2025)-47,
+                       f"{(series_value(df_mr_summary, '2025', 'Passed', 0)/len(df_mr_2025)*100):.1f}%" if len(df_mr_2025)>0 else 'N/A',
+                       f"{(series_value(df_severity, '2025', '06-Concluded', 0)/len(df_defect_2025)*100):.1f}%" if len(df_defect_2025)>0 else 'N/A']
+        }
     df_overview = pd.DataFrame(overview_data)
-    df_overview.to_excel(writer, sheet_name='1-概览', index=False)
+    localize_df_columns(df_overview, args.lang).to_excel(writer, sheet_name=sheet_names[0], index=False)
 
     # Sheet 2: MR执行质量
-    df_mr_summary.to_excel(writer, sheet_name='2-MR执行质量', index=False)
+    localize_df_columns(df_mr_summary, args.lang).to_excel(writer, sheet_name=sheet_names[1], index=False)
 
     # Sheet 3: Project覆盖
-    df_project_summary.to_excel(writer, sheet_name='3-Project覆盖', index=False)
+    localize_df_columns(df_project_summary, args.lang).to_excel(writer, sheet_name=sheet_names[2], index=False)
 
     # Sheet 4: 车型覆盖
-    df_model_comparison.to_excel(writer, sheet_name='4-车型覆盖对比', index=False)
+    localize_df_columns(df_model_comparison, args.lang).to_excel(writer, sheet_name=sheet_names[3], index=False)
 
     # Sheet 5: 缺陷关联
-    df_defect_link.to_excel(writer, sheet_name='5-缺陷关联分析', index=False)
+    localize_df_columns(df_defect_link, args.lang).to_excel(writer, sheet_name=sheet_names[4], index=False)
 
     # Sheet 6: 严重程度
-    df_severity.to_excel(writer, sheet_name='6-缺陷严重程度', index=False)
+    localize_df_columns(df_severity, args.lang).to_excel(writer, sheet_name=sheet_names[5], index=False)
 
     # Sheet 7: CWA Blocking Reason
-    df_cwa.to_excel(writer, sheet_name='7-CWA分析', index=False)
+    localize_df_columns(df_cwa, args.lang).to_excel(writer, sheet_name=sheet_names[6], index=False)
 
     # Sheet 8: ECU分布
-    df_ecu_pivot.to_excel(writer, sheet_name='8-ECU分布对比')
+    localize_df_columns(df_ecu_pivot, args.lang).to_excel(writer, sheet_name=sheet_names[7])
 
     # Sheet 9: 车型缺陷
-    df_model_pivot.to_excel(writer, sheet_name='9-车型缺陷对比')
+    localize_df_columns(df_model_pivot, args.lang).to_excel(writer, sheet_name=sheet_names[8])
 
 print(f"✅ Excel报告已生成: {output_file}")
 
@@ -744,7 +887,7 @@ else:
     print(f"⚠️ 未找到模板文件，改用动态HTML: {template_path}")
 
 with open(html_file, 'w', encoding='utf-8') as f:
-    f.write(html_content)
+    f.write(localize_html_text(html_content, args.lang))
 
 print(f"✅ HTML报告已生成: {html_file}")
 

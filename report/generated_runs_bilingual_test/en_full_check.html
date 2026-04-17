@@ -1,0 +1,970 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>2024 vs 2025 KPI Analysis Report</title>
+    <style>
+        *{box-sizing:border-box}
+        body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f5f8;color:#1f2937}
+        .wrap{max-width:1400px;margin:24px auto;padding:0 16px}
+        .header{background:linear-gradient(135deg,#0f2e5f,#1e4f9b);color:#fff;border-radius:14px;padding:24px 28px}
+        .header h1{margin:0 0 8px 0;font-size:28px}
+        .header .sub{opacity:.92;font-size:14px}
+        .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px}
+        .card{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:12px}
+        .k{font-size:12px;opacity:.9}
+        .v{font-size:24px;font-weight:700;margin-top:4px}
+        .section{margin-top:18px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+        h2{margin:0 0 10px 0;font-size:20px;color:#0f2e5f}
+        h3{margin:10px 0;font-size:16px;color:#0f2e5f}
+        .table{width:100%;border-collapse:collapse;font-size:13px}
+        .table th,.table td{border:1px solid #e5e7eb;padding:8px 10px;text-align:left;vertical-align:top}
+        .table th{background:#eef2ff}
+        .empty{padding:14px;border:1px dashed #cbd5e1;border-radius:10px;color:#64748b;background:#f8fafc}
+        .insight{background:#fffbeb;border-left:4px solid #f59e0b;padding:10px 12px;border-radius:8px;margin-top:10px}
+        .footer{margin:20px 0 10px;color:#6b7280;font-size:12px}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="header">
+            <h1>2024 vs 2025 KPI Analysis Report</h1>
+            <div class="sub">Generated At: 2026-04-09 14:24:56</div>
+            <div class="grid">
+                <div class="card"><div class="k">2024 Test Executions</div><div class="v">29,749</div></div>
+                <div class="card"><div class="k">2025 Test Executions</div><div class="v">33,115</div></div>
+                <div class="card"><div class="k">2024 Defects</div><div class="v">7,760</div></div>
+                <div class="card"><div class="k">2025 Defects</div><div class="v">9,711</div></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>A. Testing Metrics</h2>
+            <h3>A1. KPI Overview</h3>
+            <table class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Year</th>
+      <th>Total Executions</th>
+      <th>Passed</th>
+      <th>Pass Rate</th>
+      <th>Failed</th>
+      <th>Failed Rate</th>
+      <th>Requires Attention</th>
+      <th>Requires Attention Rate</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2024</td>
+      <td>29749</td>
+      <td>24991</td>
+      <td>84.0%</td>
+      <td>1234</td>
+      <td>4.1%</td>
+      <td>3524</td>
+      <td>11.8%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>33115</td>
+      <td>29513</td>
+      <td>89.1%</td>
+      <td>1363</td>
+      <td>4.1%</td>
+      <td>2239</td>
+      <td>6.8%</td>
+    </tr>
+  </tbody>
+</table>
+            <h3>A2. Project Coverage</h3>
+            <table class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Year</th>
+      <th>Project</th>
+      <th>Executions</th>
+      <th>Share</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2024</td>
+      <td>Unknown</td>
+      <td>18835</td>
+      <td>63.3%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>IDCEVO-25</td>
+      <td>3546</td>
+      <td>11.9%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>HU-MGU_02_A</td>
+      <td>3008</td>
+      <td>10.1%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>HU-MGU_02_L</td>
+      <td>1891</td>
+      <td>6.4%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>BCP-21</td>
+      <td>1739</td>
+      <td>5.8%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>BDC-03</td>
+      <td>344</td>
+      <td>1.2%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>WAVE-01</td>
+      <td>193</td>
+      <td>0.6%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>HU-MGU_01</td>
+      <td>58</td>
+      <td>0.2%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>RSE_PADI-01</td>
+      <td>51</td>
+      <td>0.2%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>ICON-25</td>
+      <td>31</td>
+      <td>0.1%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>IC_G5-BOX</td>
+      <td>26</td>
+      <td>0.1%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>BMT</td>
+      <td>6</td>
+      <td>0.0%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>HU-MGU_02_L or HU-MGU_01</td>
+      <td>5</td>
+      <td>0.0%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>WAVE-11</td>
+      <td>4</td>
+      <td>0.0%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>HU-MGU_01 or HU-MGU_02_L</td>
+      <td>3</td>
+      <td>0.0%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>IDCEVO-25</td>
+      <td>15044</td>
+      <td>45.4%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>HU-MGU_02_A</td>
+      <td>9041</td>
+      <td>27.3%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>HU-MGU_02_L</td>
+      <td>4344</td>
+      <td>13.1%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>Unknown</td>
+      <td>526</td>
+      <td>1.6%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>My BMW v5.7.0 CN</td>
+      <td>511</td>
+      <td>1.5%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>My BMW v5.9.0 CN</td>
+      <td>377</td>
+      <td>1.1%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>My BMW v5.3.0 CN</td>
+      <td>374</td>
+      <td>1.1%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>My BMW v5.11.0 CN</td>
+      <td>355</td>
+      <td>1.1%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>MINI v5.9.0 CN</td>
+      <td>300</td>
+      <td>0.9%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>My BMW/MINI HarmonyOS NEXT v5.5.0</td>
+      <td>280</td>
+      <td>0.8%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>My BMW v5.5.0 CN</td>
+      <td>270</td>
+      <td>0.8%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>MINI v5.7.0 CN</td>
+      <td>235</td>
+      <td>0.7%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>BCP-21</td>
+      <td>200</td>
+      <td>0.6%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>MINI v5.3.0 CN</td>
+      <td>192</td>
+      <td>0.6%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>MINI v5.11.0 CN</td>
+      <td>176</td>
+      <td>0.5%</td>
+    </tr>
+  </tbody>
+</table>
+            <h3>A3. Model Coverage</h3>
+            <table class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Model</th>
+      <th>2024</th>
+      <th>2025</th>
+      <th>Change</th>
+      <th>Change Rate</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Digital Product only</td>
+      <td>200</td>
+      <td>56</td>
+      <td>-144</td>
+      <td>+-72%</td>
+    </tr>
+    <tr>
+      <td>F56</td>
+      <td>134</td>
+      <td>39</td>
+      <td>-95</td>
+      <td>+-71%</td>
+    </tr>
+    <tr>
+      <td>F65</td>
+      <td>1230</td>
+      <td>945</td>
+      <td>-285</td>
+      <td>+-23%</td>
+    </tr>
+    <tr>
+      <td>F66</td>
+      <td>1611</td>
+      <td>51</td>
+      <td>-1560</td>
+      <td>+-97%</td>
+    </tr>
+    <tr>
+      <td>F78</td>
+      <td>683</td>
+      <td>34</td>
+      <td>-649</td>
+      <td>+-95%</td>
+    </tr>
+    <tr>
+      <td>G06</td>
+      <td>47</td>
+      <td>0</td>
+      <td>-47</td>
+      <td>+-100%</td>
+    </tr>
+    <tr>
+      <td>G07</td>
+      <td>618</td>
+      <td>0</td>
+      <td>-618</td>
+      <td>+-100%</td>
+    </tr>
+    <tr>
+      <td>G08</td>
+      <td>14</td>
+      <td>0</td>
+      <td>-14</td>
+      <td>+-100%</td>
+    </tr>
+    <tr>
+      <td>G09</td>
+      <td>21</td>
+      <td>0</td>
+      <td>-21</td>
+      <td>+-100%</td>
+    </tr>
+    <tr>
+      <td>G20</td>
+      <td>1183</td>
+      <td>31</td>
+      <td>-1152</td>
+      <td>+-97%</td>
+    </tr>
+    <tr>
+      <td>G26</td>
+      <td>89</td>
+      <td>0</td>
+      <td>-89</td>
+      <td>+-100%</td>
+    </tr>
+    <tr>
+      <td>G28</td>
+      <td>1363</td>
+      <td>559</td>
+      <td>-804</td>
+      <td>+-59%</td>
+    </tr>
+    <tr>
+      <td>G45</td>
+      <td>387</td>
+      <td>429</td>
+      <td>42</td>
+      <td>+11%</td>
+    </tr>
+    <tr>
+      <td>G48</td>
+      <td>2204</td>
+      <td>540</td>
+      <td>-1664</td>
+      <td>+-75%</td>
+    </tr>
+    <tr>
+      <td>G58</td>
+      <td>0</td>
+      <td>25</td>
+      <td>25</td>
+      <td>New</td>
+    </tr>
+    <tr>
+      <td>G66</td>
+      <td>17</td>
+      <td>0</td>
+      <td>-17</td>
+      <td>+-100%</td>
+    </tr>
+    <tr>
+      <td>G68</td>
+      <td>4735</td>
+      <td>4534</td>
+      <td>-201</td>
+      <td>+-4%</td>
+    </tr>
+    <tr>
+      <td>G70</td>
+      <td>3274</td>
+      <td>8507</td>
+      <td>5233</td>
+      <td>+160%</td>
+    </tr>
+    <tr>
+      <td>G78</td>
+      <td>0</td>
+      <td>18</td>
+      <td>18</td>
+      <td>New</td>
+    </tr>
+    <tr>
+      <td>I20</td>
+      <td>757</td>
+      <td>0</td>
+      <td>-757</td>
+      <td>+-100%</td>
+    </tr>
+    <tr>
+      <td>J01</td>
+      <td>291</td>
+      <td>1954</td>
+      <td>1663</td>
+      <td>+571%</td>
+    </tr>
+    <tr>
+      <td>J05</td>
+      <td>123</td>
+      <td>924</td>
+      <td>801</td>
+      <td>+651%</td>
+    </tr>
+    <tr>
+      <td>NA5</td>
+      <td>28</td>
+      <td>2224</td>
+      <td>2196</td>
+      <td>+7843%</td>
+    </tr>
+    <tr>
+      <td>NA6</td>
+      <td>3628</td>
+      <td>8063</td>
+      <td>4435</td>
+      <td>+122%</td>
+    </tr>
+    <tr>
+      <td>RR25</td>
+      <td>430</td>
+      <td>145</td>
+      <td>-285</td>
+      <td>+-66%</td>
+    </tr>
+    <tr>
+      <td>RR31</td>
+      <td>514</td>
+      <td>240</td>
+      <td>-274</td>
+      <td>+-53%</td>
+    </tr>
+    <tr>
+      <td>U06</td>
+      <td>11</td>
+      <td>0</td>
+      <td>-11</td>
+      <td>+-100%</td>
+    </tr>
+    <tr>
+      <td>U11</td>
+      <td>1153</td>
+      <td>485</td>
+      <td>-668</td>
+      <td>+-58%</td>
+    </tr>
+    <tr>
+      <td>U12</td>
+      <td>3616</td>
+      <td>2451</td>
+      <td>-1165</td>
+      <td>+-32%</td>
+    </tr>
+    <tr>
+      <td>U25</td>
+      <td>1351</td>
+      <td>764</td>
+      <td>-587</td>
+      <td>+-43%</td>
+    </tr>
+  </tbody>
+</table>
+            <h3>A4. Test-to-Defect Linkage</h3>
+            <table class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Year</th>
+      <th>Total Executions</th>
+      <th>Defect-linked Executions</th>
+      <th>Defect-linked Rate</th>
+      <th>Failed among Linked</th>
+      <th>Passed among Linked</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2024</td>
+      <td>29749</td>
+      <td>1264</td>
+      <td>4.2%</td>
+      <td>1234</td>
+      <td>8</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>33115</td>
+      <td>1393</td>
+      <td>4.2%</td>
+      <td>1363</td>
+      <td>13</td>
+    </tr>
+  </tbody>
+</table>
+        </div>
+
+        <div class="section">
+            <h2>B. Defect Metrics</h2>
+            <h3>B1. Severity Overview</h3>
+            <table class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Year</th>
+      <th>Total Defects</th>
+      <th>BI-4 and Below</th>
+      <th>Showstopper Confirmed</th>
+      <th>Preventing Maturity</th>
+      <th>Showstopper Candidate</th>
+      <th>06-Concluded</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2024</td>
+      <td>7760</td>
+      <td>7748</td>
+      <td>1101</td>
+      <td>374</td>
+      <td>2703</td>
+      <td>3290</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>9711</td>
+      <td>9697</td>
+      <td>1307</td>
+      <td>339</td>
+      <td>3298</td>
+      <td>3952</td>
+    </tr>
+  </tbody>
+</table>
+            <h3>B2. CWA Blocking Reason (Top 15)</h3>
+            <table class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Year</th>
+      <th>Blocking Reason</th>
+      <th>Count</th>
+      <th>Share</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2024</td>
+      <td>Child (Duplicate)</td>
+      <td>1552</td>
+      <td>34.9%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>Expected behaviour</td>
+      <td>851</td>
+      <td>19.1%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>Management decision</td>
+      <td>604</td>
+      <td>13.6%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>Not reproducible</td>
+      <td>428</td>
+      <td>9.6%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>Further traces necessary</td>
+      <td>252</td>
+      <td>5.7%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>Additional Information necessary</td>
+      <td>182</td>
+      <td>4.1%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>Unknown/Empty</td>
+      <td>164</td>
+      <td>3.7%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>User Error</td>
+      <td>128</td>
+      <td>2.9%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>Invalid Testcase</td>
+      <td>81</td>
+      <td>1.8%</td>
+    </tr>
+    <tr>
+      <td>2024</td>
+      <td>Function not implemented/testable yet</td>
+      <td>70</td>
+      <td>1.6%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>Child (Duplicate)</td>
+      <td>2450</td>
+      <td>43.8%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>Expected behaviour</td>
+      <td>813</td>
+      <td>14.5%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>Not reproducible</td>
+      <td>668</td>
+      <td>11.9%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>Additional Information necessary</td>
+      <td>449</td>
+      <td>8.0%</td>
+    </tr>
+    <tr>
+      <td>2025</td>
+      <td>Management decision</td>
+      <td>434</td>
+      <td>7.8%</td>
+    </tr>
+  </tbody>
+</table>
+            <h3>B3. ECU Distribution (Top 15)</h3>
+            <table class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>年份</th>
+      <th>ECU</th>
+      <th>2024</th>
+      <th>2025</th>
+      <th>Change</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th></th>
+      <td>IDCEVO-25</td>
+      <td>1061</td>
+      <td>4922</td>
+      <td>3861</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>HU-MGU_02_A</td>
+      <td>4109</td>
+      <td>2449</td>
+      <td>-1660</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>CDE-01</td>
+      <td>0</td>
+      <td>387</td>
+      <td>387</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>HU-MGU_02_L</td>
+      <td>1072</td>
+      <td>320</td>
+      <td>-752</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>APP_Mobile_2_0_IOS_CN</td>
+      <td>175</td>
+      <td>238</td>
+      <td>63</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>RSE_EXBX-02</td>
+      <td>0</td>
+      <td>215</td>
+      <td>215</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>APPS_Onboard</td>
+      <td>310</td>
+      <td>152</td>
+      <td>-158</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>BACKEND_GLOBAL</td>
+      <td>0</td>
+      <td>144</td>
+      <td>144</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>ICON-25</td>
+      <td>0</td>
+      <td>134</td>
+      <td>134</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>APP_Mobile_2_0_Android_CN</td>
+      <td>163</td>
+      <td>106</td>
+      <td>-57</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>BT-Device</td>
+      <td>115</td>
+      <td>0</td>
+      <td>-115</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>RSE_PADI-01</td>
+      <td>109</td>
+      <td>0</td>
+      <td>-109</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>SP_NavInfo</td>
+      <td>73</td>
+      <td>0</td>
+      <td>-73</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>WAVE-01</td>
+      <td>71</td>
+      <td>0</td>
+      <td>-71</td>
+    </tr>
+  </tbody>
+</table>
+            <h3>B4. Model Defect Distribution (Top 20)</h3>
+            <table class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>年份</th>
+      <th>Model</th>
+      <th>2024</th>
+      <th>2025</th>
+      <th>Change</th>
+      <th>Change Rate</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th></th>
+      <td>NA6</td>
+      <td>869</td>
+      <td>2671</td>
+      <td>1802</td>
+      <td>207</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>G70</td>
+      <td>841</td>
+      <td>2483</td>
+      <td>1642</td>
+      <td>195</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>NA5</td>
+      <td>160</td>
+      <td>1214</td>
+      <td>1054</td>
+      <td>659</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>U12</td>
+      <td>1226</td>
+      <td>958</td>
+      <td>-268</td>
+      <td>-22</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>G68</td>
+      <td>1427</td>
+      <td>798</td>
+      <td>-629</td>
+      <td>-44</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>J01</td>
+      <td>181</td>
+      <td>367</td>
+      <td>186</td>
+      <td>103</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>G48</td>
+      <td>674</td>
+      <td>338</td>
+      <td>-336</td>
+      <td>-50</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>U11</td>
+      <td>513</td>
+      <td>154</td>
+      <td>-359</td>
+      <td>-70</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>U25</td>
+      <td>196</td>
+      <td>107</td>
+      <td>-89</td>
+      <td>-45</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>G28</td>
+      <td>312</td>
+      <td>96</td>
+      <td>-216</td>
+      <td>-69</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>J05</td>
+      <td>34</td>
+      <td>95</td>
+      <td>61</td>
+      <td>179</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>G45</td>
+      <td>184</td>
+      <td>92</td>
+      <td>-92</td>
+      <td>-50</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>F65</td>
+      <td>238</td>
+      <td>67</td>
+      <td>-171</td>
+      <td>-72</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>G78</td>
+      <td>0</td>
+      <td>49</td>
+      <td>49</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>G65</td>
+      <td>0</td>
+      <td>41</td>
+      <td>41</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>F78</td>
+      <td>201</td>
+      <td>23</td>
+      <td>-178</td>
+      <td>-89</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>G20</td>
+      <td>234</td>
+      <td>23</td>
+      <td>-211</td>
+      <td>-90</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>F66</td>
+      <td>198</td>
+      <td>16</td>
+      <td>-182</td>
+      <td>-92</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>U06</td>
+      <td>13</td>
+      <td>15</td>
+      <td>2</td>
+      <td>15</td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>G50</td>
+      <td>0</td>
+      <td>11</td>
+      <td>11</td>
+      <td>0</td>
+    </tr>
+  </tbody>
+</table>
+        </div>
+
+        <div class="section">
+            <h2>C. Key Insights</h2>
+            <div class="insight">MR execution volume year-over-year: <strong>+11.3%</strong></div>
+            <div class="insight">Showstopper Confirmed: 2024=1,101, 2025=1,307</div>
+            <div class="insight">Preventing Maturity: 2024=374, 2025=339</div>
+        </div>
+
+        <div class="footer">Data Source: mr/, database/local_data_rebuilt.db | Generator: report/kpi_analysis_2024_2025.py</div>
+    </div>
+</body>
+</html>

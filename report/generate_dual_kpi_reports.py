@@ -57,6 +57,17 @@ def parse_args() -> argparse.Namespace:
         default=str(DEFAULT_COMPARE_XLSX.relative_to(REPO_ROOT)),
         help="Output path of kpi_report_2024_2025.xlsx",
     )
+    parser.add_argument(
+        "--compare-lang",
+        choices=["zh", "en"],
+        default="zh",
+        help="Language for KPI compare report output (default: zh)",
+    )
+    parser.add_argument(
+        "--compare-bilingual",
+        action="store_true",
+        help="Generate both Chinese and English KPI compare reports",
+    )
 
     return parser.parse_args()
 
@@ -109,10 +120,8 @@ def generate_qgate(args: argparse.Namespace, qgate_output: Path) -> Path:
     return qgate_output
 
 
-def generate_compare(args: argparse.Namespace) -> tuple[Path, Path]:
+def generate_compare(args: argparse.Namespace, target_html: Path, target_xlsx: Path, lang: str) -> tuple[Path, Path]:
     compare_script = REPO_ROOT / "report" / "kpi_analysis_2024_2025.py"
-    target_html = _as_repo_path(args.compare_output)
-    target_xlsx = _as_repo_path(args.compare_xlsx_output)
 
     _run(
         [
@@ -122,8 +131,10 @@ def generate_compare(args: argparse.Namespace) -> tuple[Path, Path]:
             str(target_html),
             "--output-xlsx",
             str(target_xlsx),
+            "--lang",
+            str(lang),
         ],
-        "2024/2025 KPI analysis",
+        f"2024/2025 KPI analysis ({lang})",
     )
 
     if not target_html.exists():
@@ -161,10 +172,14 @@ def main() -> None:
         produced.append(generate_qgate(args, qgate_output))
 
     if not args.skip_compare:
-        args.compare_output = str(compare_html_output)
-        args.compare_xlsx_output = str(compare_xlsx_output)
-        html_path, xlsx_path = generate_compare(args)
+        html_path, xlsx_path = generate_compare(args, compare_html_output, compare_xlsx_output, args.compare_lang)
         produced.extend([html_path, xlsx_path])
+
+        if args.compare_bilingual:
+            en_html = compare_html_output.with_name(f"{compare_html_output.stem}_en{compare_html_output.suffix}")
+            en_xlsx = compare_xlsx_output.with_name(f"{compare_xlsx_output.stem}_en{compare_xlsx_output.suffix}")
+            en_html_path, en_xlsx_path = generate_compare(args, en_html, en_xlsx, "en")
+            produced.extend([en_html_path, en_xlsx_path])
 
     print("\\n[DONE] Generated files:")
     for path in produced:

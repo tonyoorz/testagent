@@ -4823,7 +4823,7 @@ def update_defect_status_chart(current_nav_item, years, projects, start_date, en
         title_prefix = "CWA Blocking Reason分布（按严重性）"
         hover_prefix = "Blocking Reason"
     else:
-        chart_data['aida_dimension'] = build_chart_dimension(chart_data, 'top_aida', 'aida_english')
+        chart_data['aida_dimension'] = build_chart_dimension(chart_data, 'aida_english', 'top_aida')
     
     grouped_status = chart_data.groupby([x_field, 'severity_group']).size().reset_index(name='缺陷数量')
     
@@ -5553,7 +5553,7 @@ def update_modal(fv_click_data, status_click_data, cluster_click_data, close_cli
         # 处理AIDA图表点击
         clicked_aida = status_click_data['points'][0]['x']
         filtered_data = filtered_data.copy()
-        filtered_data['aida_dimension'] = build_chart_dimension(filtered_data, 'top_aida', 'aida_english')
+        filtered_data['aida_dimension'] = build_chart_dimension(filtered_data, 'aida_english', 'top_aida')
         
         # 确定点击的是哪个严重性组
         try:
@@ -10766,14 +10766,13 @@ def update_test_status_charts(current_nav, years, projects, test_weeks, fvs, sta
             status_col = 'run_status'
         elif 'execution_status' in filtered_data.columns:
             status_col = 'execution_status'
-        
-        if statuses and len(statuses) > 0 and status_col:
-            # 处理状态筛选 - 如果是字典格式，提取name字段并应用映射
+
+        # 提前创建 mapped_status 列，以便在后续的所有图表和KPI计算中统一使用
+        if status_col:
             status_data = filtered_data[status_col].copy()
             if status_data.dtype == 'object':
                 status_data = status_data.apply(lambda x: x.get('name', str(x)) if isinstance(x, dict) else str(x))
             
-            # 状态映射
             status_mapping = {
                 'passed': 'Passed',
                 'failed': 'Failed', 
@@ -10782,11 +10781,12 @@ def update_test_status_charts(current_nav, years, projects, test_weeks, fvs, sta
                 'not_completed': 'In Progress'
             }
             
-            # 应用状态映射
-            mapped_status = status_data.map(status_mapping).fillna(status_data)
-            
-            # 筛选数据
-            filtered_data = filtered_data[mapped_status.isin([str(s) for s in statuses])]
+            # 创建新的'mapped_status'列
+            filtered_data['mapped_status'] = status_data.map(status_mapping).fillna(status_data)
+
+        # 如果有状态筛选，则在新的'mapped_status'列上进行筛选
+        if statuses and len(statuses) > 0 and 'mapped_status' in filtered_data.columns:
+            filtered_data = filtered_data[filtered_data['mapped_status'].isin([str(s) for s in statuses])]
         
         # AIDA筛选
         if aidas and len(aidas) > 0 and 'top_aida' in filtered_data.columns:
@@ -11240,16 +11240,28 @@ def update_test_status_charts(current_nav, years, projects, test_weeks, fvs, sta
         # 计算KPI指标
         total_count = len(filtered_data)
         if total_count > 0:
-            passed_count = len(filtered_data[filtered_data.get('mapped_status', filtered_data.get('run_status', pd.Series(dtype='object'))) == 'Passed'])
-            blocked_count = len(filtered_data[filtered_data.get('mapped_status', filtered_data.get('run_status', pd.Series(dtype='object'))) == 'Blocked'])
-            planned_count = len(filtered_data[filtered_data.get('mapped_status', filtered_data.get('run_status', pd.Series(dtype='object'))) == 'Planned'])
+            # 统一使用 mapped_status 列
+            status_series = filtered_data.get('mapped_status', pd.Series(dtype='object'))
+
+            passed_count = (status_series == 'Passed').sum()
+            failed_count = (status_series == 'Failed').sum()
+            blocked_count = (status_series == 'Blocked').sum()
+            planned_count = (status_series == 'Planned').sum()
+            
+            # 执行过的用例 = 总数 - 计划中的
             executed_count = total_count - planned_count
             
-            pass_rate = (passed_count / total_count * 100) if total_count > 0 else 0
-            block_rate = (blocked_count / total_count * 100) if total_count > 0 else 0  
+            # 通过率 = passed / executed
+            pass_rate = (passed_count / executed_count * 100) if executed_count > 0 else 0
+            # 失败率 = failed / executed
+            fail_rate = (failed_count / executed_count * 100) if executed_count > 0 else 0
+            # 阻塞率 = blocked / executed
+            block_rate = (blocked_count / executed_count * 100) if executed_count > 0 else 0
+            # 执行率 = executed / total
             execution_rate = (executed_count / total_count * 100) if total_count > 0 else 0
         else:
-            pass_rate = block_rate = execution_rate = 0
+            pass_rate = fail_rate = block_rate = execution_rate = 0
+            total_count = passed_count = failed_count = blocked_count = planned_count = executed_count = 0
         
         # 创建KPI指标显示 - 使用与Testing Efficiency & Quality相同的样式
         kpi_indicators = html.Div([
@@ -11264,7 +11276,7 @@ def update_test_status_charts(current_nav, years, projects, test_weeks, fvs, sta
             ], style={'textAlign': 'center', 'backgroundColor': '#d5f4e6', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
             
             html.Div([
-                html.H4(f"{100-pass_rate-block_rate:.1f}%", style={'margin': '0', 'color': '#e74c3c', 'fontSize': '28px'}),
+                html.H4(f"{fail_rate:.1f}%", style={'margin': '0', 'color': '#e74c3c', 'fontSize': '28px'}),
                 html.P("失败率", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
             ], style={'textAlign': 'center', 'backgroundColor': '#fadbd8', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
             

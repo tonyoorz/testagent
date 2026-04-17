@@ -40,6 +40,7 @@ class SemanticTermAdapterTests(unittest.TestCase):
         merged = merge_semantic_hints(
             {
                 "wants_aida_dist": True,
+                "scope_team": "DTSV_China",
                 "mapped_dimensions": ["top_aida"],
                 "matched_rule_ids": ["br_defect_critical_classification_default"],
             },
@@ -58,6 +59,7 @@ class SemanticTermAdapterTests(unittest.TestCase):
         dims = merged.get("mapped_dimensions") or []
         self.assertIn("top_aida", dims)
         self.assertIn("aida_english", dims)
+        self.assertEqual(merged.get("scope_team"), "DTSV_China")
 
     def test_unified_intent_builder_returns_expected_contract(self):
         intent = build_unified_query_intent(
@@ -82,6 +84,19 @@ class SemanticTermAdapterTests(unittest.TestCase):
         self.assertIsInstance(intent.get("entity_filters"), list)
         self.assertIsInstance(intent.get("semantic_constraints"), dict)
         self.assertIsInstance(intent.get("provenance"), list)
+
+    def test_adapter_maps_optimized_table_column_alias_to_preferred_dimension(self):
+        out = adapt_question_with_semantic_terms(
+            question="请按阻塞原因看缺陷分布",
+            table_name="octane_defects",
+            db_path=None,
+            prefer_db=False,
+        )
+
+        hints = out.get("semantic_hints") or {}
+        mapped_dimensions = hints.get("mapped_dimensions") or []
+        self.assertIn("blocking_reason", mapped_dimensions)
+        self.assertEqual(hints.get("preferred_dimension"), "blocking_reason")
 
     def test_unified_intent_builder_cache_reuses_adapter_result_with_stable_contract(self):
         _clear_unified_intent_adapter_cache()

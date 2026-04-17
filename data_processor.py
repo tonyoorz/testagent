@@ -156,7 +156,50 @@ def _load_octane_payload_data(kind: str, year: int, spec: str = "", db_path: Opt
     return None
 
 
-def _load_manual_runs_from_optimized_table(year: int, db_path: Optional[str] = None) -> Optional[List[Dict]]:
+def _load_defects_from_optimized_table(year: int, db_path: Optional[str] = None) -> Optional[List[Dict]]:
+    """从优化表 octane_defects 读取原始 defect JSON 数据（按年份全量）。"""
+    db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
+    if not db_path_val or not os.path.exists(db_path_val):
+        return None
+
+    rows = []
+    try:
+        conn = sqlite3.connect(db_path_val)
+        try:
+            rows = conn.execute(
+                """
+                SELECT raw_json
+                FROM octane_defects
+                WHERE year=?
+                ORDER BY defect_id
+                """,
+                (int(year),),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+    if not rows:
+        return None
+
+    data_list = []
+    for row in rows:
+        try:
+            obj = json.loads(row[0]) if row and row[0] else None
+            if isinstance(obj, dict):
+                data_list.append(obj)
+        except Exception:
+            continue
+
+    return data_list if data_list else None
+
+
+def _load_manual_runs_from_optimized_table(
+    year: int,
+    db_path: Optional[str] = None,
+    run_team: Optional[str] = _DEFAULT_OCTANE_TEAM,
+) -> Optional[List[Dict]]:
     """从优化表 octane_manual_runs 读取原始 manual run JSON 数据。"""
     db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
     if not db_path_val or not os.path.exists(db_path_val):
@@ -166,18 +209,19 @@ def _load_manual_runs_from_optimized_table(year: int, db_path: Optional[str] = N
     try:
         conn = sqlite3.connect(db_path_val)
         try:
-            # 优先按 run_team 过滤当前团队，避免跨团队混入
-            rows = conn.execute(
-                """
-                SELECT raw_json
-                FROM octane_manual_runs
-                WHERE year=? AND run_team=?
-                ORDER BY spec, mr_id
-                """,
-                (int(year), _DEFAULT_OCTANE_TEAM),
-            ).fetchall()
+            if run_team:
+                # 优先按 run_team 过滤当前团队，避免跨团队混入
+                rows = conn.execute(
+                    """
+                    SELECT raw_json
+                    FROM octane_manual_runs
+                    WHERE year=? AND run_team=?
+                    ORDER BY spec, mr_id
+                    """,
+                    (int(year), run_team),
+                ).fetchall()
 
-            # 若 run_team 过滤后无数据，回退到该年份所有数据
+            # 若未指定 run_team 或 run_team 过滤后无数据，回退到该年份所有数据
             if not rows:
                 rows = conn.execute(
                     """
@@ -206,6 +250,26 @@ def _load_manual_runs_from_optimized_table(year: int, db_path: Optional[str] = N
             continue
 
     return data_list if data_list else None
+
+
+def _discover_table_years(db_path: Optional[str], table_name: str) -> List[int]:
+    if not db_path or not os.path.exists(db_path):
+        return []
+
+    years = []
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute(
+                f"SELECT DISTINCT year FROM {table_name} WHERE year IS NOT NULL ORDER BY year"
+            ).fetchall()
+            years = [int(row[0]) for row in rows if row and row[0] is not None]
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+    return years
 
 
 def _load_history_from_db(defect_id: str, db_path: str) -> Optional[Dict]:
@@ -405,6 +469,310 @@ def _save_cached_computed_fields(rows_df: pd.DataFrame, db_path: Optional[str] =
     except Exception:
         return 0
 
+
+def _normalize_project_value(value) -> str:
+    text = "" if pd.isna(value) else str(value).strip()
+    if not text:
+        return "Unknown"
+
+    canonical_map = {
+        'idcevo': 'IDCEVO',
+        'idc': 'IDC',
+        'mgu': 'MGU',
+        'app': 'App',
+        'rsu': 'RSU',
+    }
+    lower_text = text.lower()
+    if lower_text in canonical_map:
+        return canonical_map[lower_text]
+    return text
+
+
+def _get_existing_columns(conn: sqlite3.Connection, table_name: str) -> List[str]:
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        return [str(row[1]) for row in rows if len(row) > 1 and row[1]]
+    except Exception:
+        return []
+
+
+def _ensure_project_columns(conn: sqlite3.Connection, table_name: str) -> bool:
+    cols = _get_existing_columns(conn, table_name)
+    if not cols:
+        return False
+
+    if 'project' not in cols:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN project TEXT")
+    if 'tproject' not in cols:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN tproject TEXT")
+    return True
+
+
+def _ensure_text_columns(conn: sqlite3.Connection, table_name: str, columns: List[str]) -> bool:
+    existing = _get_existing_columns(conn, table_name)
+    if not existing:
+        return False
+
+    existing_set = set(existing)
+    for col in columns:
+        if col and col not in existing_set:
+            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} TEXT")
+            existing_set.add(col)
+    return True
+
+
+def _pick_id_column(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    if df is None or df.empty:
+        return None
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+
+def _build_project_update_rows(df: pd.DataFrame, id_col: str) -> List[tuple]:
+    if df is None or df.empty or not id_col or 'project' not in df.columns:
+        return []
+
+    dedup = {}
+    for _, row in df[[id_col, 'project']].iterrows():
+        row_id = str(row.get(id_col, '')).strip()
+        if not row_id:
+            continue
+        project_value = _normalize_project_value(row.get('project'))
+        dedup[row_id] = project_value
+
+    return [(project_value, project_value, row_id) for row_id, project_value in dedup.items()]
+
+
+def _serialize_sync_value(value, field_name: str):
+    if field_name in ('project', 'tproject'):
+        return _normalize_project_value(value)
+
+    if value is None:
+        return None
+
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+
+    if isinstance(value, (list, dict, tuple, set)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+
+    if pd.isna(value):
+        return None
+
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return value.isoformat()
+
+    return value
+
+
+def _build_field_update_rows(df: pd.DataFrame, id_col: str, fields: List[str]) -> List[tuple]:
+    if df is None or df.empty or not id_col or not fields:
+        return []
+
+    available_fields = [f for f in fields if f in df.columns]
+    if not available_fields:
+        return []
+
+    dedup_map = {}
+    for _, row in df[[id_col] + available_fields].iterrows():
+        row_id = str(row.get(id_col, '')).strip()
+        if not row_id:
+            continue
+
+        row_payload = {}
+        for field in available_fields:
+            row_payload[field] = _serialize_sync_value(row.get(field), field)
+
+        if 'project' in row_payload and 'tproject' not in row_payload:
+            row_payload['tproject'] = _serialize_sync_value(row_payload.get('project'), 'tproject')
+
+        dedup_map[row_id] = row_payload
+
+    normalized_fields = list(available_fields)
+    if 'project' in normalized_fields and 'tproject' not in normalized_fields:
+        normalized_fields.append('tproject')
+
+    rows = []
+    for row_id, payload in dedup_map.items():
+        rows.append(tuple(payload.get(col) for col in normalized_fields) + (row_id,))
+
+    return normalized_fields, rows
+
+
+def _update_table_fields(
+    conn: sqlite3.Connection,
+    table_name: str,
+    key_column: str,
+    fields: List[str],
+    updates: List[tuple],
+) -> int:
+    if not fields or not updates:
+        return 0
+
+    if not _ensure_text_columns(conn, table_name, fields):
+        return 0
+
+    assignments = ", ".join([f"{col}=?" for col in fields])
+    sql = f"UPDATE {table_name} SET {assignments} WHERE {key_column}=?"
+    cursor = conn.executemany(sql, updates)
+    return max(0, int(cursor.rowcount or 0))
+
+
+def _backfill_empty_project_defaults(conn: sqlite3.Connection, table_name: str, key_column: str) -> int:
+        cols = set(_get_existing_columns(conn, table_name))
+        if 'project' not in cols or 'tproject' not in cols or key_column not in cols:
+                return 0
+
+        conn.execute(
+                f"""
+                UPDATE {table_name}
+                SET project = 'Unknown'
+                WHERE {key_column} IS NOT NULL
+                    AND TRIM(CAST({key_column} AS TEXT)) <> ''
+                    AND (project IS NULL OR TRIM(project) = '')
+                """
+        )
+        cursor = conn.execute(
+                f"""
+                UPDATE {table_name}
+                SET tproject = project
+                WHERE {key_column} IS NOT NULL
+                    AND TRIM(CAST({key_column} AS TEXT)) <> ''
+                    AND (tproject IS NULL OR TRIM(tproject) = '')
+                """
+        )
+        return max(0, int(cursor.rowcount or 0))
+
+
+def sync_processed_fields_to_db(
+    defect_df: Optional[pd.DataFrame] = None,
+    manual_df: Optional[pd.DataFrame] = None,
+    db_path: Optional[str] = None,
+) -> Dict[str, int]:
+    """将 data_processor 处理后的关键业务字段同步回优化表，供 Agent 直接查询。"""
+    stats = {
+        'defect_candidates': 0,
+        'manual_run_candidates': 0,
+        'defect_updates': 0,
+        'manual_run_updates': 0,
+    }
+
+    db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
+    if not db_path_val or not os.path.exists(db_path_val):
+        return stats
+
+    if defect_df is None:
+        defect_years = _discover_table_years(db_path_val, 'octane_defects')
+        defect_frames = []
+        for year in defect_years:
+            try:
+                yearly_df = load_defect_data(file_pattern=f"defect/{year}_defect.json")
+            except Exception:
+                continue
+            if yearly_df is not None and not yearly_df.empty:
+                defect_frames.append(yearly_df)
+
+        if defect_frames:
+            defect_df = pd.concat(defect_frames, ignore_index=True)
+            if 'id' in defect_df.columns:
+                defect_df['id'] = defect_df['id'].astype(str).str.strip()
+                defect_df = defect_df[defect_df['id'] != '']
+                defect_df = defect_df.drop_duplicates(subset=['id'], keep='last').reset_index(drop=True)
+        else:
+            defect_df = load_defect_data()
+
+    if manual_df is None:
+        manual_years = _discover_table_years(db_path_val, 'octane_manual_runs')
+        if manual_years:
+            old_test_years_env = os.environ.get('TEST_DATA_YEARS')
+            os.environ['TEST_DATA_YEARS'] = ",".join(str(y) for y in manual_years)
+            try:
+                manual_df = load_test_data()
+            finally:
+                if old_test_years_env is None:
+                    os.environ.pop('TEST_DATA_YEARS', None)
+                else:
+                    os.environ['TEST_DATA_YEARS'] = old_test_years_env
+        else:
+            manual_df = load_test_data()
+
+    defect_id_col = _pick_id_column(defect_df, ['defect_id', 'id'])
+    manual_id_col = _pick_id_column(manual_df, ['mr_id', 'id', 'run_id'])
+
+    defect_fields = [
+        'project', 'tproject', 'market', 'aida_english', 'top_aida',
+        'matrix', 'matrix_display', 'matrix_order', 'severity_group', 'complexity',
+        'domain', 'classification', 'Shift_PU', 'fv', 'team', 'fvp',
+        'pu', 'status_phase', 'test_week', 'software_version', 'blocking_reason',
+        'error_occurrence', 'solution', 'release', 'ecu', 'tester', 'istep', 'lead_model',
+    ]
+    manual_fields = [
+        'project', 'tproject', 'aida_english', 'top_aida',
+        'fv', 'team', 'fvp', 'lead_model', 'test_week',
+        'run_status', 'tester', 'pu', 'model', 'test_event', 'author_name',
+    ]
+
+    defect_fields_use, defect_updates = ([], [])
+    manual_fields_use, manual_updates = ([], [])
+
+    if defect_id_col:
+        defect_build = _build_field_update_rows(defect_df, defect_id_col, defect_fields)
+        if defect_build:
+            defect_fields_use, defect_updates = defect_build
+    if manual_id_col:
+        manual_build = _build_field_update_rows(manual_df, manual_id_col, manual_fields)
+        if manual_build:
+            manual_fields_use, manual_updates = manual_build
+
+    stats['defect_candidates'] = len(defect_updates)
+    stats['manual_run_candidates'] = len(manual_updates)
+
+    if not defect_updates and not manual_updates:
+        return stats
+
+    conn = sqlite3.connect(db_path_val)
+    try:
+        if defect_updates:
+            stats['defect_updates'] = _update_table_fields(
+                conn,
+                table_name='octane_defects',
+                key_column='defect_id',
+                fields=defect_fields_use,
+                updates=defect_updates,
+            )
+
+        if manual_updates:
+            stats['manual_run_updates'] = _update_table_fields(
+                conn,
+                table_name='octane_manual_runs',
+                key_column='mr_id',
+                fields=manual_fields_use,
+                updates=manual_updates,
+            )
+
+        _backfill_empty_project_defaults(conn, table_name='octane_defects', key_column='defect_id')
+        _backfill_empty_project_defaults(conn, table_name='octane_manual_runs', key_column='mr_id')
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return stats
+
+
+def sync_processed_project_to_db(
+    defect_df: Optional[pd.DataFrame] = None,
+    manual_df: Optional[pd.DataFrame] = None,
+    db_path: Optional[str] = None,
+) -> Dict[str, int]:
+    """兼容旧接口：已升级为同步处理后的关键业务字段（不止 project）。"""
+    return sync_processed_fields_to_db(defect_df=defect_df, manual_df=manual_df, db_path=db_path)
+
 # ===== 通用工具函数 =====
 
 def make_ticket_link(ticket_id):
@@ -542,6 +910,11 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
             print(f"📦 从数据库加载 {year_val} 年 defects 数据成功: {len(db_defect_data)} 条")
             dfs.append(pd.json_normalize(db_defect_data, max_level=0))
 
+        optimized_defect_data = _load_defects_from_optimized_table(year_val)
+        if optimized_defect_data:
+            print(f"📦 从数据库优化表加载 {year_val} 年 defects 数据成功: {len(optimized_defect_data)} 条")
+            dfs.append(pd.json_normalize(optimized_defect_data, max_level=0))
+
     if _DEFAULT_OCTANE_SOURCE == "db_only":
         files = []
     else:
@@ -595,10 +968,20 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
             print(f"📦 文件加载未命中，回退数据库 {year_val} 年 defects: {len(db_defect_data)} 条")
             dfs.append(pd.json_normalize(db_defect_data, max_level=0))
 
+        optimized_defect_data = _load_defects_from_optimized_table(year_val)
+        if optimized_defect_data:
+            print(f"📦 文件加载未命中，回退数据库优化表 {year_val} 年 defects: {len(optimized_defect_data)} 条")
+            dfs.append(pd.json_normalize(optimized_defect_data, max_level=0))
+
     if not dfs:
         return pd.DataFrame()
         
     ddf = pd.concat(dfs, ignore_index=True)
+
+    if 'id' in ddf.columns:
+        ddf['id'] = ddf['id'].astype(str).str.strip()
+        ddf = ddf[ddf['id'] != '']
+        ddf = ddf.drop_duplicates(subset=['id'], keep='last').reset_index(drop=True)
     
     # 处理时间和测试周
     if 'creation_time' in ddf.columns:
@@ -2609,19 +2992,24 @@ def load_test_data():
                     print(f"已从数据库加载测试管理数据: years={test_years}, specs={len(loaded_specs)}, rows={len(db_data_list)}")
                     dfs.append(pd.json_normalize(db_data_list, max_level=0))
                     db_loaded = True
-                else:
-                    # payload 表未命中时，尝试优化表 octane_manual_runs
-                    optimized_data_list = []
-                    for test_year in test_years:
-                        year_data = _load_manual_runs_from_optimized_table(test_year, db_path=db_path_val)
-                        if year_data:
-                            optimized_data_list.extend(year_data)
-                    if optimized_data_list:
-                        print(f"已从数据库优化表加载测试管理数据: years={test_years}, rows={len(optimized_data_list)}")
-                        dfs.append(pd.json_normalize(optimized_data_list, max_level=0))
-                        db_loaded = True
-                    else:
-                        print(f"提示: 数据库中未找到 manual_runs 数据（payload/optimized 均未命中，years={test_years}），准备回退到 JSON 文件。")
+
+                # 同步场景需要尽量全覆盖：额外合并优化表原始数据（按年份全量）
+                optimized_data_list = []
+                for test_year in test_years:
+                    year_data = _load_manual_runs_from_optimized_table(
+                        test_year,
+                        db_path=db_path_val,
+                        run_team=None,
+                    )
+                    if year_data:
+                        optimized_data_list.extend(year_data)
+
+                if optimized_data_list:
+                    print(f"已从数据库优化表加载测试管理数据: years={test_years}, rows={len(optimized_data_list)}")
+                    dfs.append(pd.json_normalize(optimized_data_list, max_level=0))
+                    db_loaded = True
+                elif not db_data_list:
+                    print(f"提示: 数据库中未找到 manual_runs 数据（payload/optimized 均未命中，years={test_years}），准备回退到 JSON 文件。")
             except Exception as e:
                 print(f"警告: 从数据库加载测试管理数据失败: {e}，准备回退到 JSON 文件。")
         else:
@@ -2685,6 +3073,12 @@ def load_test_data():
 
     print("测试管理数据加载完成，正在合并...")
     tdf = pd.concat(dfs, ignore_index=True)
+
+    if 'id' in tdf.columns:
+        tdf['id'] = tdf['id'].astype(str).str.strip()
+        tdf = tdf[tdf['id'] != '']
+        tdf = tdf.drop_duplicates(subset=['id'], keep='last').reset_index(drop=True)
+
     print(f"合并后的 DataFrame 有 {len(tdf)} 行，列: {list(tdf.columns)}")
 
     # --- 数据转换和特征工程 ---
@@ -3928,3 +4322,37 @@ def get_inflow_outflow_summary_stats(df_trends):
         'net_accumulation': int(net_accumulation),
         'convergence_rate': round(convergence_rate, 1)
     }
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='data_processor standalone utilities')
+    parser.add_argument(
+        '--sync-project-to-db',
+        action='store_true',
+        help='Backward-compatible alias: sync processed business fields into octane_defects and octane_manual_runs',
+    )
+    parser.add_argument(
+        '--sync-processed-fields-to-db',
+        action='store_true',
+        help='Sync processed business fields (project/FV/Team/FVP/etc.) into octane_defects and octane_manual_runs',
+    )
+    parser.add_argument(
+        '--db-path',
+        default=None,
+        help='Optional SQLite database path. Default uses OCTANE_DB_PATH or local default.',
+    )
+    args = parser.parse_args()
+
+    auto_sync = os.environ.get('DATA_PROCESSOR_AUTO_SYNC_FIELDS', '0').strip().lower() in ('1', 'true', 'yes')
+
+    if args.sync_project_to_db or args.sync_processed_fields_to_db or auto_sync:
+        sync_stats = sync_processed_fields_to_db(db_path=args.db_path)
+        print(
+            '处理字段同步完成: '
+            f"defect_updates={sync_stats.get('defect_updates', 0)}/"
+            f"{sync_stats.get('defect_candidates', 0)}, "
+            f"manual_run_updates={sync_stats.get('manual_run_updates', 0)}/"
+            f"{sync_stats.get('manual_run_candidates', 0)}"
+        )

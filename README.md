@@ -497,6 +497,18 @@ export DEEPSEEK_API_KEY="sk-..."
 echo "DEEPSEEK_API_KEY=sk-..." > .env
 ```
 
+### Agent 数据作用域（推荐）
+
+为了避免 Agent 在数据库直读分析时混入非本团队数据，默认会优先按团队作用域过滤（`CHAT_SUMMARY_SCOPE_TEAM` > `OCTANE_TEAM` > `DTSV_China`）。
+
+```powershell
+# PowerShell: 强制只分析 DTSV_China
+$env:CHAT_SUMMARY_SCOPE_TEAM = "DTSV_China"
+
+# 如需临时关闭团队作用域（允许跨团队统计）
+$env:CHAT_SUMMARY_SCOPE_TEAM = "ALL"
+```
+
 ---
 
 ## 🐛 故障排查

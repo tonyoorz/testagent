@@ -144,6 +144,59 @@ def calculate_phase_duration(phase_changes: List[Dict]) -> List[Dict]:
     
     return durations
 
+
+def _parse_iso_timestamp(timestamp: Optional[str]) -> Optional[datetime]:
+    if not timestamp:
+        return None
+    try:
+        return datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+    except Exception:
+        return None
+
+
+def build_phase_segments(
+    history_data: Dict,
+    ticket_meta: Optional[Dict] = None,
+    now: Optional[datetime] = None,
+) -> List[Dict]:
+    """Build per-phase timeline segments from history data."""
+    phase_changes = extract_phase_changes(history_data)
+    if not phase_changes:
+        return []
+
+    ticket_meta = ticket_meta or {}
+    ticket_id = str(ticket_meta.get('ticket_id') or '')
+    ticket_name = str(ticket_meta.get('ticket_name') or f'Ticket {ticket_id}' if ticket_id else 'Unknown Ticket')
+    current_time = now or datetime.now().astimezone()
+    segments = []
+
+    for index, change in enumerate(phase_changes):
+        start_dt = _parse_iso_timestamp(change.get('timestamp'))
+        if start_dt is None:
+            continue
+
+        next_change = phase_changes[index + 1] if index + 1 < len(phase_changes) else None
+        next_dt = _parse_iso_timestamp(next_change.get('timestamp')) if next_change else None
+        is_open_segment = next_dt is None
+        end_dt = next_dt or current_time
+
+        duration_hours = round(max((end_dt - start_dt).total_seconds(), 0) / 3600, 2)
+        segments.append({
+            'ticket_id': ticket_id,
+            'ticket_name': ticket_name,
+            'phase': change.get('to_phase'),
+            'from_phase': change.get('from_phase'),
+            'to_phase': change.get('to_phase'),
+            'start_time': start_dt.isoformat(),
+            'end_time': end_dt.isoformat(),
+            'duration_hours': duration_hours,
+            'duration_days': round(duration_hours / 24, 2),
+            'is_open_segment': is_open_segment,
+            'changed_by': change.get('user_name'),
+        })
+
+    return segments
+
 def analyze_ticket_phases(ticket_id: str, history_folder: str = 'history') -> Dict:
     """
     分析指定ticket的phase变更时间

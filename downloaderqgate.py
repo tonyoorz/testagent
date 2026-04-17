@@ -2,9 +2,10 @@ import argparse
 import json
 import os
 import re
+import sys
 from datetime import datetime
 
-import downloader6 as d6
+from download import octane_downloader as d6
 
 
 DEFAULT_TEAMS = [
@@ -100,6 +101,7 @@ def parse_args():
     download_group = parser.add_argument_group("Download Options")
     current_year = datetime.now().year
     default_years = f"{current_year-1},{current_year}"
+    download_group.add_argument("--year", type=int, default=None, help="仅下载单一年份（例如: 2026）")
     download_group.add_argument("--defect-years", default=default_years, help=f"年份列表 (默认: {default_years})")
     download_group.add_argument("--teams", default=",".join(DEFAULT_TEAMS), help="Team 列表（逗号分隔）")
     download_group.add_argument("--output-root", default="qgate", help="输出根目录（默认: qgate）")
@@ -124,8 +126,24 @@ def parse_args():
     return parser.parse_args()
 
 
+def apply_year_override(args, cli_args):
+    if args.year is None:
+        return args
+
+    current_year = datetime.now().year
+    if args.year < 2000 or args.year > current_year:
+        raise SystemExit(f"--year 必须在 2000 到 {current_year} 之间")
+
+    if "--defect-years" not in cli_args:
+        args.defect_years = str(args.year)
+
+    return args
+
+
 def main():
+    cli_args = sys.argv[1:]
     args = parse_args()
+    args = apply_year_override(args, cli_args)
 
     auth_method_selected = args.auth_method or "cookie"
     if auth_method_selected == "sso":
@@ -202,7 +220,12 @@ def main():
     hist_max_workers_val = min(max(1, args.history_max_workers), 50)
 
     if defect_ids_union:
-        d6.fetch_histories_parallel_integrated(sorted(defect_ids_union), session_active, hist_max_workers_val, history_dir)
+        d6.fetch_defect_histories_parallel(
+            sorted(defect_ids_union),
+            session_active,
+            hist_max_workers_val,
+            history_dir,
+        )
         return
 
     for team in teams:
@@ -221,7 +244,12 @@ def main():
         defect_ids_union.update({str(item.get("id")) for item in (resp_data or []) if item.get("id") is not None})
 
     if defect_ids_union:
-        d6.fetch_histories_parallel_integrated(sorted(defect_ids_union), session_active, hist_max_workers_val, history_dir)
+        d6.fetch_defect_histories_parallel(
+            sorted(defect_ids_union),
+            session_active,
+            hist_max_workers_val,
+            history_dir,
+        )
 
 
 if __name__ == "__main__":

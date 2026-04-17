@@ -48,11 +48,22 @@ def _unwrap_sql_for_count(sql_text: str, table_name: str) -> str:
     return sql_clean
 
 
-def _normalize_tool_rows(items: Any, row_limit: int) -> List[Dict[str, Any]]:
+def _normalize_row_limit(row_limit: int) -> Optional[int]:
+    try:
+        value = int(row_limit)
+    except Exception:
+        value = 1
+    if value <= 0:
+        return None
+    return max(1, value)
+
+
+def _normalize_tool_rows(items: Any, row_limit: Optional[int]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     if not isinstance(items, list):
         return rows
-    for row in items[: max(1, int(row_limit))]:
+    iter_rows = items if row_limit is None else items[:row_limit]
+    for row in iter_rows:
         if isinstance(row, dict):
             rows.append(row)
     return rows
@@ -118,7 +129,8 @@ def execute_query_with_fix(
     tool_executor: Optional[Any],
     semantic_hints: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    safe_limit = max(1, int(row_limit or 1))
+    normalized_limit = _normalize_row_limit(row_limit)
+    safe_limit = normalized_limit if normalized_limit is not None else 200
     safe_table = str(table_name or "").strip()
     safe_question = str(question or "").strip()
     safe_semantic_hints = semantic_hints if isinstance(semantic_hints, dict) else {}
@@ -165,7 +177,7 @@ def execute_query_with_fix(
     result = tool_out.get("result") or {}
     sql_raw = str(result.get("generated_sql") or result.get("sql") or "").strip()
     sql_used = sanitize_select_sql(sql_text=sql_raw, table_name=safe_table or "octane_defects", default_limit=50) if sql_raw else ""
-    rows = _normalize_tool_rows(result.get("rows"), row_limit=safe_limit)
+    rows = _normalize_tool_rows(result.get("rows"), row_limit=normalized_limit)
     explanation = result.get("business_explanation") if isinstance(result.get("business_explanation"), dict) else {}
 
     if tool_out.get("success") is True:
@@ -196,16 +208,17 @@ def execute_sql_rows(
     row_limit: int,
     tool_executor: Optional[Any],
 ) -> Dict[str, Any]:
-    safe_limit = max(1, int(row_limit or 1))
+    normalized_limit = _normalize_row_limit(row_limit)
+    safe_limit = normalized_limit if normalized_limit is not None else 0
     sql_clean = sanitize_select_sql(sql_text=sql_text, table_name=table_name, default_limit=50)
 
     tool_error = ""
-    if tool_executor is not None:
+    if tool_executor is not None and normalized_limit is not None:
         try:
             tool_out = tool_executor.execute_tool("run_sqlite_query", None, sql=sql_clean, limit=safe_limit)
             if isinstance(tool_out, dict) and tool_out.get("success") is True:
                 result = tool_out.get("result") or {}
-                rows = _normalize_tool_rows(result.get("rows"), row_limit=safe_limit)
+                rows = _normalize_tool_rows(result.get("rows"), row_limit=normalized_limit)
                 sql_used = str(result.get("sql") or sql_clean)
                 return {
                     "success": True,
@@ -232,13 +245,20 @@ def execute_sql_rows(
 
         try:
             cur.execute(sql_clean)
-            fetched = cur.fetchmany(max(200, safe_limit))
+            if normalized_limit is None:
+                fetched = cur.fetchall()
+            else:
+                fetched = cur.fetchmany(max(200, safe_limit))
         except Exception:
             sql_used = _fallback_sql(table_name, default_limit=50)
             cur.execute(sql_used)
-            fetched = cur.fetchmany(max(200, safe_limit))
+            if normalized_limit is None:
+                fetched = cur.fetchall()
+            else:
+                fetched = cur.fetchmany(max(200, safe_limit))
 
-        for row in (fetched or [])[:safe_limit]:
+        row_iter = (fetched or []) if normalized_limit is None else (fetched or [])[:safe_limit]
+        for row in row_iter:
             try:
                 item = dict(row) if row is not None else {}
             except Exception:

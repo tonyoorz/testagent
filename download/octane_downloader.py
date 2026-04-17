@@ -12,6 +12,7 @@ import concurrent.futures # Added for history
 from tqdm import tqdm # Added for history
 import sys
 import re
+import subprocess
 from requests.adapters import HTTPAdapter
 
 try:
@@ -100,6 +101,55 @@ def _shorten_for_log(text, max_len=240):
     if len(t) <= max_len:
         return t
     return f"{t[:max_len]}...<len={len(t)}>"
+
+
+def run_post_download_data_processor_sync(repo_root_path: str, db_path: str = None, timeout_seconds: int = 0) -> bool:
+    """在下载后触发 data_processor 全字段回写，确保 defect explore 与 agent 使用完整字段。"""
+    data_processor_path = os.path.join(repo_root_path, "data_processor.py")
+    if not os.path.exists(data_processor_path):
+        logging.error("未找到 data_processor.py，跳过后处理同步。路径: %s", data_processor_path)
+        return False
+
+    cmd = [
+        sys.executable,
+        data_processor_path,
+        "--sync-processed-fields-to-db",
+    ]
+    if db_path:
+        cmd.extend(["--db-path", db_path])
+
+    timeout_val = timeout_seconds if timeout_seconds and timeout_seconds > 0 else None
+    child_env = os.environ.copy()
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    child_env["PYTHONUTF8"] = "1"
+    logging.info("开始执行下载后自动同步: %s", " ".join(cmd))
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=repo_root_path,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            env=child_env,
+            timeout=timeout_val,
+            check=False,
+        )
+    except Exception as exc:
+        logging.error("下载后自动同步执行失败: %s", exc)
+        return False
+
+    if result.stdout:
+        logging.info("同步输出:\n%s", result.stdout.strip())
+    if result.stderr:
+        logging.warning("同步警告/错误输出:\n%s", result.stderr.strip())
+
+    if result.returncode != 0:
+        logging.error("下载后自动同步失败，退出码: %s", result.returncode)
+        return False
+
+    logging.info("下载后自动同步完成。")
+    return True
 
 
 def fetch_octane_data(session, endpoint, fields, query, limit_per_page=DEFAULT_LIMIT_PER_PAGE, order_by=None, api_url=API_BASE_URL, log_query=True, suppress_info=False):
@@ -873,6 +923,8 @@ def main():
     general_group.add_argument("--pg-only", action='store_true', help="仅写入 PostgreSQL（SQLite 仍保持可用逻辑，不会被删除）")
     general_group.add_argument("--turbo-mode", action='store_true', help="启用极限性能模式")
     general_group.add_argument("--max-concurrent-requests", type=int, default=10, help="最大并发请求数")
+    general_group.add_argument("--no-post-process-sync", action='store_true', help="下载完成后不自动触发 data_processor 字段回写")
+    general_group.add_argument("--post-process-sync-timeout", type=int, default=0, help="下载后自动同步超时秒数，0表示不超时")
 
     defect_group = parser.add_argument_group('Defect Main Data Download')
     defect_group.add_argument("--skip-defects", action='store_true', help="跳过下载 Defects 主数据")
@@ -965,8 +1017,10 @@ def main():
     history_output_path_base = os.path.join(repo_root_path, args.history_output_dir)
 
     sqlite_store = None
+    sqlite_db_path = None
     pg_store = None
     store_targets = []
+    downloaded_main_data = False
 
     if args.pg_only and not args.enable_pg:
         logging.error("指定了 --pg-only 但未启用 --enable-pg")
@@ -978,6 +1032,7 @@ def main():
             logging.error("SQLite 模块不可用，已跳过写入 SQLite。")
         else:
             db_path = args.db_path or default_db_path(repo_root_path)
+            sqlite_db_path = db_path
             try:
                 sqlite_store = OctaneSQLiteStore(db_path)
                 sqlite_store.create_tables()
@@ -1047,6 +1102,7 @@ def main():
                 max_workers=args.max_concurrent_requests
             )
             if defect_data_list:
+                downloaded_main_data = True
                 # 与项目现有命名规范兼容: 2025_defect.json (移除 team 后缀，与 downloader7 保持一致)
                 fn_defect = f"{year_str_defect}_defect"
                 if store_targets:
@@ -1300,6 +1356,7 @@ def main():
                         if not rel_data:
                             logging.info(f"  {rel_name} (团队: {team_to_use}) 无数据.")
                             continue
+                        downloaded_main_data = True
                         _persist_release_runs(rel_name, rel_data)
                 else:
                     for rel_num in rels_fetch:
@@ -1314,6 +1371,7 @@ def main():
                         if not mr_data:
                             logging.info(f"  {rel_name} (团队: {team_to_use}) 无数据.")
                             continue
+                        downloaded_main_data = True
                         _persist_release_runs(rel_name, mr_data)
             except ValueError as e_mr_val: logging.error(f"解析 MR 规范 '{spec_mr}' 出错: {e_mr_val}")
             except Exception as e_mr_exc: logging.error(f"处理 MR 规范 '{spec_mr}' 时未知错误: {e_mr_exc}")
@@ -1378,6 +1436,30 @@ def main():
         logging.info("跳过 Defect History 下载 (因指定了 --skip-history).")
     else:
         logging.info("跳过 Defect History 下载 (未启用).")
+
+    should_auto_sync = (
+        (not args.no_post_process_sync)
+        and (not args.skip_db)
+        and (not args.pg_only)
+        and bool(sqlite_db_path)
+    )
+    if should_auto_sync:
+        sync_ok = run_post_download_data_processor_sync(
+            repo_root_path=repo_root_path,
+            db_path=sqlite_db_path,
+            timeout_seconds=args.post_process_sync_timeout,
+        )
+        if not sync_ok:
+            logging.warning("下载后自动同步失败，请手动执行: python data_processor.py --sync-processed-fields-to-db")
+    else:
+        logging.info(
+            "跳过下载后自动同步: no_post_process_sync=%s, skip_db=%s, pg_only=%s, has_sqlite_db=%s, downloaded_main_data=%s",
+            args.no_post_process_sync,
+            args.skip_db,
+            args.pg_only,
+            bool(sqlite_db_path),
+            downloaded_main_data,
+        )
 
     logging.info("所有指定任务完成.")
 

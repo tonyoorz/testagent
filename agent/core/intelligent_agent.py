@@ -45,7 +45,7 @@ from agent.core.agentic_runtime import (
     build_tool_specs,
     run_agentic_loop,
 )
-from agent.core.deterministic_sql_service import decide_query_execution_strategy
+from agent.core.deterministic_sql_service import decide_query_execution_strategy, extract_query_hints
 from agent.core.sql_runtime_service import build_evidence_bundle
 
 from analysis_utils import (
@@ -2565,11 +2565,13 @@ def _open_sqlite_readonly(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def _ensure_limit(sql: str, limit: int) -> str:
+def _ensure_limit(sql: str, limit: Optional[int]) -> str:
     s = (sql or "").strip()
     if ";" in s:
         s = s.split(";", 1)[0].strip()
     if re.search(r"\\blimit\\b", s, flags=re.IGNORECASE):
+        return s
+    if limit is None:
         return s
     return f"SELECT * FROM ({s}) AS _q LIMIT {int(limit)}"
 
@@ -2591,9 +2593,13 @@ class SQLiteQueryTool(DataAnalysisTool):
         if not db_path:
             return {"success": False, "tool": self.name, "error": "未配置SQLite数据库路径"}
         sql = str(kwargs.get("sql") or "").strip()
-        limit = int(kwargs.get("limit") or 200)
-        if limit <= 0:
+        raw_limit = kwargs.get("limit")
+        try:
+            limit = int(raw_limit if raw_limit is not None else 200)
+        except Exception:
             limit = 200
+        if limit <= 0:
+            limit = None
         if not _is_safe_readonly_sql(sql):
             return {"success": False, "tool": self.name, "error": "仅允许只读查询（SELECT/WITH），且禁止多语句与写操作"}
         try:
@@ -2855,7 +2861,11 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         question = str(kwargs.get("question") or "").strip()
         if not question:
             return {"success": False, "tool": self.name, "error": "question 不能为空"}
-        limit = int(kwargs.get("limit") or 200)
+        raw_limit = kwargs.get("limit")
+        try:
+            limit = int(raw_limit if raw_limit is not None else 200)
+        except Exception:
+            limit = 200
         table = str(kwargs.get("table") or "").strip()
         incoming_semantic_hints = kwargs.get("semantic_hints") if isinstance(kwargs.get("semantic_hints"), dict) else {}
 
@@ -2875,6 +2885,24 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         except Exception as e:
             logger.debug(f"semantic term adapter skipped: {e}")
 
+        # Reuse deterministic hint parsing so fallback/LLM SQL path gets the same
+        # relative time semantics (last_week/test_week/CWxx) as deterministic SQL.
+        try:
+            parsed_hints = extract_query_hints(
+                question,
+                [],
+                semantic_hints=semantic_hints,
+                adapt_with_unified_intent=False,
+            )
+            for key in ["relative_period", "rolling_days", "week_year", "week_number", "test_week", "month_number"]:
+                parsed_value = parsed_hints.get(key)
+                existing_value = semantic_hints.get(key)
+                if existing_value in (None, "", [], {}):
+                    if parsed_value not in (None, "", [], {}):
+                        semantic_hints[key] = parsed_value
+        except Exception as e:
+            logger.debug(f"deterministic hint merge skipped: {e}")
+
         normalized_question, business_hints = _augment_question_with_business_hints(question)
         query_strategy = decide_query_execution_strategy(
             question=question,
@@ -2892,6 +2920,10 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
                 business_hints["semantic_rule_ids"] = matched_rule_ids[:20]
 
             semantic_tokens: List[str] = []
+            scope_team = str(semantic_hints.get("scope_team") or "").strip()
+            if scope_team:
+                business_hints["scope_team"] = scope_team
+                semantic_tokens.append(f"scope_team={scope_team}")
             if semantic_hints.get("wants_aida_dist"):
                 semantic_tokens.append("aida")
             if semantic_hints.get("wants_showstopper"):
@@ -2901,6 +2933,35 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             month_number = semantic_hints.get("month_number")
             if isinstance(month_number, int) and 1 <= month_number <= 12:
                 semantic_tokens.append(f"month={month_number:02d}")
+
+            relative_period = str(semantic_hints.get("relative_period") or "").strip()
+            if relative_period:
+                business_hints["relative_period"] = relative_period
+                semantic_tokens.append(f"relative_period={relative_period}")
+
+            rolling_days = semantic_hints.get("rolling_days")
+            if isinstance(rolling_days, int) and rolling_days > 0:
+                business_hints["rolling_days"] = int(rolling_days)
+                semantic_tokens.append(f"rolling_days={int(rolling_days)}")
+
+            week_year = semantic_hints.get("week_year")
+            week_number = semantic_hints.get("week_number")
+            if isinstance(week_year, int):
+                business_hints["week_year"] = int(week_year)
+            if isinstance(week_number, int):
+                business_hints["week_number"] = int(week_number)
+            if isinstance(week_year, int) and isinstance(week_number, int):
+                semantic_tokens.append(f"iso_week={int(week_year)}-W{int(week_number):02d}")
+
+            test_week = str(semantic_hints.get("test_week") or "").strip()
+            if test_week:
+                business_hints["test_week"] = test_week
+                semantic_tokens.append(f"test_week={test_week}")
+
+            time_scope = semantic_hints.get("time_scope") if isinstance(semantic_hints.get("time_scope"), dict) else None
+            if isinstance(time_scope, dict) and time_scope:
+                business_hints["time_scope"] = dict(time_scope)
+
             if semantic_tokens:
                 normalized_question = f"{normalized_question}\n\nsemantic_terms: {' '.join(sorted(set(semantic_tokens)))}"
 
@@ -2987,7 +3048,10 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
             "你是SQLite专家。根据用户问题与数据库schema生成只读SQL。\n"
             "严格要求：只允许 SELECT 或 WITH；必须使用 schema 中存在的表与列；只输出JSON。\n"
             "优先参考 semantic_context 中的业务定义和指标口径，结合 business_hints 约束筛选条件。\n"
-            "优先参考业务语义提示中的 time_range、severity、status、matrix_levels、aida_keywords、ecu_keywords、project_tokens。\n"
+            "优先参考业务语义提示中的 time_range、relative_period、rolling_days、week_year、week_number、test_week、severity、status、matrix_levels、aida_keywords、ecu_keywords、project_tokens。\n"
+            "若 semantic_term_hints.scope_team 存在，SQL 必须在 team/run_team/problem_finder_team 等可用列上添加大小写不敏感的精确团队过滤。\n"
+            "若 semantic_term_hints.relative_period 或 rolling_days 存在，SQL 必须添加时间范围过滤（优先 creation_time/finished/started/last_modified/fetched_at 等列）。\n"
+            "若 semantic_term_hints.week_number 或 test_week 存在，SQL 必须添加周维度过滤（优先 test_week；否则按时间列折算周）。\n"
             '输出格式：{\"sql\":\"...\"}'
         )
         user_payload = {
@@ -3049,6 +3113,7 @@ class SQLiteNLQueryWithFixTool(DataAnalysisTool):
         fix_prompt = (
             "上一次SQL执行失败。请根据错误信息与schema修复SQL。\n"
             "修复时也要参考 semantic_context 的口径定义，并保持与 business_hints 一致。\n"
+            "若 business_hints 或 semantic_term_hints 包含 relative_period/rolling_days/week_number/test_week，修复后SQL仍必须保留对应时间过滤。\n"
             "仍然只允许 SELECT 或 WITH；只输出JSON。\n"
             '输出格式：{\"sql\":\"...\"}'
         )

@@ -55,6 +55,10 @@ class DeterministicSQLServiceTests(unittest.TestCase):
         table = guess_target_table("所有测试人员测试用例执行情况")
         self.assertEqual(table, "octane_manual_runs")
 
+    def test_guess_target_table_routes_last_week_test_case_summary_to_manual_runs(self):
+        table = guess_target_table("上周团队测试用例情况")
+        self.assertEqual(table, "octane_manual_runs")
+
     def test_guess_target_table_routes_testcase_synonyms_to_manual_runs(self):
         phrases = [
             "all testers testcase execution status",
@@ -159,6 +163,38 @@ class DeterministicSQLServiceTests(unittest.TestCase):
         self.assertIn("run_count", sql)
         self.assertIn('FROM "octane_manual_runs"', sql)
 
+    def test_build_deterministic_sql_applies_last_week_time_filter_for_manual_runs(self):
+        sql = build_deterministic_sql(
+            question="上周团队测试用例情况",
+            table_name="octane_manual_runs",
+            columns=["creation_time", "status", "run_by", "test_id", "run_team"],
+        )
+
+        self.assertIn('FROM "octane_manual_runs"', sql)
+        self.assertIn("run_count", sql)
+        self.assertIn("pass_rate", sql)
+        self.assertIn("date(CAST(creation_time AS TEXT)) >=", sql)
+        self.assertIn("date(CAST(creation_time AS TEXT)) <", sql)
+
+    def test_build_deterministic_sql_applies_explicit_week_filter_on_test_week_column(self):
+        sql = build_deterministic_sql(
+            question="请看2026年第14周缺陷情况",
+            table_name="octane_defects",
+            columns=["test_week", "status_phase", "defect_id"],
+        )
+
+        self.assertIn('FROM "octane_defects"', sql)
+        self.assertIn("test_week", sql)
+        self.assertIn("CW14", sql)
+
+    def test_extract_query_hints_extracts_relative_time_period(self):
+        hints = extract_query_hints(
+            "上周团队测试用例情况",
+            ["creation_time", "status", "run_by", "test_id"],
+        )
+
+        self.assertEqual(hints.get("relative_period"), "last_week")
+
     def test_build_deterministic_sql_groups_manual_runs_by_tester_for_tester_execution_queries(self):
         sql = build_deterministic_sql(
             question="所有测试人员测试用例执行情况",
@@ -210,6 +246,26 @@ class DeterministicSQLServiceTests(unittest.TestCase):
         self.assertIn('LEFT JOIN "defect_features"', sql)
         self.assertIn("matrix_zone", sql)
         self.assertIn("severity", sql)
+
+    def test_extract_query_hints_extracts_matrix_level_and_avoids_entity_pollution(self):
+        hints = extract_query_hints(
+            "matrix1a 的 defect 都有哪些都属于什么 AIDA",
+            ["topissue_display", "top_aida", "aida_english", "name"],
+        )
+        self.assertIn("1a", hints.get("matrix_levels") or [])
+        self.assertNotIn("matrix1a", [str(t).lower() for t in (hints.get("entity_tokens") or [])])
+
+    def test_build_deterministic_sql_applies_matrix_level_filter_for_aida_query(self):
+        sql = build_deterministic_sql(
+            question="matrix1a 的 defect 都有哪些都属于什么 AIDA",
+            table_name="octane_defects",
+            columns=["defect_id", "topissue_display", "top_aida", "aida_english", "name", "creation_time"],
+        )
+        sql_lower = sql.lower()
+        self.assertIn(" as aida", sql_lower)
+        self.assertIn("topissue_display", sql_lower)
+        self.assertIn("%1a%", sql_lower)
+        self.assertIn('from "octane_defects"', sql_lower)
 
     def test_extract_query_hints_maps_feature_question_to_aida_distribution(self):
         hints = extract_query_hints(
@@ -389,6 +445,64 @@ class DeterministicSQLServiceTests(unittest.TestCase):
         self.assertIn("showstopper", sql_lower)
         self.assertIn("candidate", sql_lower)
         self.assertIn("strftime('%m', creation_time) = '03'", sql_lower)
+
+    def test_build_deterministic_sql_uses_semantic_preferred_dimension_for_distribution(self):
+        sql = build_deterministic_sql(
+            question="请看阻塞原因分布",
+            table_name="octane_defects",
+            columns=["defect_id", "blocking_reason", "creation_time"],
+            semantic_hints={"preferred_dimension": "blocking_reason"},
+        )
+        sql_lower = sql.lower()
+        self.assertIn("as dimension", sql_lower)
+        self.assertIn("blocking_reason", sql_lower)
+        self.assertIn("record_count", sql_lower)
+        self.assertIn("group by 1", sql_lower)
+        self.assertIn('from "octane_defects"', sql_lower)
+
+    def test_build_deterministic_sql_applies_scope_team_filter_for_defects(self):
+        sql = build_deterministic_sql(
+            question="请分析测试团队效率和缺陷发现能力",
+            table_name="octane_defects",
+            columns=["team", "status_phase", "severity", "defect_id", "detected_by", "creation_time"],
+            semantic_hints={"scope_team": "DTSV_China"},
+        )
+        sql_lower = sql.lower()
+        self.assertIn("lower(trim(cast(team as text))) = lower('dtsv_china')", sql_lower)
+        self.assertIn('from "octane_defects"', sql_lower)
+
+    def test_build_deterministic_sql_applies_scope_team_filter_for_manual_runs(self):
+        sql = build_deterministic_sql(
+            question="请看测试执行通过率趋势",
+            table_name="octane_manual_runs",
+            columns=["run_team", "test_week", "run_status", "run_by", "test_id"],
+            semantic_hints={"scope_team": "DTSV_China"},
+        )
+        sql_lower = sql.lower()
+        self.assertIn("lower(trim(cast(run_team as text))) = lower('dtsv_china')", sql_lower)
+        self.assertIn('from "octane_manual_runs"', sql_lower)
+
+    def test_build_deterministic_sql_uses_custom_row_limit_on_default_path(self):
+        sql = build_deterministic_sql(
+            question="请列出最近缺陷详情",
+            table_name="octane_defects",
+            columns=["defect_id", "name", "creation_time", "status_phase"],
+            row_limit=15,
+        )
+
+        self.assertIn('FROM "octane_defects"', sql)
+        self.assertIn("LIMIT 15", sql)
+
+    def test_build_deterministic_sql_omits_limit_when_row_limit_is_non_positive(self):
+        sql = build_deterministic_sql(
+            question="缺陷流转历史",
+            table_name="octane_defect_histories",
+            columns=["defect_id", "team", "total_count", "fetched_at"],
+            row_limit=0,
+        )
+
+        self.assertIn('FROM "octane_defect_histories"', sql)
+        self.assertNotIn("LIMIT", sql.upper())
 
 
 if __name__ == "__main__":
