@@ -1,0 +1,466 @@
+{
+  "schema_version": "1.0",
+  "description": "Data Knowledge Graph — 字段关系、状态机、口径规则的语义图谱。供 SchemaGraph 类加载。",
+
+  "field_definitions": {
+    "id": {
+      "type": "string",
+      "business_role": "defect_id",
+      "meaning": "Octane 缺陷/工单唯一ID",
+      "aliases": ["ticket_id", "bug_id", "defect_id", "issue_id", "work_item_id"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "identifier"
+    },
+    "creation_time": {
+      "type": "datetime",
+      "business_role": "time",
+      "meaning": "缺陷创建时间",
+      "datasets": ["octane_defects", "octane_tests"],
+      "semantic_type": "time",
+      "usage_note": "做趋势时需明确口径：新增=creation_time，关闭需结合status_phase"
+    },
+    "project": {
+      "type": "string",
+      "business_role": "project",
+      "meaning": "项目/车系映射后的项目字段",
+      "aliases": ["tproject", "项目", "车系", "车型", "project_name"],
+      "datasets": ["octane_defects", "octane_tests"],
+      "semantic_type": "project",
+      "data_processing": "defect: 直接映射; test: 三步分类(target_ecu_conf_udf→name正则→特殊覆盖)"
+    },
+    "aida_english": {
+      "type": "string",
+      "business_role": "domain",
+      "meaning": "AIDA 英文名，从 AIDA 字段抽取英文文字",
+      "aliases": ["aida", "top_aida", "product_area", "产品域", "领域"],
+      "datasets": ["octane_defects", "octane_tests"],
+      "semantic_type": "module",
+      "data_quality_warning": "可能存在 Unknown/不一致，分析时需标注覆盖率"
+    },
+    "ecu": {
+      "type": "string",
+      "business_role": "ecu",
+      "meaning": "测试车内 ECU 名称",
+      "aliases": ["assigned_ecu", "ecu_name", "车内ECU"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "module",
+      "field_lineage": "assigned_ecu_udf.name"
+    },
+    "severity": {
+      "type": "string",
+      "business_role": "severity",
+      "meaning": "缺陷严重度（如 Critical/Major/Minor）",
+      "aliases": ["problem_severity"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "severity",
+      "field_lineage": "problem_severity_udf.name",
+      "typical_values": ["Critical", "Major", "Minor"]
+    },
+    "status_phase": {
+      "type": "string",
+      "business_role": "status",
+      "meaning": "缺陷状态/阶段（phase字段映射）",
+      "aliases": ["phase", "status", "状态", "阶段", "lifecycle"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "status",
+      "field_lineage": "phase.name",
+      "typical_values": ["New", "Open", "In Progress", "Fixed", "Closed", "Rejected", "Deferred"]
+    },
+    "fv": {
+      "type": "string",
+      "business_role": "fv",
+      "meaning": "Feature Team（DTSV 功能负责人/责任团队）",
+      "aliases": ["feature team", "feature_team", "功能负责人", "负责人", "dtsv"],
+      "datasets": ["octane_defects", "octane_tests"],
+      "semantic_type": "module",
+      "data_processing": "defect: AIDA映射; test: Excel映射(top_aida_project_fv_mapping.xlsx)"
+    },
+    "pu": {
+      "type": "string",
+      "business_role": "pu",
+      "meaning": "PU / SOP字段",
+      "datasets": ["octane_defects", "octane_tests"],
+      "semantic_type": "version",
+      "field_lineage": "first_use_sop_of_function_udf"
+    },
+    "release": {
+      "type": "string",
+      "business_role": "release",
+      "meaning": "当前软件释放的 Release 阶段",
+      "aliases": ["detected_in_release", "release_stage", "释放阶段"],
+      "datasets": ["octane_defects", "octane_tests"],
+      "semantic_type": "version",
+      "field_lineage": "detected_in_release"
+    },
+    "tester": {
+      "type": "string",
+      "business_role": "tester",
+      "meaning": "缺陷发现人/测试者",
+      "aliases": ["detected_by", "found_by", "reporter", "发现人", "测试人员"],
+      "datasets": ["octane_defects", "octane_tests"],
+      "semantic_type": "person",
+      "field_lineage": "detected_by.full_name/name"
+    },
+    "matrix": {
+      "type": "string",
+      "business_role": "matrix",
+      "meaning": "缺陷严重性矩阵标签（matrix-前缀从tags提取）",
+      "aliases": ["matrix_display", "severity_matrix", "严重矩阵"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "severity",
+      "data_processing": "从 tags 中提取首个 matrix- 前缀标签; matrix_display=去掉前缀大写; matrix_order=排序值"
+    },
+    "domain": {
+      "type": "string",
+      "business_role": "domain",
+      "meaning": "开发团队/责任团队（Solution Cluster口径）",
+      "aliases": ["solution_cluster", "dev_team", "开发团队", "责任团队"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "module"
+    },
+    "software_version": {
+      "type": "string",
+      "business_role": "software_version",
+      "meaning": "被测软件版本",
+      "aliases": ["sw_version", "version", "软件版本"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "version"
+    },
+    "classification": {
+      "type": "string",
+      "business_role": "classification",
+      "meaning": "缺陷分类标签（可为数组/JSON）",
+      "datasets": ["octane_defects"],
+      "semantic_type": "category",
+      "data_quality_warning": "可能为数组/JSON格式，查询需按元素匹配"
+    },
+    "occurrence": {
+      "type": "string",
+      "business_role": "occurrence",
+      "meaning": "缺陷复现概率",
+      "aliases": ["复现概率", "reproducibility", "reproduce"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "severity",
+      "note": "TopIssue 风险评分的重要输入维度"
+    },
+    "ecu_pingpong_count": {
+      "type": "integer",
+      "business_role": "pingpong",
+      "meaning": "ECU 乒乓次数（ECU 责任方来回转手次数）",
+      "aliases": ["ecu乒乓", "ecu_pp", "ecu来回"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "metric",
+      "note": "TopIssue 风险评分核心维度，乒乓次数越高风险越大"
+    },
+    "domain_pingpong_count": {
+      "type": "integer",
+      "business_role": "pingpong",
+      "meaning": "Domain 乒乓次数（功能域责任方来回转手次数）",
+      "aliases": ["domain乒乓", "domain_pp", "domain来回"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "metric",
+      "note": "TopIssue 风险评分核心维度"
+    },
+    "tags": {
+      "type": "string",
+      "business_role": "tags",
+      "meaning": "缺陷标签集合，matrix 从中提取 matrix- 前缀标签",
+      "aliases": ["label", "标签"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "category",
+      "note": "matrix、classification 等标签从 tags 字段派生"
+    },
+    "classification": {
+      "type": "string",
+      "business_role": "classification",
+      "meaning": "缺陷分类标签（可为数组/JSON）",
+      "datasets": ["octane_defects"],
+      "semantic_type": "category",
+      "data_quality_warning": "可能为数组/JSON格式，查询需按元素匹配"
+    },
+    "blocking_reason": {
+      "type": "string",
+      "business_role": "blocking_reason",
+      "meaning": "缺陷阻塞原因",
+      "aliases": ["阻塞原因", "blocking"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "category",
+      "field_lineage": "blocking_reason_udf.name"
+    },
+    "parent_child": {
+      "type": "string",
+      "business_role": "parent_child",
+      "meaning": "缺陷父子关系标记",
+      "aliases": ["父子", "parent", "child"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "category",
+      "field_lineage": "parent_child_udf.name"
+    },
+    "solution": {
+      "type": "string",
+      "business_role": "solution",
+      "meaning": "解决方案责任方",
+      "aliases": ["solution_responsible", "解决方", "责任方"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "module",
+      "field_lineage": "solution_responsible_udf.name"
+    },
+    "title": {
+      "type": "string",
+      "business_role": "title",
+      "meaning": "缺陷标题/描述",
+      "aliases": ["name", "subject", "标题", "描述"],
+      "datasets": ["octane_defects"],
+      "semantic_type": "text"
+    },
+    "test_week": {
+      "type": "string",
+      "business_role": "time",
+      "meaning": "测试周（CW周编号）",
+      "aliases": ["cw", "calendar_week", "测试周"],
+      "datasets": ["octane_defects", "octane_tests"],
+      "semantic_type": "time_bucket"
+    },
+    "top_aida": {
+      "type": "string",
+      "business_role": "domain",
+      "meaning": "团队口径的Top AIDA，从aidas中抽取的主AIDA",
+      "aliases": ["top aida", "主要aida"],
+      "datasets": ["octane_defects", "octane_tests"],
+      "semantic_type": "module"
+    },
+    "run_status": {
+      "type": "string",
+      "business_role": "status",
+      "meaning": "测试执行状态",
+      "aliases": ["status", "执行状态", "结果"],
+      "datasets": ["octane_tests"],
+      "semantic_type": "test_result",
+      "typical_values": ["Passed", "Failed", "Blocked", "Planned"]
+    }
+  },
+
+  "relationships": [
+    {
+      "id": "rel_ecu_aida",
+      "source": "ecu",
+      "target": "aida_english",
+      "type": "functional_dependency",
+      "description": "ECU 与 AIDA 存在功能归属关系：一个ECU通常归属特定AIDA域",
+      "analysis_hint": "按ECU分析时可同时按aida_english聚合，识别ECU与域的交叉分布",
+      "direction": "many_to_many"
+    },
+    {
+      "id": "rel_project_release",
+      "source": "project",
+      "target": "release",
+      "type": "temporal_scope",
+      "description": "项目与Release阶段：同一项目在不同Release阶段有不同缺陷特征",
+      "analysis_hint": "分析项目趋势时需关联release阶段，避免不同阶段数据混合",
+      "direction": "one_to_many"
+    },
+    {
+      "id": "rel_severity_matrix",
+      "source": "severity",
+      "target": "matrix",
+      "type": "hierarchical",
+      "description": "severity与matrix构成严重度层次：severity是Octane原生，matrix是从tags派生的补充标签",
+      "analysis_hint": "优先用severity做原始分析，matrix用于补充展示和排序",
+      "direction": "one_to_many"
+    },
+    {
+      "id": "rel_status_phase_time",
+      "source": "status_phase",
+      "target": "creation_time",
+      "type": "lifecycle",
+      "description": "status_phase与时间构成生命周期：创建→处理→关闭",
+      "analysis_hint": "计算关闭率/修复时长需同时使用status_phase和creation_time",
+      "direction": "one_to_many"
+    },
+    {
+      "id": "rel_fv_aida",
+      "source": "fv",
+      "target": "aida_english",
+      "type": "organizational",
+      "description": "FV与AIDA的映射关系：FV从AIDA映射而来（Excel映射表）",
+      "analysis_hint": "FV和AIDA是同一维度的不同粒度表示，AIDA更细、FV更粗",
+      "direction": "many_to_one"
+    },
+    {
+      "id": "rel_project_ecu",
+      "source": "project",
+      "target": "ecu",
+      "type": "scope",
+      "description": "项目与ECU的范围关系：不同项目涉及不同ECU集合",
+      "analysis_hint": "项目对比时需注意ECU范围差异",
+      "direction": "one_to_many"
+    },
+    {
+      "id": "rel_test_defect",
+      "source": "run_status",
+      "target": "severity",
+      "type": "causal",
+      "description": "测试执行结果与缺陷严重度：Failed的测试关联的缺陷通常严重度更高",
+      "analysis_hint": "测试-缺陷联动分析时需通过defect_id关联",
+      "direction": "many_to_many",
+      "cross_dataset": true
+    }
+  ],
+
+  "state_machines": {
+    "status_phase": {
+      "description": "缺陷生命周期状态机",
+      "states": [
+        {"name": "New", "category": "open", "meaning": "新创建，尚未处理"},
+        {"name": "Open", "category": "open", "meaning": "已打开，等待修复"},
+        {"name": "In Progress", "category": "in_progress", "meaning": "正在处理中"},
+        {"name": "Fixed", "category": "in_progress", "meaning": "已修复，等待验证"},
+        {"name": "Closed", "category": "closed", "meaning": "已关闭"},
+        {"name": "Rejected", "category": "closed", "meaning": "已拒绝"},
+        {"name": "Deferred", "category": "closed", "meaning": "已推迟"}
+      ],
+      "transitions": [
+        {"from": "New", "to": "Open", "trigger": "确认缺陷有效"},
+        {"from": "Open", "to": "In Progress", "trigger": "开始处理"},
+        {"from": "In Progress", "to": "Fixed", "trigger": "开发完成修复"},
+        {"from": "Fixed", "to": "Closed", "trigger": "验证通过"},
+        {"from": "Fixed", "to": "In Progress", "trigger": "验证失败（乒乓）"},
+        {"from": "New", "to": "Rejected", "trigger": "确认非缺陷"},
+        {"from": "Open", "to": "Deferred", "trigger": "决定推迟处理"}
+      ],
+      "category_groups": {
+        "open": {"label": "未关闭", "states": ["New", "Open"]},
+        "in_progress": {"label": "处理中", "states": ["In Progress", "Fixed"]},
+        "closed": {"label": "已关闭", "states": ["Closed", "Rejected", "Deferred"]}
+      },
+      "derived_metrics": [
+        {"name": "关闭率", "formula": "closed / total", "note": "Closed+Rejected+Deferred 除以总数"},
+        {"name": "修复率", "formula": "Fixed+Closed / total", "note": "至少已修复过的比例"},
+        {"name": "乒乓率", "formula": "Fixed→Open 转换次数 / 总 Fixed 次数", "note": "反复开关的比例"}
+      ]
+    },
+    "run_status": {
+      "description": "测试执行状态机",
+      "states": [
+        {"name": "Planned", "category": "planned", "meaning": "计划中，尚未执行"},
+        {"name": "Passed", "category": "completed", "meaning": "执行通过"},
+        {"name": "Failed", "category": "completed", "meaning": "执行失败"},
+        {"name": "Blocked", "category": "blocked", "meaning": "执行受阻"}
+      ],
+      "category_groups": {
+        "planned": {"label": "待执行", "states": ["Planned"]},
+        "completed": {"label": "已完成", "states": ["Passed", "Failed"]},
+        "blocked": {"label": "受阻", "states": ["Blocked"]}
+      },
+      "derived_metrics": [
+        {"name": "通过率", "formula": "Passed / (Passed + Failed)", "note": "不含Blocked和Planned"},
+        {"name": "执行率", "formula": "Completed / total", "note": "已执行占总数比例"}
+      ]
+    }
+  },
+
+  "calibration_rules": [
+    {
+      "id": "cal_critical_default",
+      "name": "Critical Issue 默认口径",
+      "applies_to": ["classification", "severity"],
+      "description": "默认关键问题分类口径，用于高风险缺陷范围界定",
+      "trigger_terms": ["critical", "关键问题", "高风险", "showstopper", "maturity"],
+      "rules": [
+        "默认包含: Showstopper_Candidate",
+        "默认包含: Showstopper_Confirmed",
+        "默认包含: Preventing Maturity Grade ConDrive",
+        "默认包含: Obstructing Maturity Grade ConDrive"
+      ],
+      "sql_guardrails": [
+        "若 classification 为数组/JSON，需按元素匹配，不可直接等值比较整串",
+        "不要把 'critical' 误当 matrix 文本过滤"
+      ]
+    },
+    {
+      "id": "cal_defect_status_open",
+      "name": "开放缺陷口径",
+      "applies_to": ["status_phase"],
+      "description": "开放/未关闭缺陷的定义口径",
+      "trigger_terms": ["开放", "未关闭", "open defect", "活跃缺陷", "pending"],
+      "rules": [
+        "开放缺陷 = status_phase IN ('New', 'Open')",
+        "不包含 Fixed（已修复待验证）",
+        "不包含 Closed/Rejected/Deferred"
+      ]
+    },
+    {
+      "id": "cal_defect_status_closed",
+      "name": "关闭缺陷口径",
+      "applies_to": ["status_phase"],
+      "description": "已关闭缺陷的定义口径",
+      "trigger_terms": ["关闭", "closed", "关闭率", "resolve", "resolved"],
+      "rules": [
+        "已关闭缺陷 = status_phase IN ('Closed', 'Rejected', 'Deferred')",
+        "关闭率 = 已关闭 / 总数",
+        "注意：Fixed 不算关闭，算修复中"
+      ]
+    },
+    {
+      "id": "cal_trend_new_defects",
+      "name": "新增缺陷趋势口径",
+      "applies_to": ["creation_time"],
+      "description": "新增缺陷趋势的时间口径",
+      "trigger_terms": ["新增趋势", "new trend", "缺陷趋势", "新增缺陷"],
+      "rules": [
+        "新增趋势使用 creation_time 按日/周聚合",
+        "test_week 是聚合后的周维度，可直接使用",
+        "存量趋势需结合 status_phase 过滤"
+      ]
+    },
+    {
+      "id": "cal_severity_grouping",
+      "name": "严重度分组口径",
+      "applies_to": ["severity"],
+      "description": "严重度分为高/中/低的口径",
+      "trigger_terms": ["严重度分组", "severity group", "高风险比例", "严重缺陷率"],
+      "rules": [
+        "高严重度 = Critical",
+        "中严重度 = Major",
+        "低严重度 = Minor",
+        "严重缺陷率 = Critical + Major / 总数"
+      ]
+    },
+    {
+      "id": "cal_test_pass_rate",
+      "name": "测试通过率口径",
+      "applies_to": ["run_status"],
+      "description": "测试通过率的计算口径",
+      "trigger_terms": ["通过率", "pass rate", "测试结果", "测试执行"],
+      "rules": [
+        "通过率 = Passed / (Passed + Failed)",
+        "分母不包含 Blocked 和 Planned",
+        "Blocked 中含 Requires Attention（已归入）"
+      ]
+    },
+    {
+      "id": "cal_matrix_usage",
+      "name": "Matrix 使用口径",
+      "applies_to": ["matrix"],
+      "description": "严重性矩阵的使用口径",
+      "trigger_terms": ["matrix", "严重矩阵", "severity matrix"],
+      "rules": [
+        "matrix 从 tags 中提取 matrix- 前缀标签",
+        "展示优先使用 matrix_display（去掉前缀大写）",
+        "排序优先使用 matrix_order"
+      ]
+    },
+    {
+      "id": "cal_aida_coverage",
+      "name": "AIDA 覆盖率口径",
+      "applies_to": ["aida_english", "top_aida"],
+      "description": "AIDA字段覆盖率和Unknown处理",
+      "trigger_terms": ["aida覆盖", "unknown", "未分类"],
+      "rules": [
+        "aida_english 可能为空或 Unknown",
+        "分析时需标注 aida_english 非空/非Unknown的覆盖率",
+        "top_aida 与 aidas 可能有差异，优先使用 top_aida"
+      ]
+    }
+  ]
+}

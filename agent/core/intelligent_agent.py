@@ -3297,10 +3297,21 @@ class IntelligentAgent:
         self._last_profile = None  # 缓存最近一次数据画像
         self._proactive_sent = False  # 是否已发送主动洞察
 
+        # Data Knowledge Graph: SchemaGraph 初始化
+        self._schema_graph = None
+        try:
+            from semantic_catalog.schema_graph import SchemaGraph
+            _sg = SchemaGraph()
+            if _sg.is_loaded:
+                self._schema_graph = _sg
+                logger.info("✅ SchemaGraph initialized for Data Knowledge Graph")
+        except Exception as _sg_err:
+            logger.debug(f"SchemaGraph init skipped: {_sg_err}")
+
         # P0 Framework: Context Provider Chain
         try:
             from agent.core.context_provider import create_default_context_chain
-            self._context_chain = create_default_context_chain(memory=self.memory)
+            self._context_chain = create_default_context_chain(memory=self.memory, schema_graph=self._schema_graph)
             logger.info(f"✅ ContextChain initialized: {self._context_chain.provider_names}")
         except Exception as e:
             self._context_chain = None
@@ -3705,13 +3716,17 @@ class IntelligentAgent:
 
         # === 数据分析增强 ===
 
-        # Data Profiling: 首次分析时自动画像
+        # Data Profiling: 首次分析时自动画像（融合 SchemaGraph 语义）
         _profile_summary = ""
         if prepared_data is not None:
             try:
                 _df = prepared_data if isinstance(prepared_data, pd.DataFrame) else (list(prepared_data.values())[0] if isinstance(prepared_data, dict) and prepared_data else None)
                 if _df is not None and (self._last_profile is None or self._last_profile[0] != id(_df)):
-                    _profile = self._data_profiler.profile(_df, dataset_name=context.get("primary_dataset", "data"))
+                    # 优先使用带语义的画像方法，传入已有的 schema_graph 实例避免重复加载
+                    if self._schema_graph:
+                        _profile = self._data_profiler.profile_with_semantics(_df, dataset_name=context.get("primary_dataset", "data"), schema_graph=self._schema_graph)
+                    else:
+                        _profile = self._data_profiler.profile(_df, dataset_name=context.get("primary_dataset", "data"))
                     _profile_summary = self._data_profiler.generate_summary(_profile, max_length=1000)
                     self._last_profile = (id(_df), _profile, _profile_summary)
                     # 注入到 context

@@ -167,6 +167,69 @@ New dashboards should:
 3. Integrate AI chat functionality when relevant
 4. Follow the established styling patterns
 
+## Development Principles (Karpathy Coding Guidelines)
+
+> These principles bias toward caution over speed. For trivial tasks (typo fixes, one-liners), use judgment.
+
+### 1. 先想再写 (Think Before Coding)
+
+**不要假设。不要隐藏困惑。主动暴露权衡。**
+
+- 实现前，明确列出你的假设。不确定就问。
+- 如果有多种理解，全部列出来 — 不要悄悄选一个。
+- 如果有更简单的方案，说出来。该反驳就反驳。
+- 搞不清楚时停下来，说清楚哪里不懂，然后问。
+
+### 2. 简单优先 (Simplicity First)
+
+**用最少的代码解决问题。不要做没要求的推测性实现。**
+
+- 不加没要求的功能
+- 不为一次性代码建抽象
+- 不加没要求的"灵活性"或"可配置性"
+- 不处理不可能发生的错误场景
+- 如果你写了200行但其实50行就够了，重写它
+
+**自检：** 一个资深工程师会认为这过度复杂吗？如果是，简化。
+
+### 3. 精准手术 (Surgical Changes)
+
+**只动必须动的。只清理自己造成的。**
+
+编辑现有代码时：
+- 不要"顺手改进"相邻的代码、注释或格式
+- 不要重构没坏的东西
+- 匹配已有代码风格，即使你不会那样写
+- 如果发现不相关的死代码，提一句 — 不要直接删
+
+你的修改产生孤立代码时：
+- 删除因你的修改而变为无用的 import/变量/函数
+- 不要删除以前就存在的死代码，除非被要求
+
+**自检：** 每一行变更都应该能追溯到用户的请求。
+
+### 4. 目标驱动执行 (Goal-Driven Execution)
+
+**定义成功标准。循环直到验证通过。**
+
+把任务转化为可验证的目标：
+- "加上验证" → "先写无效输入的测试，再让它通过"
+- "修复bug" → "先写一个能复现的测试，再让它通过"
+- "重构X" → "确保重构前后测试都通过"
+
+多步骤任务，先列简要计划：
+```
+1. [步骤] → 验证: [检查方式]
+2. [步骤] → 验证: [检查方式]
+3. [步骤] → 验证: [检查方式]
+```
+
+明确的成功标准让你能独立循环。模糊的标准（"让它能用"）需要反复确认。
+
+---
+
+**原则生效的标志：** diff 中不必要的变更更少、过度复杂导致的重写更少、澄清问题在实现前就提出了、PR 干净最小化。
+
 ## Important Notes
 
 - The system automatically handles reloader processes to avoid unnecessary imports

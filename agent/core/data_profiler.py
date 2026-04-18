@@ -80,6 +80,10 @@ class DataProfile:
     anomalies: List[str] = field(default_factory=list)
     correlations: List[Dict[str, Any]] = field(default_factory=list)
     key_insights: List[str] = field(default_factory=list)
+    # 语义增强：来自 SchemaGraph 的业务语义标注
+    semantic_annotations: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    semantic_relationships: List[Dict[str, Any]] = field(default_factory=list)
+    semantic_state_machines: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 class DataProfiler:
@@ -158,6 +162,43 @@ class DataProfiler:
             corr_strs = [f"  {c['col1']} ↔ {c['col2']}: {c['strength']:.2f}" for c in strong_corrs[:5]]
             parts.append("显著相关:\n" + "\n".join(corr_strs))
 
+        # 语义增强：业务语义标注
+        if profile.semantic_annotations:
+            sem_parts = []
+            for col_name, sem in profile.semantic_annotations.items():
+                meaning = sem.get("meaning", "")
+                if meaning:
+                    sem_parts.append(f"  {col_name}: {meaning}")
+                warning = sem.get("data_quality_warning", "")
+                if warning:
+                    sem_parts.append(f"    ⚠️ {warning}")
+            if sem_parts:
+                parts.append("业务语义:\n" + "\n".join(sem_parts[:15]))
+
+        # 语义增强：状态机概览
+        if profile.semantic_state_machines:
+            sm_parts = []
+            for col_name, sm in profile.semantic_state_machines.items():
+                states = [s["name"] for s in sm.get("states", [])]
+                sm_parts.append(f"  {col_name}: {' → '.join(states)}")
+                for gk, gv in sm.get("category_groups", {}).items():
+                    sm_parts.append(f"    {gv.get('label', gk)}: {', '.join(gv.get('states', []))}")
+            if sm_parts:
+                parts.append("状态机:\n" + "\n".join(sm_parts[:10]))
+
+        # 语义增强：关系提醒
+        if profile.semantic_relationships:
+            seen_rels = set()
+            rel_parts = []
+            for r in profile.semantic_relationships:
+                rid = r.get("id", "")
+                if rid in seen_rels:
+                    continue
+                seen_rels.add(rid)
+                rel_parts.append(f"  {r['source']} ↔ {r['target']}: {r.get('description', '')}")
+            if rel_parts:
+                parts.append("字段关系:\n" + "\n".join(rel_parts[:8]))
+
         summary = "\n\n".join(parts)
         if len(summary) > max_length:
             summary = summary[:max_length] + "\n...(已截断)"
@@ -173,6 +214,9 @@ class DataProfiler:
             "anomalies": profile.anomalies,
             "correlations": profile.correlations,
             "key_insights": profile.key_insights,
+            "semantic_annotations": profile.semantic_annotations,
+            "semantic_relationships": profile.semantic_relationships,
+            "semantic_state_machines": profile.semantic_state_machines,
             "columns": {},
         }
         for name, col in profile.columns.items():
@@ -188,6 +232,55 @@ class DataProfiler:
                 "numeric_stats": col.numeric_stats,
             }
         return result
+
+    def profile_with_semantics(self, df: pd.DataFrame, dataset_name: str = "data", schema_graph=None) -> DataProfile:
+        """在 profile() 基础上融合 SchemaGraph 的业务语义。
+
+        优先使用外部传入的 schema_graph 实例，避免重复加载 JSON。
+        如果未传入或不可用，graceful fallback 到普通 profile。
+        """
+        p = self.profile(df, dataset_name=dataset_name)
+
+        graph = schema_graph
+        if graph is None:
+            try:
+                from semantic_catalog.schema_graph import SchemaGraph
+                graph = SchemaGraph()
+                if not graph.is_loaded:
+                    return p
+            except Exception as e:
+                logger.debug(f"SchemaGraph unavailable, skip semantic enrichment: {e}")
+                return p
+
+        # 1. 字段语义标注（只存储必要字段，减少 profile 体积）
+        for col_name, col_profile in p.columns.items():
+            field_def = graph.get_field(col_name)
+            if field_def:
+                p.semantic_annotations[col_name] = {
+                    "meaning": field_def.get("meaning", ""),
+                    "data_quality_warning": field_def.get("data_quality_warning", ""),
+                    "business_role": field_def.get("business_role", ""),
+                }
+
+        # 2. 关系标注：仅对已识别的业务维度补充关系（去重）
+        _seen_rel_ids = set()
+        for role, col_name in p.business_dimensions.items():
+            rels = graph.get_relationships(col_name)
+            if not rels:
+                rels = graph.get_relationships(role)
+            for rel in rels:
+                rid = rel.get("id", "")
+                if rid and rid not in _seen_rel_ids:
+                    _seen_rel_ids.add(rid)
+                    p.semantic_relationships.append(rel)
+
+        # 3. 状态机标注
+        for role, col_name in p.business_dimensions.items():
+            sm = graph.get_state_machine(col_name)
+            if sm:
+                p.semantic_state_machines[col_name] = sm
+
+        return p
 
     # ------------------------------------------------------------------
     # 内部方法

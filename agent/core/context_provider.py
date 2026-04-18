@@ -230,6 +230,78 @@ class BusinessKnowledgeProvider(ContextProvider):
         return {"domain_knowledge": self.KNOWLEDGE.strip()}
 
 
+class CalibrationProvider(ContextProvider):
+    """口径规则注入 — 从 SchemaGraph 获取业务口径规则。
+
+    priority=30，在 planner 之前执行，确保口径提醒在任务规划阶段可用。
+    支持外部传入 schema_graph 实例，避免重复加载 JSON。
+    """
+
+    def __init__(self, schema_graph=None):
+        self._graph = schema_graph
+        if self._graph is None:
+            try:
+                from semantic_catalog.schema_graph import SchemaGraph
+                graph = SchemaGraph()
+                if graph.is_loaded:
+                    self._graph = graph
+            except Exception as e:
+                logger.debug(f"CalibrationProvider: SchemaGraph unavailable: {e}")
+
+    @property
+    def name(self) -> str:
+        return "calibration"
+
+    def priority(self) -> int:
+        return 25
+
+    def provide(self, data: Any, question: str, existing: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._graph:
+            return {}
+
+        result = {}
+
+        # 1. 根据问题匹配口径规则
+        cal_context = self._graph.calibration_context_for_prompt(question)
+        if cal_context:
+            result["calibration_rules"] = cal_context
+            logger.debug(f"CalibrationProvider: matched calibration rules for: {question[:50]}")
+
+        # 2. 根据数据中的业务字段补充状态机上下文
+        if isinstance(data, pd.DataFrame) and not data.empty:
+            state_parts = []
+            for col in data.columns:
+                sm = self._graph.get_state_machine(col)
+                if sm:
+                    states = [s["name"] for s in sm.get("states", [])]
+                    state_parts.append(f"{col}: {' → '.join(states)}")
+                    groups = sm.get("category_groups", {})
+                    for gk, gv in groups.items():
+                        state_parts.append(
+                            f"  {gv.get('label', gk)}: {', '.join(gv.get('states', []))}"
+                        )
+            if state_parts:
+                result["state_machine_context"] = "\n".join(state_parts[:20])
+
+        # 3. 补充数据中字段的语义关系提醒
+        if isinstance(data, pd.DataFrame) and not data.empty:
+            rel_parts = []
+            seen_rels = set()
+            for col in data.columns:
+                for rel in self._graph.get_relationships(col):
+                    rid = rel.get("id", "")
+                    if rid in seen_rels:
+                        continue
+                    seen_rels.add(rid)
+                    hint = rel.get("analysis_hint", "")
+                    if hint:
+                        rel_parts.append(f"{rel['source']} ↔ {rel['target']}: {hint}")
+            if rel_parts:
+                result["relationship_hints"] = "\n".join(rel_parts[:10])
+
+        return result
+
+
 class ContextChain:
     """上下文构建链 — 按优先级依次调用 Provider。"""
 
@@ -260,11 +332,18 @@ class ContextChain:
         return [p.name for p in self._providers]
 
 
-def create_default_context_chain(memory=None) -> ContextChain:
-    """创建默认的上下文构建链。"""
-    return ContextChain([
+def create_default_context_chain(memory=None, schema_graph=None) -> ContextChain:
+    """创建默认的上下文构建链。
+
+    Args:
+        memory: 对话记忆对象
+        schema_graph: SchemaGraph 实例（可选，避免重复加载）
+    """
+    providers = [
         DataSummaryProvider(),
         SemanticCatalogProvider(),
         HistoryProvider(memory),
+        CalibrationProvider(schema_graph=schema_graph),
         BusinessKnowledgeProvider(),
-    ])
+    ]
+    return ContextChain(providers)
