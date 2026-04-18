@@ -175,6 +175,110 @@ class SemanticIntentDetector:
             "发现人", "reporter分析", "detected by",
             "谁的缺陷最多", "测试贡献",
             "人员产出", "个人分析"
+        ],
+        'anomaly': [
+            "最近有没有异常？", "数据里有什么异常点？", "异常检测",
+            "有没有突增突降？", "这周数据正不正常？", "反常数据",
+            "哪些时间段数据不正常？", "有没有spike？", "异常波动",
+            "anomaly detection", "spike", "outlier", "anomaly",
+            "异常", "突增", "突降", "不正常", "反常",
+            "数据异常分析", "检测异常值", "有什么异常模式",
+            "这周缺陷是不是突然多了", "有没有突然暴增",
+            "abnormal", "irregular", "突然变化",
+            "异常点", "离群值", "异常值检测",
+            "find anomalies", "detect outliers",
+            "哪个时期数据反常", "异常报告",
+            "anomaly scan", "scan for anomalies",
+            "数据里有没有什么不对劲的地方",
+            "有什么异常趋势", "突发性增长"
+        ],
+        'root_cause': [
+            "为什么会有这个问题？", "根因是什么？", "分析一下原因",
+            "是什么导致的？", "root cause analysis", "为什么会这样",
+            "根因分析", "根本原因", "是什么导致", "为什么出现",
+            "找出根本原因", "分析原因", "为什么缺陷这么多",
+            "为什么这个模块问题多", "根源在哪里",
+            "what caused this", "why did this happen",
+            "root cause", "cause analysis", "why so many",
+            "追溯原因", "导致因素", "产生原因",
+            "问题根源", "深层原因", "原因排查",
+            "为什么会集中在Display", "为什么低温下出问题",
+            "why", "cause of", "reason behind",
+            "产生这些缺陷的原因", "为什么会出现这种情况",
+            "trigger analysis", "underlying cause"
+        ],
+        'risk_eval': [
+            "风险评估", "哪里风险最高？", "风险热力图",
+            "模块风险评分", "哪个模块风险最大？", "risk heatmap",
+            "风险等级分布", "风险高的模块", "综合风险评价",
+            "风险热力图分析", "模块风险排行",
+            "risk evaluation", "risk score", "risk assessment",
+            "heat map", "heatmap", "risk ranking",
+            "风险评分", "风险排行", "风险最大的ECU",
+            "哪些模块需要优先测试", "高风险区域",
+            "哪个ECU最危险", "risk level",
+            "风险画像", "模块风险画像", "风险概况",
+            "risk profile", "module risk", "risk overview",
+            "各模块风险对比", "风险矩阵",
+            "哪里最需要关注", "优先级最高的风险"
+        ],
+        'coverage': [
+            "覆盖率怎么样？", "测试够不够？", "缺什么用例？",
+            "测试盲区在哪？", "覆盖差距分析", "test coverage gap",
+            "哪些模块没有测试覆盖？", "测试覆盖情况",
+            "覆盖率", "覆盖", "测试够不够", "缺什么用例",
+            "测试盲区", "覆盖差距", "coverage",
+            "test coverage", "coverage gap", "blind spot",
+            "哪些模块缺测试", "需要补充什么测试",
+            "覆盖不足的地方", "测试遗漏",
+            "测试覆盖缺口", "没有测试的模块",
+            "缺测试用例", "测试不够充分",
+            "uncovered areas", "missing tests",
+            "哪些地方没有测到", "测试短板",
+            "测试覆盖报告", "覆盖率分析",
+            "test strategy", "testing gaps"
+        ],
+        'association': [
+            "关联分析", "ECU之间有没有乒乓问题？", "跨维度分析",
+            "OTA升级对缺陷有什么影响？", "测试效率分析",
+            "ECU乒乓效应", "关联关系", "correlation analysis",
+            "关联", "ECU乒乓", "OTA影响", "测试效率",
+            "跨维度", "关联发现", "隐藏关联",
+            "有没有关联模式？", "哪些因素相关联",
+            "association analysis", "cross dimension",
+            "correlation", "related factors", "co-occurrence",
+            "OTA升级后缺陷变化", "关联规则",
+            "跨维度关联", "ECU间传递",
+            "什么因素相互关联", "关联挖掘",
+            "association mining", "pattern discovery",
+            "有没有共同出现的模式", "哪些维度有关联",
+            "OTA后缺陷有没有增加", "跨模块关联"
+        ],
+        'strategy': [
+            "测试策略评估", "我们测试做得怎么样？", "测试策略怎么样",
+            "测试好不好", "test strategy evaluation",
+            "测试质量评估", "综合评估", "策略评估",
+            "测试策略", "整体评估", "测试效果",
+            "测试体系评估", "测试成熟度",
+            "how is our testing", "test strategy", "test evaluation",
+            "testing assessment", "overall testing quality",
+            "测试能力", "测试水平", "测得好不好",
+            "测试做的如何", "测试整体情况",
+            "测试体系怎么样", "我们的测试怎么样",
+            "strategy evaluation", "test maturity"
+        ],
+        'predict': [
+            "预测下个月缺陷数量", "未来趋势怎么样", "风险预判",
+            "预判", "预测", "未来", "趋势预测",
+            "下个月", "predict", "forecast", "future",
+            "会怎样", "接下来会怎样", "未来会怎样",
+            "缺陷会变多吗", "风险会加大吗",
+            "predictive risk", "risk prediction",
+            "下个版本", "下个迭代", "风险预测",
+            "将来", "后面", "后续趋势",
+            "预计缺陷", "预测新增", "趋势外推",
+            "会不会恶化", "会继续恶化吗",
+            "未来30天", "未来一个月", "下个月会怎样"
         ]
     }
 
@@ -372,7 +476,14 @@ class SemanticIntentDetector:
             'dashboard': ['dashboard', 'kpi', 'metrics', '看板', '指标', '图表', '汇总'],
             'matrix': ['matrix', '1a', '1b', '矩阵', '象限', '分布'],
             'cross': ['cross', 'correlation', 'associate', '关联', '综合', '交叉', '对比'],
-            'tester': ['tester', 'performance', 'productivity', '测试人员', '效率', '团队']
+            'tester': ['tester', 'performance', 'productivity', '测试人员', '效率', '团队'],
+            'anomaly': ['anomaly', 'spike', 'outlier', '异常', '突增', '突降', '不正常', '反常', '异常检测'],
+            'root_cause': ['root cause', 'why', 'cause', '根因', '为什么', '原因', '根源', '是什么导致'],
+            'risk_eval': ['risk heatmap', 'risk score', '风险热力图', '风险评分', '模块风险', '风险评估', '哪里风险'],
+            'coverage': ['coverage gap', '覆盖差距', '测试盲区', '缺什么用例', '覆盖', '测试够不够', 'test coverage'],
+            'association': ['association', 'correlation', '关联', 'ecu乒乓', 'ota影响', '跨维度', '关联分析', '测试效率'],
+            'strategy': ['test strategy', '策略评估', '测试策略', '测试做得怎么样', '测试好不好', '测试成熟度', '综合评估', 'testing quality'],
+            'predict': ['predict', 'forecast', '预测', '预判', '未来', '下个月', '趋势预测', '会怎样', '风险预测']
         }
 
         for intent, keywords in keyword_patterns.items():
@@ -421,6 +532,13 @@ class SemanticIntentDetector:
             'matrix': '矩阵分析 - 分析严重性和优先级矩阵',
             'cross': '交叉分析 - 关联多维度数据',
             'tester': '人员分析 - 分析测试人员效率',
+            'anomaly': '异常检测 - 识别时序数据中的异常模式',
+            'root_cause': '根因分析 - 多维度深度分析缺陷根因',
+            'risk_eval': '风险热力图 - 模块风险评分与测试优先级',
+            'coverage': '覆盖差距 - 测试覆盖分析与用例推荐',
+            'association': '关联发现 - 跨维度关联模式挖掘',
+            'strategy': '策略评估 - 测试策略综合评估与成熟度评分',
+            'predict': '风险预判 - 基于趋势预测未来风险分布',
             'clarification': '需要澄清 - 意图不明确'
         }
         return descriptions.get(intent, '未知意图')

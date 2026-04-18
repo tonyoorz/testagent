@@ -25,6 +25,13 @@ from agent.tools.analysis.matrix_distribution import MatrixDistributionTool
 from agent.tools.analysis.matrix_aida import MatrixAidaHotspotsTool
 from agent.tools.analysis.topissue import TopIssueHotlistTool
 from agent.tools.analysis.longrunner import LongRunnerHotlistTool
+from agent.tools.analysis.anomaly_scan import AnomalyScanTool
+from agent.tools.analysis.root_cause import RootCauseTool
+from agent.tools.analysis.risk_heatmap import RiskHeatmapTool
+from agent.tools.analysis.test_strategy import TestStrategyTool
+from agent.tools.analysis.association_discovery import AssociationDiscoveryTool
+from agent.tools.analysis.strategy_evaluator import StrategyEvaluatorTool
+from agent.tools.analysis.predictive_risk import PredictiveRiskTool
 
 # SQL tools
 from agent.tools.sql.schema import SQLiteSchemaTool
@@ -73,6 +80,15 @@ def build_default_tools(llm=None, db_path=None, **kwargs):
         GroupbyAggregateTool(),
         CorrelateDefectsTestsTool(),
         ProjectRecentWeeksHealthTool(),
+        # Deep analysis (from agent/core/)
+        AnomalyScanTool(),
+        RootCauseTool(),
+        RiskHeatmapTool(),
+        TestStrategyTool(),
+        AssociationDiscoveryTool(),
+        # P1+P2 高阶编排工具
+        StrategyEvaluatorTool(),
+        PredictiveRiskTool(),
         # Semantic
         SemanticCatalogTool(),
         DescribeDatasetTool(),
@@ -104,6 +120,8 @@ __all__ = [
     'MatrixDistributionTool', 'MatrixAidaHotspotsTool', 'TopIssueHotlistTool',
     'LongRunnerHotlistTool', 'AnalyzeTesterFindingsTool', 'AnalyzeTestRunTool',
     'GroupbyAggregateTool', 'CorrelateDefectsTestsTool', 'ProjectRecentWeeksHealthTool',
+    'AnomalyScanTool', 'RootCauseTool', 'RiskHeatmapTool', 'TestStrategyTool', 'AssociationDiscoveryTool',
+    'StrategyEvaluatorTool', 'PredictiveRiskTool',
     'SQLiteSchemaTool', 'SQLiteDBProfileTool', 'SQLiteQueryTool', 'SQLiteNLQueryWithFixTool',
     'SemanticCatalogTool', 'DescribeDatasetTool', 'MatchTesterTicketsTool',
     'SemanticCoverageReportTool', 'DefectExploreSchemaReportTool',
