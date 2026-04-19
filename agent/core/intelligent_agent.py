@@ -3317,6 +3317,72 @@ class IntelligentAgent:
             self._context_chain = None
             logger.warning(f"Failed to initialize ContextChain: {e}")
 
+        # P0: DuckDB 分析层
+        self._duckdb_layer = None
+        self._session_data_ctx = None
+        try:
+            from agent.core.duckdb_analytics_layer import DuckDBAnalyticsLayer, ENABLED as _ddb_on
+            if _ddb_on:
+                self._duckdb_layer = DuckDBAnalyticsLayer()
+                self._duckdb_layer.connect()
+                self._duckdb_layer.refresh()
+                # 注入到 ContextChain
+                if self._context_chain:
+                    from agent.core.duckdb_analytics_layer import create_duckdb_context_provider
+                    self._context_chain.add(create_duckdb_context_provider(self._duckdb_layer))
+                logger.info(f"✅ DuckDB 分析层已启用: {self._duckdb_layer.table_stats()}")
+        except Exception as _ddb_err:
+            logger.debug(f"DuckDB 分析层初始化跳过: {_ddb_err}")
+
+        # P0: SessionDataContext
+        try:
+            from agent.core.session_data_context import SessionDataContext, ENABLED as _sdc_on
+            if _sdc_on:
+                self._session_data_ctx = SessionDataContext(
+                    duckdb_layer=self._duckdb_layer,
+                    conversation_memory=self.memory,
+                    query_memory=self._query_memory,
+                )
+                self._session_data_ctx.initialize()
+                # 注入到 ContextChain
+                if self._context_chain:
+                    from agent.core.session_data_context import create_session_context_provider
+                    self._context_chain.add(create_session_context_provider(self._session_data_ctx))
+                logger.info("✅ SessionDataContext 已启用")
+        except Exception as _sdc_err:
+            logger.debug(f"SessionDataContext 初始化跳过: {_sdc_err}")
+
+        # P1: Proactive Insight Engine
+        self._insight_engine = None
+        try:
+            from agent.core.proactive_insight_engine import ProactiveInsightEngine, ENABLED as _ie_on
+            if _ie_on:
+                self._insight_engine = ProactiveInsightEngine(
+                    duckdb_layer=self._duckdb_layer,
+                    sqlite_db_path=self._db_path,
+                )
+                logger.info("✅ ProactiveInsightEngine 已启用")
+        except Exception as _ie_err:
+            logger.debug(f"ProactiveInsightEngine 初始化跳过: {_ie_err}")
+
+        # P2: Predictor + Benchmark
+        self._predictor = None
+        self._benchmark = None
+        try:
+            from agent.core.time_series_predictor import create_predictor
+            self._predictor = create_predictor(self._duckdb_layer)
+            if self._predictor:
+                logger.info("✅ TimeSeriesPredictor 已启用")
+        except Exception:
+            pass
+        try:
+            from agent.core.cross_project_benchmark import create_benchmark
+            self._benchmark = create_benchmark(self._duckdb_layer, self._db_path)
+            if self._benchmark:
+                logger.info("✅ CrossProjectBenchmark 已启用")
+        except Exception:
+            pass
+
         logger.info(f"智能 Agent 初始化完成 (类型: {dashboard_type})")
 
         # P0 Framework: Tracer + Self-Corrector + Registry
@@ -3767,6 +3833,18 @@ class IntelligentAgent:
             except Exception as _pi_err:
                 logger.debug(f"Proactive insights skipped: {_pi_err}")
 
+        # P1: Proactive Insight Engine — 主动洞察注入
+        if self._insight_engine and not self._proactive_sent:
+            try:
+                self._insight_engine.scan_all()
+                _insight_text = self._insight_engine.get_context_text(max_insights=3)
+                if _insight_text:
+                    context["insight_engine"] = _insight_text
+                    self._insight_engine.record_to_duckdb()
+                    logger.info(f"InsightEngine: injected {len(self._insight_engine._insights)} insights")
+            except Exception as _ie_err:
+                logger.debug(f"InsightEngine skipped: {_ie_err}")
+
         # 5. 规划任务（若用户刚确认，则复用待确认计划）
         plan = None
         if isinstance(pending, dict) and self._is_positive_confirmation((qtext or "").strip()):
@@ -3942,6 +4020,14 @@ class IntelligentAgent:
                 )
         except Exception as _qm_err:
             logger.debug(f"QueryMemory record skipped: {_qm_err}")
+
+        # SessionDataContext: 查询后更新活跃上下文
+        if self._session_data_ctx:
+            try:
+                self._session_data_ctx.update_from_user_message(question)
+                self._session_data_ctx.update_from_query(context)
+            except Exception:
+                pass
 
         # P0 Tracer: finish trace
         if _tracer:
