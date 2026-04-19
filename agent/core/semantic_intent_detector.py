@@ -12,11 +12,36 @@ Date: 2025-02-21
 """
 
 import re
+import os
 import logging
 from typing import Dict, List, Tuple, Optional, Set
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+# ML intent classifier — lazy singleton
+_ML_CLASSIFIER = None
+_ML_INTENT_ENABLED = os.environ.get("AGENT_ML_INTENT", "0") == "1"
+
+
+def _get_ml_classifier():
+    """Lazy-load the ML intent classifier (only when env var is set)."""
+    global _ML_CLASSIFIER
+    if not _ML_INTENT_ENABLED:
+        return None
+    if _ML_CLASSIFIER is not None:
+        return _ML_CLASSIFIER if _ML_CLASSIFIER.is_ready else None
+    try:
+        from agent.ml_intent.classifier import IntentClassifier
+        _ML_CLASSIFIER = IntentClassifier()
+        if _ML_CLASSIFIER.is_ready:
+            logger.info("ML intent classifier active (AGENT_ML_INTENT=1)")
+            return _ML_CLASSIFIER
+        logger.info("ML intent classifier not loaded, falling back to TF-IDF")
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to initialize ML intent classifier: {e}")
+        return None
 
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
@@ -365,53 +390,73 @@ class SemanticIntentDetector:
         if not question or not question.strip():
             return [('clarification', 0.0)]
 
+        # Try ML classifier first if enabled
+        ml_clf = _get_ml_classifier()
+        if ml_clf is not None:
+            intent, confidence = ml_clf.predict(question, threshold=0.7)
+            if intent is not None:
+                logger.debug(f"ML intent: {intent} ({confidence:.3f}) for '{question}'")
+                results = [(intent, confidence)]
+                # Also try second-best from TF-IDF for multi-intent
+                if SKLEARN_AVAILABLE and self._fitted:
+                    tfidf_results = self._tfidf_detect(question)
+                    if len(tfidf_results) > 1 and tfidf_results[1][1] >= self.CONFIDENCE_HIGH:
+                        if tfidf_results[1][0] != intent:
+                            results.append(tfidf_results[1])
+                return results
+            # ML confidence too low — fall through to TF-IDF
+            logger.debug(f"ML intent confidence {confidence:.3f} below threshold, falling back")
+
         # 如果sklearn不可用，回退到关键词匹配
         if not SKLEARN_AVAILABLE or not self._fitted:
             return self._fallback_keyword_detection(question)
 
         try:
-            # 预处理问题
-            processed_question = self._preprocess_text(question)
-            if not processed_question:
-                return [('clarification', 0.0)]
-
-            # 向量化问题
-            question_vector = self._vectorizer.transform([processed_question])
-
-            # 计算与每个意图的相似度
-            intent_scores = {}
-            for intent, intent_matrix in self._intent_vectors.items():
-                # 计算与所有示例的相似度
-                similarities = cosine_similarity(question_vector, intent_matrix).flatten()
-                # 如果没有相似度数据（意图矩阵为空），跳过
-                if len(similarities) == 0:
-                    continue
-                # 使用最高相似度作为意图得分
-                max_sim = float(similarities.max())
-                # 也考虑平均相似度（前3个）
-                top_k = min(3, len(similarities))
-                avg_top_sim = float(sum(sorted(similarities, reverse=True)[:top_k]) / top_k) if top_k > 0 else 0
-                # 综合得分：最高相似度占70%，平均占30%
-                final_score = max_sim * 0.7 + avg_top_sim * 0.3
-                intent_scores[intent] = final_score
-
-            # 排序并返回top-2意图
-            sorted_intents = sorted(intent_scores.items(), key=lambda x: x[1], reverse=True)
-
-            # 如果最高相似度低于阈值，返回clarification
-            if not sorted_intents or sorted_intents[0][1] < self.CONFIDENCE_LOW:
-                return [('clarification', sorted_intents[0][1] if sorted_intents else 0.0)]
-
-            # 返回top-2意图（如果第二个的置信度也足够高）
-            results = [sorted_intents[0]]
-            if len(sorted_intents) > 1 and sorted_intents[1][1] >= self.CONFIDENCE_HIGH:
-                results.append(sorted_intents[1])
-
-            return results
-
+            return self._tfidf_detect(question)
         except Exception as e:
             logger.error(f"Semantic intent detection failed: {e}")
             return self._fallback_keyword_detection(question)
+
+    def _tfidf_detect(self, question: str) -> List[Tuple[str, float]]:
+        """TF-IDF + cosine similarity based intent detection."""
+        # 预处理问题
+        processed_question = self._preprocess_text(question)
+        if not processed_question:
+            return [('clarification', 0.0)]
+
+        # 向量化问题
+        question_vector = self._vectorizer.transform([processed_question])
+
+        # 计算与每个意图的相似度
+        intent_scores = {}
+        for intent, intent_matrix in self._intent_vectors.items():
+            # 计算与所有示例的相似度
+            similarities = cosine_similarity(question_vector, intent_matrix).flatten()
+            # 如果没有相似度数据（意图矩阵为空），跳过
+            if len(similarities) == 0:
+                continue
+            # 使用最高相似度作为意图得分
+            max_sim = float(similarities.max())
+            # 也考虑平均相似度（前3个）
+            top_k = min(3, len(similarities))
+            avg_top_sim = float(sum(sorted(similarities, reverse=True)[:top_k]) / top_k) if top_k > 0 else 0
+            # 综合得分：最高相似度占70%，平均占30%
+            final_score = max_sim * 0.7 + avg_top_sim * 0.3
+            intent_scores[intent] = final_score
+
+        # 排序并返回top-2意图
+        sorted_intents = sorted(intent_scores.items(), key=lambda x: x[1], reverse=True)
+
+        # 如果最高相似度低于阈值，返回clarification
+        if not sorted_intents or sorted_intents[0][1] < self.CONFIDENCE_LOW:
+            return [('clarification', sorted_intents[0][1] if sorted_intents else 0.0)]
+
+        # 返回top-2意图（如果第二个的置信度也足够高）
+        results = [sorted_intents[0]]
+        if len(sorted_intents) > 1 and sorted_intents[1][1] >= self.CONFIDENCE_HIGH:
+            results.append(sorted_intents[1])
+
+        return results
 
     def detect_intents_with_details(self, question: str) -> Dict[str, any]:
         """

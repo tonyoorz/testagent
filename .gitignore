@@ -47,3 +47,10 @@ backups/
 notebooks/
 report/generated_runs/
 testcase/dtsv_testcases_all*.json
+
+# ML model files (too large for git, train locally)
+agent/ml_intent/model/model.safetensors
+agent/ml_intent/model/vocab.txt
+agent/ml_intent/model/tokenizer.json
+.env
+.traces/
