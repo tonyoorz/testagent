@@ -63,6 +63,109 @@ class UnifiedExecutionEngine:
             'analysis_trace': trace,
         }
 
+    def resolve_analysis_inputs(
+        self,
+        *,
+        question: str,
+        conversation_history: Any,
+        context_manager: Any,
+        db_path: Optional[str],
+        semantic_adapter_enabled: bool,
+        semantic_adapter_fn: Optional[Callable[..., Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        analysis_question = str(question or '').strip()
+        semantic_term_adapter: Dict[str, Any] = {}
+        semantic_term_hints: Dict[str, Any] = {}
+
+        if semantic_adapter_enabled and callable(semantic_adapter_fn):
+            semantic_term_adapter = semantic_adapter_fn(
+                question=analysis_question,
+                db_path=db_path,
+                table_name='',
+                prefer_db=bool(db_path),
+            ) or {}
+            semantic_term_hints = dict(semantic_term_adapter.get('semantic_hints') or {})
+            normalized_question = str(semantic_term_adapter.get('normalized_question') or '').strip()
+            if normalized_question:
+                analysis_question = normalized_question
+
+        early_intents, early_confidence, clarification = context_manager.analyze_intent_with_confidence(analysis_question)
+
+        if early_intents == ['general']:
+            q = str(question or '').strip()
+            ql = q.lower()
+            has_time_slot = any(k in ql for k in [
+                '本周', '这周', '上周', '本月', '上月', '本季度', '季度', '本年', '今年',
+                'today', 'yesterday', 'this week', 'last week', 'this month', 'quarter'
+            ])
+            has_project_slot = False
+            try:
+                import re
+
+                has_project_slot = bool(re.search(r"\b(IDCEVO|IDC|MGU|APP|RSU|ENTRYEVO|G\d{2,})\b", q, flags=re.IGNORECASE))
+            except Exception:
+                has_project_slot = False
+            if has_time_slot or has_project_slot:
+                inherited_intents = []
+                for msg in reversed(conversation_history or []):
+                    if str((msg or {}).get('role') or '') != 'user':
+                        continue
+                    content = str((msg or {}).get('content') or '').strip()
+                    if not content or content == q:
+                        continue
+                    cand = context_manager.analyze_intent(content)
+                    if cand and cand != ['general']:
+                        inherited_intents = cand
+                        break
+                if inherited_intents:
+                    early_intents = inherited_intents
+                    early_confidence = 0.78
+                    clarification = None
+
+        return {
+            'analysis_question': analysis_question,
+            'semantic_term_adapter': semantic_term_adapter,
+            'semantic_term_hints': semantic_term_hints,
+            'early_intents': early_intents,
+            'early_confidence': early_confidence,
+            'clarification': clarification,
+        }
+
+    def gather_supporting_context(
+        self,
+        *,
+        question: str,
+        analysis_question: str,
+        context: Dict[str, Any],
+        memory: Any,
+        knowledge_base: Any,
+        memory_debug_enabled: bool,
+    ) -> Dict[str, Any]:
+        relevant_history = memory.get_relevant_history(question)
+        if memory_debug_enabled:
+            used = []
+            for h in (relevant_history or [])[:5]:
+                used.append(
+                    {
+                        'role': h.get('role'),
+                        'from_memory': bool(h.get('from_memory')),
+                        'kind': h.get('kind'),
+                        'tags': h.get('tags') or [],
+                        'content': (h.get('content') or '')[:160],
+                    }
+                )
+            context['memory_debug'] = {
+                'short_term_size': len(memory.short_term or []),
+                'long_term_size': len(memory.long_term or []),
+                'used': used,
+            }
+        knowledge_context = knowledge_base.get_knowledge_context(analysis_question)
+        return {
+            'relevant_history': relevant_history,
+            'knowledge_context': knowledge_context,
+            'context': context,
+        }
+
     def execute_plan_flow(
         self,
         *,
@@ -117,3 +220,41 @@ class UnifiedExecutionEngine:
             'analysis_trace': trace,
             'plan': plan,
         }
+
+    def finalize_answer(
+        self,
+        *,
+        question: str,
+        context: Dict[str, Any],
+        execution_results: Any,
+        knowledge_context: Any,
+        relevant_history: Any,
+        start_time_seconds: float,
+        current_time_seconds: float,
+        generate_answer_fn: Callable[..., Dict[str, Any]],
+        memory_add_message_fn: Callable[[str, str, Dict[str, Any]], None],
+        normalize_response_fn: Callable[[Dict[str, Any], Any], Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        answer = generate_answer_fn(
+            question=question,
+            context=context,
+            execution_results=execution_results,
+            knowledge_context=knowledge_context,
+            relevant_history=relevant_history,
+        )
+        try:
+            ctx_obj = answer.get('context') if isinstance(answer, dict) else None
+            if isinstance(ctx_obj, dict):
+                ctx_obj['analysis_trace'] = context.get('analysis_trace')
+        except Exception:
+            pass
+
+        memory_add_message_fn(
+            'assistant',
+            answer['text'],
+            {
+                'tools_used': [r['tool'] for r in (execution_results or []) if isinstance(r, dict) and r.get('tool')],
+                'execution_time': max(0.0, float(current_time_seconds) - float(start_time_seconds)),
+            },
+        )
+        return normalize_response_fn(answer, execution_results=execution_results)

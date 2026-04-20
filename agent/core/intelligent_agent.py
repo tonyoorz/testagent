@@ -6745,55 +6745,42 @@ class IntelligentAgent:
         # 1. 保存用户消息到记忆
         self.memory.add_message('user', question)
 
-        analysis_question = str(question or "").strip()
-        semantic_term_adapter: Dict[str, Any] = {}
-        semantic_term_hints: Dict[str, Any] = {}
+        analysis_inputs = {
+            'analysis_question': str(question or '').strip(),
+            'semantic_term_adapter': {},
+            'semantic_term_hints': {},
+            'early_intents': ['general'],
+            'early_confidence': 0.0,
+            'clarification': None,
+        }
         try:
             from semantic_catalog.term_adapter import adapt_question_with_semantic_terms, is_semantic_catalog_enabled
 
-            if is_semantic_catalog_enabled():
-                db_path = getattr(self.tool_executor, "_db_path", None)
-                semantic_term_adapter = adapt_question_with_semantic_terms(
-                    question=analysis_question,
-                    db_path=db_path,
-                    table_name="",
-                    prefer_db=bool(db_path),
-                )
-                semantic_term_hints = dict(semantic_term_adapter.get("semantic_hints") or {})
-                normalized_question = str(semantic_term_adapter.get("normalized_question") or "").strip()
-                if normalized_question:
-                    analysis_question = normalized_question
+            analysis_inputs = self.execution_engine.resolve_analysis_inputs(
+                question=question,
+                conversation_history=conversation_history,
+                context_manager=self.context_manager,
+                db_path=getattr(self.tool_executor, '_db_path', None),
+                semantic_adapter_enabled=bool(is_semantic_catalog_enabled()),
+                semantic_adapter_fn=adapt_question_with_semantic_terms,
+            )
         except Exception as sem_err:
             logger.debug(f"semantic term adapter skipped: {sem_err}")
+            analysis_inputs = self.execution_engine.resolve_analysis_inputs(
+                question=question,
+                conversation_history=conversation_history,
+                context_manager=self.context_manager,
+                db_path=getattr(self.tool_executor, '_db_path', None),
+                semantic_adapter_enabled=False,
+                semantic_adapter_fn=None,
+            )
 
-        # 1.5 低置信度意图提前澄清，减少无效工具调用和不必要的SQL生成。
-        early_intents, early_confidence, clarification = self.context_manager.analyze_intent_with_confidence(analysis_question)
-
-        # 对“仅补充槽位”的追问（如“IDCevo 本季度”）自动继承最近一条明确意图。
-        if early_intents == ['general']:
-            q = str(question or "").strip()
-            ql = q.lower()
-            has_time_slot = any(k in ql for k in [
-                '本周', '这周', '上周', '本月', '上月', '本季度', '季度', '本年', '今年',
-                'today', 'yesterday', 'this week', 'last week', 'this month', 'quarter'
-            ])
-            has_project_slot = bool(re.search(r"\b(IDCEVO|IDC|MGU|APP|RSU|ENTRYEVO|G\d{2,})\b", q, flags=re.IGNORECASE))
-            if has_time_slot or has_project_slot:
-                inherited_intents: List[str] = []
-                for m in reversed(conversation_history or []):
-                    if str((m or {}).get('role') or '') != 'user':
-                        continue
-                    content = str((m or {}).get('content') or '').strip()
-                    if not content or content == q:
-                        continue
-                    cand = self.context_manager.analyze_intent(content)
-                    if cand and cand != ['general']:
-                        inherited_intents = cand
-                        break
-                if inherited_intents:
-                    early_intents = inherited_intents
-                    early_confidence = 0.78
-                    clarification = None
+        analysis_question = str(analysis_inputs.get('analysis_question') or '').strip()
+        semantic_term_adapter = dict(analysis_inputs.get('semantic_term_adapter') or {})
+        semantic_term_hints = dict(analysis_inputs.get('semantic_term_hints') or {})
+        early_intents = list(analysis_inputs.get('early_intents') or ['general'])
+        early_confidence = float(analysis_inputs.get('early_confidence') or 0.0)
+        clarification = analysis_inputs.get('clarification')
 
         if clarification and early_confidence < 0.7:
             return self._normalize_response_payload({
@@ -6933,25 +6920,17 @@ class IntelligentAgent:
                 mode = "rule"
 
         # 3. 获取相关历史
-        relevant_history = self.memory.get_relevant_history(question)
-        if os.getenv("AGENT_MEMORY_DEBUG", "0") == "1":
-            used = []
-            for h in (relevant_history or [])[:5]:
-                used.append({
-                    "role": h.get("role"),
-                    "from_memory": bool(h.get("from_memory")),
-                    "kind": h.get("kind"),
-                    "tags": h.get("tags") or [],
-                    "content": (h.get("content") or "")[:160],
-                })
-            context["memory_debug"] = {
-                "short_term_size": len(self.memory.short_term or []),
-                "long_term_size": len(self.memory.long_term or []),
-                "used": used,
-            }
-
-        # 4. 获取相关知识
-        knowledge_context = self.knowledge_base.get_knowledge_context(analysis_question)
+        supporting_context = self.execution_engine.gather_supporting_context(
+            question=question,
+            analysis_question=analysis_question,
+            context=context,
+            memory=self.memory,
+            knowledge_base=self.knowledge_base,
+            memory_debug_enabled=(os.getenv("AGENT_MEMORY_DEBUG", "0") == "1"),
+        )
+        relevant_history = supporting_context.get('relevant_history') or []
+        knowledge_context = supporting_context.get('knowledge_context') or ''
+        context = supporting_context.get('context') or context
 
         # 5. 规划任务（若用户刚确认，则复用待确认计划）
         plan_result = self.execution_engine.execute_plan_flow(
@@ -6999,27 +6978,18 @@ class IntelligentAgent:
                 progress_cb({"event": "synthesize"})
             except Exception:
                 pass
-        answer = self._generate_answer(
+        return self.execution_engine.finalize_answer(
             question=question,
             context=context,
             execution_results=execution_results,
             knowledge_context=knowledge_context,
-            relevant_history=relevant_history
+            relevant_history=relevant_history,
+            start_time_seconds=start_time.timestamp(),
+            current_time_seconds=datetime.now().timestamp(),
+            generate_answer_fn=self._generate_answer,
+            memory_add_message_fn=self.memory.add_message,
+            normalize_response_fn=self._normalize_response_payload,
         )
-        try:
-            ctx_obj = answer.get("context") if isinstance(answer, dict) else None
-            if isinstance(ctx_obj, dict):
-                ctx_obj["analysis_trace"] = analysis_trace
-        except Exception:
-            pass
-
-        # 8. 保存助手回复到记忆
-        self.memory.add_message('assistant', answer['text'], {
-            'tools_used': [r['tool'] for r in execution_results],
-            'execution_time': (datetime.now() - start_time).total_seconds()
-        })
-
-        return self._normalize_response_payload(answer, execution_results=execution_results)
 
     def _generate_answer(self, question: str, context: Dict, execution_results: List[Dict],
                         knowledge_context: str, relevant_history: List) -> Dict[str, Any]:
