@@ -7,6 +7,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
+from agent.core.self_corrector import SelfCorrector
+from agent.tools.registry import ToolRegistry
+
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +27,7 @@ class ToolExecutor:
         self._llm = llm
         self._db_path = db_path
         self._default_tool_factory = default_tool_factory
+        self.registry = ToolRegistry()
         self._register_default_tools()
 
     def _load_default_tools(self) -> List[Any]:
@@ -46,6 +50,7 @@ class ToolExecutor:
     def register_tool(self, tool: Any):
         """注册新工具"""
         self.tools[tool.name] = tool
+        self.registry.register(tool)
         logger.info(f"已注册工具: {tool.name}")
 
     def _validate_and_normalize_params(self, tool: Any, params: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
@@ -206,19 +211,11 @@ class ToolExecutor:
         if tool_name:
             if tool_name not in self.tools:
                 return {}
-            tool = self.tools[tool_name]
-            return {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters,
-            }
-        return {
-            tool.name: {
-                "description": tool.description,
-                "parameters": tool.parameters,
-            }
-            for tool in self.tools.values()
-        }
+            tool_schema = self.registry.export(tool_name)
+            if tool_schema:
+                tool_schema["name"] = tool_name
+            return tool_schema
+        return self.registry.export()
 
 
 class ToolExecutorWithRetry(ToolExecutor):
@@ -241,6 +238,7 @@ class ToolExecutorWithRetry(ToolExecutor):
     ):
         super().__init__(llm=llm, db_path=db_path, default_tool_factory=default_tool_factory)
         self.max_retry = max_retry
+        self.self_corrector = SelfCorrector()
         self._retry_stats = {
             "total_calls": 0,
             "retry_attempts": 0,
@@ -322,33 +320,17 @@ class ToolExecutorWithRetry(ToolExecutor):
 
     def _fix_params(self, params: Dict[str, Any], analysis: str, tool_name: str) -> Dict[str, Any]:
         """根据分析结果修正参数"""
-        fixed_params = dict(params)
-
-        if analysis == "empty_result":
-            for key in list(fixed_params.keys()):
-                if key in ["top_n", "limit", "max_items"]:
-                    try:
-                        current = int(fixed_params[key])
-                        fixed_params[key] = max(current, 50)
-                    except Exception:
-                        fixed_params[key] = 50
-                elif key in ["severity", "status", "filter"]:
-                    if fixed_params.get(key) in ["Critical", "Open"]:
-                        fixed_params.pop(key, None)
-
-        elif analysis == "dataset_issue":
-            if "dataset" in fixed_params:
-                current = fixed_params["dataset"]
-                alternatives = ["defects", "tests"] if current == "defects" else ["tests", "defects"]
-                fixed_params["dataset"] = alternatives[0] if current != alternatives[0] else alternatives[1]
-
-        elif analysis == "invalid_parameters":
+        valid_params = None
+        if analysis == "invalid_parameters":
             known_tool = self.tools.get(tool_name)
             if known_tool and hasattr(known_tool, "parameters"):
                 valid_params = set(known_tool.parameters.keys()) | {"dataset"}
-                fixed_params = {key: value for key, value in fixed_params.items() if key in valid_params}
 
-        return fixed_params
+        return self.self_corrector.fix_params(
+            params,
+            analysis=analysis,
+            valid_params=valid_params,
+        )
 
     def _fallback_to_summary(
         self,

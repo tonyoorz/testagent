@@ -41,6 +41,14 @@ from agent.core.conversation_runtime import (
     resolve_execution_mode,
     serialize_plan_trace,
 )
+from agent.core.context_provider_chain import (
+    ContextProviderChain,
+    PageContextProvider,
+    RequestContextProvider,
+    RuntimeConfigProvider,
+)
+from agent.core.execution_engine import UnifiedExecutionEngine
+from agent.core.tracer import AgentTracer
 from agent.core.agentic_runtime import (
     build_tool_specs,
     run_agentic_loop,
@@ -6447,9 +6455,78 @@ class IntelligentAgent:
         self.memory = ConversationMemory(memory_file=memory_file, autosave=autosave)
         self.knowledge_base = KnowledgeBase()
         self.task_planner = TaskPlanner(self.tool_executor, tool_selector=self.smart_tool_selector)
+        self.execution_engine = UnifiedExecutionEngine(tool_executor=self.tool_executor, task_planner=self.task_planner)
         self._pending_execution_confirmation: Optional[Dict[str, Any]] = None
+        self.context_provider_chain = ContextProviderChain(
+            providers=[
+                RequestContextProvider(),
+                PageContextProvider(),
+                RuntimeConfigProvider(),
+            ]
+        )
 
         logger.info(f"智能 Agent 初始化完成 (类型: {dashboard_type})")
+
+    def _resolve_request_inputs(
+        self,
+        *,
+        question: str,
+        page_context: Optional[Dict[str, Any]] = None,
+        request: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        request_payload = dict(request) if isinstance(request, dict) else None
+        effective_page_context = dict(page_context) if isinstance(page_context, dict) else None
+        effective_question = str(question or "").strip()
+
+        if request_payload:
+            request_question = str(request_payload.get("question") or "").strip()
+            if request_question:
+                effective_question = request_question
+            request_page_context = request_payload.get("page_context")
+            if effective_page_context:
+                request_payload["page_context"] = dict(effective_page_context)
+            elif isinstance(request_page_context, dict) and request_page_context:
+                effective_page_context = dict(request_page_context)
+                request_payload["page_context"] = dict(effective_page_context)
+            request_payload["question"] = effective_question
+
+        return effective_question, effective_page_context, request_payload
+
+    def _resolve_runtime_mode(
+        self,
+        *,
+        request: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        validation_enabled = os.getenv("AGENT_VALIDATION_ENABLED", "0") == "1"
+        agentic_enabled = (os.getenv("AGENT_AGENTIC_ENABLED", "1") != "0") and (self.tool_executor._llm is not None)
+
+        requested_mode = ""
+        if isinstance(request, dict):
+            requested_mode = str(request.get("execution_mode") or "").strip().lower()
+        if not requested_mode:
+            requested_mode = str(os.getenv("AGENT_MODE", "agentic") or "agentic").strip().lower()
+
+        llm_obj = self.tool_executor._llm
+        internal_template_route = False
+        try:
+            checker = getattr(llm_obj, "_should_use_internal_template_for_nonstream", None)
+            if callable(checker):
+                internal_template_route = bool(checker())
+        except Exception:
+            internal_template_route = False
+
+        mode = resolve_execution_mode(
+            requested_mode=requested_mode,
+            agentic_enabled=agentic_enabled,
+            internal_template_route=internal_template_route,
+        )
+        return {
+            "validation_enabled": validation_enabled,
+            "agentic_enabled": agentic_enabled,
+            "requested_mode": requested_mode,
+            "internal_template_route": internal_template_route,
+            "mode": mode,
+        }
 
     def _is_positive_confirmation(self, text: str) -> bool:
         s = str(text or "").strip().lower()
@@ -6577,6 +6654,8 @@ class IntelligentAgent:
         data: Union[pd.DataFrame, Dict[str, pd.DataFrame]],
         conversation_history: List = None,
         progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+        page_context: Optional[Dict[str, Any]] = None,
+        request: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         处理用户问题
@@ -6590,6 +6669,12 @@ class IntelligentAgent:
             包含答案、工具调用结果、洞察等的字典
         """
         start_time = datetime.now()
+
+        question, page_context, request_payload = self._resolve_request_inputs(
+            question=question,
+            page_context=page_context,
+            request=request,
+        )
 
         qtext = (question or "").strip()
         confirmed_now = False
@@ -6725,6 +6810,13 @@ class IntelligentAgent:
 
         # 2. 准备上下文
         context, prepared_data = self.context_manager.prepare_context(analysis_question, data)
+        runtime_config = self._resolve_runtime_mode(request=request_payload)
+        context = self.context_provider_chain.apply(
+            context,
+            request=request_payload,
+            page_context=page_context,
+            runtime_config=runtime_config,
+        )
         if semantic_term_adapter:
             context["semantic_term_adapter"] = semantic_term_adapter
         if semantic_term_hints:
@@ -6736,39 +6828,37 @@ class IntelligentAgent:
                         "event": "context_ready",
                         "primary_dataset": context.get("primary_dataset"),
                         "intents": list(context.get("intents") or []),
+                        "request": dict(context.get("request") or {}),
+                        "page_context": dict(context.get("page_context") or {}),
                     }
                 )
             except Exception:
                 pass
 
-        validation_enabled = os.getenv("AGENT_VALIDATION_ENABLED", "0") == "1"
-        # 默认启用 agentic（若LLM可用），可通过 AGENT_AGENTIC_ENABLED=0 显式关闭。
-        agentic_enabled = (os.getenv("AGENT_AGENTIC_ENABLED", "1") != "0") and (self.tool_executor._llm is not None)
-        requested_mode = str(os.getenv("AGENT_MODE", "agentic") or "agentic").strip().lower()
-
-        # ACCESSCODE 内网模板链路已在非流式调用中验证更稳定，但 function-calling 兼容性不稳定。
-        # 在该链路下优先使用 hybrid，避免 agentic 每轮都因响应结构差异失败后再降级。
-        llm_obj = self.tool_executor._llm
-        internal_template_route = False
-        try:
-            checker = getattr(llm_obj, "_should_use_internal_template_for_nonstream", None)
-            if callable(checker):
-                internal_template_route = bool(checker())
-        except Exception:
-            internal_template_route = False
-
+        validation_enabled = bool(runtime_config["validation_enabled"])
+        requested_mode = str(runtime_config["requested_mode"] or "agentic")
+        internal_template_route = bool(runtime_config["internal_template_route"])
         if requested_mode == "agentic" and internal_template_route:
             logger.info("检测到ACCESSCODE内网模板链路，自动切换为hybrid模式以提升稳定性")
-        mode = resolve_execution_mode(
-            requested_mode=requested_mode,
-            agentic_enabled=agentic_enabled,
-            internal_template_route=internal_template_route,
-        )
+        mode = str(runtime_config["mode"] or "rule")
         analysis_trace = init_analysis_trace(
             mode=mode,
             validation_enabled=validation_enabled,
             internal_template_route=internal_template_route,
         )
+        tracer = AgentTracer(enabled=(os.getenv("AGENT_TRACE_ENABLED", "1") != "0"))
+        tracer.record(
+            "context_ready",
+            primary_dataset=context.get("primary_dataset"),
+            intents=list(context.get("intents") or []),
+        )
+        tracer.record(
+            "runtime_mode",
+            requested_mode=requested_mode,
+            resolved_mode=mode,
+            internal_template_route=internal_template_route,
+        )
+        analysis_trace["events"] = tracer.export()
 
         semantic_catalog_enabled = False
         try:
@@ -6799,60 +6889,45 @@ class IntelligentAgent:
                 context["semantic_context"] = f"语义目录加载失败: {e}"
 
         if mode == "agentic":
-            tool_call_max = int(os.getenv("AGENT_TOOL_CALL_MAX", "8") or 8)
-            tool_call_max = max(0, min(tool_call_max, 100))
-            max_iters = int(os.getenv("AGENT_AGENTIC_MAX_ITERS", "6") or 6)
-            max_iters = max(1, min(max_iters, 20))
             exec_rows = []
             try:
-                llm = self.tool_executor._llm
-                if not llm or not getattr(llm, "client", None):
-                    raise RuntimeError("agentic 模式缺少可用 LLM client")
-                tools_schema = self.tool_executor.get_tool_schema() or {}
-                tool_specs = build_tool_specs(tools_schema)
-                agentic_result = run_agentic_loop(
-                    llm_client=llm.client,
-                    llm_model=getattr(llm, "model", None),
-                    tool_specs=tool_specs,
+                engine_result = self.execution_engine.execute_agentic(
                     question=analysis_question,
-                    data_summary=str(context.get("data_summary") or ""),
-                    execute_tool=lambda tool_name, args: self.tool_executor.execute_tool(
-                        tool_name,
-                        prepared_data,
-                        **(args if isinstance(args, dict) else {}),
-                    ),
-                    tool_call_max=tool_call_max,
-                    max_iters=max_iters,
+                    prepared_data=prepared_data,
+                    context=context,
+                    analysis_trace=analysis_trace,
                 )
-                exec_rows = list(agentic_result.get("execution_rows") or [])
-                stop_reason = str(agentic_result.get("stop_reason") or "")
-                final_text = str(agentic_result.get("final_text") or "")
-
-                analysis_trace["execution"] = exec_rows
-                analysis_trace["agentic_stop_reason"] = stop_reason
+                exec_rows = list((engine_result.get('analysis_trace') or {}).get('execution') or [])
+                analysis_trace = engine_result.get('analysis_trace') or analysis_trace
                 context["analysis_trace"] = analysis_trace
-                self.memory.add_message('assistant', final_text, {'tools_used': [r.get('tool') for r in exec_rows], 'execution_time': (datetime.now() - start_time).total_seconds()})
+                self.memory.add_message('assistant', engine_result['text'], {'tools_used': [r.get('tool') for r in exec_rows], 'execution_time': (datetime.now() - start_time).total_seconds()})
                 return self._normalize_response_payload(
                     {
-                        "text": final_text,
+                        "text": engine_result['text'],
                         "insights": [],
                         "visualizations": [],
-                        "tools_used": [r.get("tool") for r in exec_rows],
+                        "tools_used": engine_result.get('tools_used', []),
                         "context": context,
                     },
-                    execution_results=[{"tool": r.get("tool"), "result": {"success": bool(r.get("success"))}} for r in exec_rows],
+                    execution_results=engine_result.get('execution_results', []),
                 )
             except Exception as e:
                 analysis_trace["execution"] = exec_rows
                 context["analysis_trace"] = analysis_trace
                 err = str(e)
                 logger.warning(f"Agentic模式失败，降级到rule模式继续处理: {err}")
+                tracer.record(
+                    "agentic_fallback",
+                    reason=err,
+                    partial_execution_count=len(exec_rows),
+                )
                 analysis_trace["agentic_fallback"] = {
                     "to_mode": "rule",
                     "reason": err,
                     "partial_execution_count": len(exec_rows),
                 }
                 analysis_trace["mode"] = "rule"
+                analysis_trace["events"] = tracer.export()
                 context["analysis_trace"] = analysis_trace
                 context["agentic_error"] = err
                 mode = "rule"
@@ -6879,54 +6954,43 @@ class IntelligentAgent:
         knowledge_context = self.knowledge_base.get_knowledge_context(analysis_question)
 
         # 5. 规划任务（若用户刚确认，则复用待确认计划）
-        plan = None
-        if isinstance(pending, dict) and self._is_positive_confirmation((qtext or "").strip()):
-            reused_plan = pending.get("plan")
-            if isinstance(reused_plan, list) and reused_plan:
-                plan = reused_plan
-            self._pending_execution_confirmation = None
-        if plan is None:
-            plan = self.task_planner.plan(analysis_question, context)
-
-        if (not confirmed_now) and self._should_require_step_confirmation(plan, context):
+        plan_result = self.execution_engine.execute_plan_flow(
+            question=analysis_question,
+            prepared_data=prepared_data,
+            context=context,
+            analysis_trace=analysis_trace,
+            pending_confirmation=pending,
+            confirmed_now=confirmed_now,
+            progress_cb=progress_cb,
+            should_require_confirmation=self._should_require_step_confirmation,
+            build_confirmation_payload=lambda q, plan, ctx, trace: {
+                "text": self._build_confirmation_prompt(question, plan),
+                "insights": ["已进入多步执行确认模式"],
+                "visualizations": [],
+                "tools_used": [],
+                "context": {
+                    **(ctx or {}),
+                    "needs_confirmation": True,
+                    "confirmation_pending": True,
+                    "plan_steps": len(plan or []),
+                    "analysis_trace": trace,
+                },
+            },
+        )
+        if plan_result.get('needs_confirmation'):
             self._pending_execution_confirmation = {
-                "question": question,
-                "plan": plan,
-                "created_at": time.time(),
+                **(plan_result.get('pending_confirmation') or {}),
+                'created_at': time.time(),
             }
-            analysis_trace["plan"] = serialize_plan_trace(plan)
-            context["analysis_trace"] = analysis_trace
-            return self._normalize_response_payload(
-                {
-                    "text": self._build_confirmation_prompt(question, plan),
-                    "insights": ["已进入多步执行确认模式"],
-                    "visualizations": [],
-                    "tools_used": [],
-                    "context": {
-                        **(context or {}),
-                        "needs_confirmation": True,
-                        "confirmation_pending": True,
-                        "plan_steps": len(plan or []),
-                    },
-                }
-            )
+            context['analysis_trace'] = plan_result.get('analysis_trace') or analysis_trace
+            return self._normalize_response_payload(plan_result['confirmation_payload'])
 
-        if progress_cb:
-            try:
-                progress_cb(
-                    {
-                        "event": "planned",
-                        "total_steps": len(plan or []),
-                        "tools": [s.get("tool") for s in (plan or []) if isinstance(s, dict)],
-                    }
-                )
-            except Exception:
-                pass
-        analysis_trace["plan"] = serialize_plan_trace(plan)
+        if isinstance(pending, dict) and confirmed_now:
+            self._pending_execution_confirmation = None
 
-        # 6. 执行计划
-        execution_results = self.task_planner.execute_plan(plan, prepared_data, context=context, progress_cb=progress_cb)
-        analysis_trace["execution"] = [r.get("trace") for r in (execution_results or []) if isinstance(r, dict) and r.get("trace")]
+        analysis_trace = plan_result.get('analysis_trace') or analysis_trace
+        execution_results = plan_result.get('execution_results') or []
+        analysis_trace["events"] = tracer.export()
         context["analysis_trace"] = analysis_trace
 
         # 7. 生成综合答案

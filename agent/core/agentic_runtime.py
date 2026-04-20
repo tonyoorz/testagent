@@ -42,13 +42,14 @@ def build_tool_specs(tools_schema: Dict[str, Any]) -> List[Dict[str, Any]]:
     specs: List[Dict[str, Any]] = []
     for tool_name, tool_schema in (tools_schema or {}).items():
         tool_schema = tool_schema if isinstance(tool_schema, dict) else {}
+        parameters = tool_schema.get("json_schema") or _to_json_schema(tool_schema.get("parameters") or {})
         specs.append(
             {
                 "type": "function",
                 "function": {
                     "name": str(tool_name),
                     "description": str(tool_schema.get("description") or ""),
-                    "parameters": _to_json_schema(tool_schema.get("parameters") or {}),
+                    "parameters": parameters,
                 },
             }
         )

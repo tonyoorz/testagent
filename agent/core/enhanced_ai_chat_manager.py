@@ -53,6 +53,8 @@ from agent.core.sql_runtime_service import (
     execute_sql_rows,
     sanitize_select_sql,
 )
+from agent.core.conversation_orchestrator import ConversationOrchestrator
+from agent.core.streaming_protocol import append_event as append_protocol_event, init_stream_state
 from agent.evaluation.agent_critic import contains_strong_confident_language
 from duplicate_issue_finder import extract_hints, get_or_build_index
 from octane_db import default_db_path
@@ -499,27 +501,15 @@ def append_stream_event_to_store(
 ) -> Dict[str, Any]:
     if not isinstance(stream_entry, dict):
         return {}
-
-    events = stream_entry.get("events")
-    if not isinstance(events, list):
-        events = []
-        stream_entry["events"] = events
-
-    ts = float(event_ts if event_ts is not None else time.time())
-    event = {
-        "id": f"evt_{int(ts * 1000)}_{len(events) + 1}",
-        "ts": ts,
-        "kind": str(kind or "info").strip() or "info",
-        "title": str(title or "事件").strip() or "事件",
-        "status": _normalize_event_status(status),
-        "summary": str(summary or "").strip(),
-        "details": _sanitize_event_details(details),
-    }
-    events.append(event)
-    limit = _timeline_event_limit()
-    if len(events) > limit:
-        del events[:-limit]
-    return event
+    return append_protocol_event(
+        stream_entry,
+        kind=str(kind or "info").strip() or "info",
+        title=str(title or "事件").strip() or "事件",
+        status=_normalize_event_status(status),
+        summary=str(summary or "").strip(),
+        details=_sanitize_event_details(details),
+        limit=_timeline_event_limit(),
+    )
 
 
 def append_stream_event(task_id: str, **event_kwargs: Any) -> Dict[str, Any]:
@@ -849,6 +839,7 @@ class EnhancedAIChatManager:
             assistant_name: 助手展示名（例如：SiSi）
         """
         self.dashboard_type = dashboard_type
+        self._conversation_orchestrator = ConversationOrchestrator()
         
         # Initialize enhancement modules
         self.smart_context_generator = None
@@ -988,12 +979,29 @@ class EnhancedAIChatManager:
             }
         }
 
+    def _build_agent_request(
+        self,
+        question: str,
+        current_data: Any,
+        conversation_state: Optional[Dict[str, Any]] = None,
+        extra_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return self._conversation_orchestrator.build_request(
+            question=question,
+            dashboard_type=self.dashboard_type,
+            current_data=current_data,
+            conversation_state=conversation_state,
+            extra_context=extra_context,
+        )
+
         logger.info(f"增强版AI Chat Manager初始化完成 (Agent: {'启用' if self.use_agent else '禁用'})")
 
     def process_with_agent(self, question: str, data: pd.DataFrame,
                           conversation_history: List = None,
                           conversation_state: Optional[Dict] = None,
-                          progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
+                          progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+                          extra_context: Optional[Dict[str, Any]] = None,
+                          agent_request: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         使用智能 Agent 处理问题
 
@@ -1015,8 +1023,18 @@ class EnhancedAIChatManager:
 
         try:
             # 实体追踪：指代消解
-            resolved_question = question
+            initial_request_question = ''
+            if isinstance(agent_request, dict):
+                initial_request_question = str(agent_request.get('question') or '').strip()
+            resolved_question = initial_request_question or question
             updated_state = conversation_state
+            agent_request = agent_request if isinstance(agent_request, dict) else self._build_agent_request(
+                question=question,
+                current_data=data,
+                conversation_state=conversation_state,
+                extra_context=extra_context,
+            )
+            page_context = agent_request.get('page_context', {}) if isinstance(agent_request, dict) else {}
 
             if self.entity_tracker and conversation_state is not None:
                 try:
@@ -1024,11 +1042,14 @@ class EnhancedAIChatManager:
                     state = ConversationState.from_dict(conversation_state) if ConversationState else None
                     if state:
                         # 指代消解
-                        resolved_question = self.entity_tracker.resolve_references(question, state)
+                        resolved_question = self.entity_tracker.resolve_references(resolved_question, state)
                         if resolved_question != question:
                             logger.info(f"Entity resolution: '{question}' -> '{resolved_question}'")
                 except Exception as e:
                     logger.warning(f"Entity resolution failed: {e}")
+
+            if isinstance(agent_request, dict):
+                agent_request['question'] = resolved_question
 
             # 使用智能 Agent 处理
             result = self.intelligent_agent.process(
@@ -1036,6 +1057,8 @@ class EnhancedAIChatManager:
                 data,
                 conversation_history,
                 progress_cb=progress_cb,
+                page_context=page_context,
+                request=agent_request,
             )
 
             # 更新对话状态
@@ -1055,13 +1078,20 @@ class EnhancedAIChatManager:
                     logger.warning(f"State update failed: {e}")
 
             # 格式化返回结果
+            result_context = result.get('context', {}) if isinstance(result.get('context', {}), dict) else {}
+            result_context = dict(result_context)
+            if page_context:
+                result_context.setdefault('page_context', page_context)
+            if isinstance(extra_context, dict) and extra_context:
+                result_context.update(extra_context)
+
             return {
                 'success': True,
                 'text': result['text'],
                 'insights': result.get('insights', []),
                 'visualizations': result.get('visualizations', []),
                 'tools_used': result.get('tools_used', []),
-                'context': result.get('context', {}),
+                'context': result_context,
                 'agent_used': True,
                 'conversation_state': updated_state,
                 'resolved_question': resolved_question if resolved_question != question else None
@@ -1967,6 +1997,13 @@ class EnhancedAIChatManager:
             def worker():
                 heartbeat_running = {"on": True}
                 reasoning_lines: List[str] = []
+                agent_request = self._build_agent_request(
+                    question=question,
+                    current_data=current_data,
+                    conversation_state=conversation_state,
+                    extra_context={},
+                )
+                page_context = agent_request.get("page_context", {}) if isinstance(agent_request, dict) else {}
 
                 def _append_timeline_event(kind: str, title: str, status: str = "info",
                                            summary: str = "", details: Optional[Any] = None) -> None:
@@ -2093,15 +2130,11 @@ class EnhancedAIChatManager:
                 hb_thread.start()
                 try:
                     with streaming_lock:
-                        streaming_data.setdefault(task_id, {
-                            'status': 'processing',
-                            'reasoning': '',
-                            'response': '',
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'progress': '智能Agent正在分析数据...',
-                            'chunk_buffer': '',
-                            'last_update': time.time()
-                        })
+                        streaming_data.setdefault(
+                            task_id,
+                            self._conversation_orchestrator.initialize_stream_state('智能Agent正在分析数据...'),
+                        )
+                        streaming_data[task_id]['page_context'] = page_context
                     _append_timeline_event(
                         kind="llm_phase",
                         title="Agent 执行已启动",
@@ -2118,6 +2151,8 @@ class EnhancedAIChatManager:
                         conversation_history,
                         conversation_state=conversation_state,
                         progress_cb=_on_agent_progress,
+                        extra_context={"page_context": page_context},
+                        agent_request=agent_request,
                     )
                     if not result.get('success'):
                         raise RuntimeError(result.get('text') or result.get('error') or "智能Agent执行失败")
