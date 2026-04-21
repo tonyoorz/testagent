@@ -1,8 +1,15 @@
 import unittest
 from unittest.mock import Mock
 
+import pandas as pd
+
 from agent.core.conversation_orchestrator import ConversationOrchestrator
 from agent.core.enhanced_ai_chat_manager import EnhancedAIChatManager
+from agent.core.proactive_insight_models import (
+    InsightCard,
+    InsightEvidence,
+    ProactiveInsightRequest,
+)
 from agent.core.session_manager import SessionManager
 
 
@@ -323,6 +330,86 @@ class EnhancedChatManagerSpineTests(unittest.TestCase):
 
         self.assertEqual(intelligent_agent.process.call_args.args[0], 'resolved prefetched question')
         self.assertEqual(intelligent_agent.process.call_args.kwargs['request']['question'], 'resolved prefetched question')
+
+    def test_process_with_agent_uses_proactive_insight_path_when_router_matches(self):
+        manager = EnhancedAIChatManager.__new__(EnhancedAIChatManager)
+        manager.dashboard_type = 'defect'
+        manager.use_agent = True
+        manager.entity_tracker = None
+        manager._conversation_orchestrator = ConversationOrchestrator()
+        manager.proactive_insight_router = Mock()
+        manager.proactive_insight_engine = Mock()
+        manager.proactive_insight_reporter = Mock()
+        manager.intelligent_agent = Mock()
+
+        request = ProactiveInsightRequest(mode='proactive_insight', dataset_scope='defect_test')
+        cards = [
+            InsightCard(
+                type='divergence',
+                title='Defect/Test imbalance detected',
+                summary='Defect volume is materially higher than test activity in the current slice.',
+                scope={'project': 'MGU'},
+                confidence=0.75,
+                severity='high',
+                evidence=[InsightEvidence(label='defect_count', value=3)],
+                metrics={'defect_count': 3},
+            )
+        ]
+        manager.proactive_insight_router.match.return_value = (True, request)
+        manager.proactive_insight_engine.generate.return_value = cards
+        manager.proactive_insight_reporter.render.return_value = '主动洞察报告'
+
+        result = manager.process_with_agent(
+            '请做主动洞察',
+            data={'defects': pd.DataFrame(), 'tests': pd.DataFrame()},
+            conversation_history=[],
+            extra_context={'mode': 'proactive_insight'},
+        )
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['text'], '主动洞察报告')
+        self.assertEqual(result['context']['proactive_insight_request']['dataset_scope'], 'defect_test')
+        self.assertEqual(result['context']['proactive_insight_cards'][0]['type'], 'divergence')
+        manager.intelligent_agent.process.assert_not_called()
+
+    def test_process_with_agent_allows_proactive_insight_without_intelligent_agent(self):
+        manager = EnhancedAIChatManager.__new__(EnhancedAIChatManager)
+        manager.dashboard_type = 'defect'
+        manager.use_agent = False
+        manager.entity_tracker = None
+        manager._conversation_orchestrator = ConversationOrchestrator()
+        manager.proactive_insight_router = Mock()
+        manager.proactive_insight_engine = Mock()
+        manager.proactive_insight_reporter = Mock()
+        manager.intelligent_agent = None
+
+        request = ProactiveInsightRequest(mode='proactive_insight', dataset_scope='defect_test')
+        cards = [
+            InsightCard(
+                type='divergence',
+                title='Defect/Test imbalance detected',
+                summary='Defect volume is materially higher than test activity in the current slice.',
+                scope={'project': 'MGU'},
+                confidence=0.75,
+                severity='high',
+                evidence=[InsightEvidence(label='defect_count', value=3)],
+                metrics={'defect_count': 3},
+            )
+        ]
+        manager.proactive_insight_router.match.return_value = (True, request)
+        manager.proactive_insight_engine.generate.return_value = cards
+        manager.proactive_insight_reporter.render.return_value = '主动洞察报告'
+
+        result = manager.process_with_agent(
+            '请做主动洞察',
+            data={'defects': pd.DataFrame(), 'tests': pd.DataFrame()},
+            conversation_history=[],
+            extra_context={'mode': 'proactive_insight'},
+        )
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['text'], '主动洞察报告')
+        self.assertEqual(result['context']['proactive_insight_cards'][0]['type'], 'divergence')
 
 
 if __name__ == '__main__':

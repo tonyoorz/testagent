@@ -22,6 +22,7 @@ import logging
 import threading
 import sqlite3
 import re
+from dataclasses import is_dataclass
 from typing import Dict, List, Any, Optional, Callable, Generator
 from datetime import datetime
 import pandas as pd
@@ -54,6 +55,9 @@ from agent.core.sql_runtime_service import (
     sanitize_select_sql,
 )
 from agent.core.conversation_orchestrator import ConversationOrchestrator
+from agent.core.proactive_insight_engine import ProactiveInsightEngine
+from agent.core.proactive_insight_reporter import ProactiveInsightReporter
+from agent.core.proactive_insight_router import ProactiveInsightRouter
 from agent.core.prompt_registry import PromptRegistry
 from agent.core.session_manager import SessionManager
 from agent.core.streaming_protocol import append_event as append_protocol_event, init_stream_state
@@ -844,6 +848,9 @@ class EnhancedAIChatManager:
         self._conversation_orchestrator = ConversationOrchestrator()
         self.prompt_registry = PromptRegistry.get_instance()
         self.session_manager = SessionManager()
+        self.proactive_insight_router = None
+        self.proactive_insight_engine = None
+        self.proactive_insight_reporter = None
         
         # Initialize enhancement modules
         self.smart_context_generator = None
@@ -1048,6 +1055,26 @@ class EnhancedAIChatManager:
                 return f'{value}:{self.dashboard_type}'
         return f'{self.dashboard_type}:default'
 
+    def _ensure_proactive_insight_components(self) -> None:
+        if not getattr(self, 'proactive_insight_router', None):
+            self.proactive_insight_router = ProactiveInsightRouter()
+        if not getattr(self, 'proactive_insight_engine', None):
+            self.proactive_insight_engine = ProactiveInsightEngine()
+        if not getattr(self, 'proactive_insight_reporter', None):
+            self.proactive_insight_reporter = ProactiveInsightReporter()
+
+    def _serialize_proactive_value(self, value: Any) -> Any:
+        if isinstance(value, list):
+            return [self._serialize_proactive_value(item) for item in value]
+        if isinstance(value, dict):
+            return {
+                key: self._serialize_proactive_value(item)
+                for key, item in value.items()
+            }
+        if is_dataclass(value) and hasattr(value, 'to_dict'):
+            return self._serialize_proactive_value(value.to_dict())
+        return value
+
     def process_with_agent(self, question: str, data: pd.DataFrame,
                           conversation_history: List = None,
                           conversation_state: Optional[Dict] = None,
@@ -1066,6 +1093,34 @@ class EnhancedAIChatManager:
         Returns:
             包含答案、工具调用结果、洞察等的字典
         """
+        self._ensure_proactive_insight_components()
+        proactive_matched, proactive_request = self.proactive_insight_router.match(
+            question=question,
+            extra_context=extra_context,
+        )
+        if proactive_matched:
+            datasets = data if isinstance(data, dict) else {'defects': data}
+            proactive_cards = self.proactive_insight_engine.generate(
+                request=proactive_request,
+                datasets=datasets,
+            )
+            proactive_report_text = self.proactive_insight_reporter.render(proactive_cards)
+            return {
+                'success': True,
+                'text': proactive_report_text,
+                'insights': [],
+                'visualizations': [],
+                'tools_used': [],
+                'context': {
+                    'proactive_insight_mode': True,
+                    'proactive_insight_request': self._serialize_proactive_value(proactive_request),
+                    'proactive_insight_cards': self._serialize_proactive_value(proactive_cards),
+                },
+                'agent_used': True,
+                'conversation_state': conversation_state,
+                'resolved_question': None,
+            }
+
         if not self.use_agent or not self.intelligent_agent:
             return {
                 'success': False,
