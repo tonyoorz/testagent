@@ -1,10 +1,13 @@
 import unittest
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
+import agent.core.enhanced_ai_chat_manager as enhanced_chat_module
 from agent.core.conversation_orchestrator import ConversationOrchestrator
 from agent.core.enhanced_ai_chat_manager import EnhancedAIChatManager
+from agent.core.harness_router import HarnessRouteDecision, HarnessRouteHandler
 from agent.core.proactive_insight_models import (
     InsightCard,
     InsightEvidence,
@@ -370,6 +373,8 @@ class EnhancedChatManagerSpineTests(unittest.TestCase):
         self.assertEqual(result['text'], '主动洞察报告')
         self.assertEqual(result['context']['proactive_insight_request']['dataset_scope'], 'defect_test')
         self.assertEqual(result['context']['proactive_insight_cards'][0]['type'], 'divergence')
+        self.assertEqual(result['context']['mode'], 'proactive_insight')
+        self.assertEqual(result['context']['page_context']['dashboard_type'], 'defect')
         manager.intelligent_agent.process.assert_not_called()
 
     def test_process_with_agent_allows_proactive_insight_without_intelligent_agent(self):
@@ -410,6 +415,224 @@ class EnhancedChatManagerSpineTests(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertEqual(result['text'], '主动洞察报告')
         self.assertEqual(result['context']['proactive_insight_cards'][0]['type'], 'divergence')
+
+    def test_process_with_agent_falls_back_on_proactive_runtime_failure(self):
+        manager = EnhancedAIChatManager.__new__(EnhancedAIChatManager)
+        manager.dashboard_type = 'defect'
+        manager.use_agent = True
+        manager.entity_tracker = None
+        manager._conversation_orchestrator = ConversationOrchestrator()
+        manager.proactive_insight_router = Mock(side_effect=RuntimeError('boom'))
+        manager.proactive_insight_engine = Mock()
+        manager.proactive_insight_reporter = Mock()
+        manager.intelligent_agent = Mock()
+
+        result = manager.process_with_agent(
+            '请做主动洞察',
+            data={'defects': pd.DataFrame(), 'tests': pd.DataFrame()},
+            conversation_history=[],
+            extra_context={'mode': 'proactive_insight'},
+        )
+
+        self.assertTrue(result['success'])
+        self.assertTrue(result['context']['proactive_insight_mode'])
+        self.assertIn('无法完成分析', result['text'])
+
+    def test_callback_preset_button_normalizes_proactive_mode_into_agent_request(self):
+        manager = self._build_callback_test_manager()
+        app = FakeDashApp()
+        manager.register_enhanced_callbacks(app, chat_id_prefix='defect-chat', data_store_id='defect-data')
+        callback_fn = app.callbacks[0]
+
+        with patch.object(
+            enhanced_chat_module,
+            'callback_context',
+            SimpleNamespace(triggered=[{'prop_id': 'defect-chat-proactive_insight-btn.n_clicks'}]),
+        ), patch.object(enhanced_chat_module, 'resolve_harness_route', return_value=make_skill_agent_route()), patch.object(
+            enhanced_chat_module,
+            'should_load_local_data',
+            return_value=False,
+        ), patch.object(enhanced_chat_module.threading, 'Thread', InlineThread), patch.object(
+            enhanced_chat_module.time,
+            'sleep',
+            lambda _seconds: None,
+        ):
+            callback_fn(*self._callback_args_for_preset(manager, 'proactive_insight'))
+
+        build_kwargs = manager._build_agent_request.call_args.kwargs
+        self.assertEqual(build_kwargs['question'], '请做主动洞察')
+        self.assertEqual(build_kwargs['extra_context']['mode'], 'proactive_insight')
+        self.assertEqual(build_kwargs['extra_context']['entry_point'], 'proactive_insight_button')
+
+        process_kwargs = manager.process_with_agent.call_args.kwargs
+        self.assertEqual(process_kwargs['extra_context']['mode'], 'proactive_insight')
+        self.assertEqual(process_kwargs['extra_context']['entry_point'], 'proactive_insight_button')
+        self.assertEqual(process_kwargs['agent_request']['question'], '请做主动洞察')
+
+    def test_callback_slash_command_normalizes_proactive_mode_into_agent_request(self):
+        manager = self._build_callback_test_manager()
+        app = FakeDashApp()
+        manager.register_enhanced_callbacks(app, chat_id_prefix='defect-chat', data_store_id='defect-data')
+        callback_fn = app.callbacks[0]
+
+        with patch.object(
+            enhanced_chat_module,
+            'callback_context',
+            SimpleNamespace(triggered=[{'prop_id': 'defect-chat-send-button.n_clicks'}]),
+        ), patch.object(enhanced_chat_module, 'resolve_harness_route', return_value=make_skill_agent_route()), patch.object(
+            enhanced_chat_module,
+            'should_load_local_data',
+            return_value=False,
+        ), patch.object(enhanced_chat_module.threading, 'Thread', InlineThread), patch.object(
+            enhanced_chat_module.time,
+            'sleep',
+            lambda _seconds: None,
+        ):
+            callback_fn(*self._callback_args_for_send(manager, '/proactive-insight'))
+
+        build_kwargs = manager._build_agent_request.call_args.kwargs
+        self.assertEqual(build_kwargs['question'], '请做主动洞察')
+        self.assertEqual(build_kwargs['extra_context']['mode'], 'proactive_insight')
+        self.assertEqual(build_kwargs['extra_context']['entry_point'], 'proactive_insight_slash')
+
+        process_kwargs = manager.process_with_agent.call_args.kwargs
+        self.assertEqual(process_kwargs['extra_context']['mode'], 'proactive_insight')
+        self.assertEqual(process_kwargs['extra_context']['entry_point'], 'proactive_insight_slash')
+        self.assertEqual(process_kwargs['agent_request']['question'], '请做主动洞察')
+
+    def test_callback_slash_command_promotes_default_summary_mode_to_agent_route(self):
+        manager = self._build_callback_test_manager()
+        app = FakeDashApp()
+        manager.register_enhanced_callbacks(app, chat_id_prefix='defect-chat', data_store_id='defect-data')
+        callback_fn = app.callbacks[0]
+        captured_request = {}
+
+        def capture_route(request, has_data):
+            captured_request['selected_mode'] = request.selected_mode
+            return make_skill_agent_route()
+
+        with patch.object(
+            enhanced_chat_module,
+            'callback_context',
+            SimpleNamespace(triggered=[{'prop_id': 'defect-chat-send-button.n_clicks'}]),
+        ), patch.object(enhanced_chat_module, 'resolve_harness_route', side_effect=capture_route), patch.object(
+            enhanced_chat_module,
+            'should_load_local_data',
+            return_value=False,
+        ), patch.object(enhanced_chat_module.threading, 'Thread', InlineThread), patch.object(
+            enhanced_chat_module.time,
+            'sleep',
+            lambda _seconds: None,
+        ):
+            callback_fn(*self._callback_args_for_send(manager, '/proactive-insight', chat_mode='summary'))
+
+        self.assertEqual(captured_request['selected_mode'], 'agent')
+
+    def test_callback_normal_message_keeps_default_summary_mode(self):
+        manager = self._build_callback_test_manager()
+        app = FakeDashApp()
+        manager.register_enhanced_callbacks(app, chat_id_prefix='defect-chat', data_store_id='defect-data')
+        callback_fn = app.callbacks[0]
+        captured_request = {}
+
+        def capture_route(request, has_data):
+            captured_request['selected_mode'] = request.selected_mode
+            return make_skill_agent_route()
+
+        with patch.object(
+            enhanced_chat_module,
+            'callback_context',
+            SimpleNamespace(triggered=[{'prop_id': 'defect-chat-send-button.n_clicks'}]),
+        ), patch.object(enhanced_chat_module, 'resolve_harness_route', side_effect=capture_route), patch.object(
+            enhanced_chat_module,
+            'should_load_local_data',
+            return_value=False,
+        ), patch.object(enhanced_chat_module.threading, 'Thread', InlineThread), patch.object(
+            enhanced_chat_module.time,
+            'sleep',
+            lambda _seconds: None,
+        ):
+            callback_fn(*self._callback_args_for_send(manager, 'show weekly defects', chat_mode='summary'))
+
+        self.assertEqual(captured_request['selected_mode'], 'summary')
+
+    def _build_callback_test_manager(self):
+        manager = EnhancedAIChatManager.__new__(EnhancedAIChatManager)
+        manager.dashboard_type = 'defect_explore'
+        manager.use_agent = True
+        manager.assistant_name = 'Test Assistant'
+        manager._conversation_orchestrator = ConversationOrchestrator()
+        manager.preset_questions = EnhancedAIChatManager._build_default_presets(manager)
+        manager.chatbot = Mock()
+        manager.process_with_agent = Mock(
+            return_value={
+                'success': True,
+                'text': '主动洞察报告',
+                'insights': [],
+                'tools_used': [],
+                'conversation_state': {},
+                'context': {},
+                'resolved_question': None,
+            }
+        )
+        manager._format_agent_message = Mock(side_effect=lambda text, *_args: text)
+        manager._build_route_reasoning = Mock(return_value='route reasoning')
+        manager._build_agent_request = Mock(side_effect=self._capture_agent_request)
+        return manager
+
+    def _capture_agent_request(self, question, current_data, conversation_state=None, extra_context=None):
+        return {
+            'question': question,
+            'entry_point': (extra_context or {}).get('entry_point'),
+            'page_context': {'dashboard_type': 'defect_explore'},
+        }
+
+    def _callback_args_for_preset(self, manager, preset_key, chat_mode='agent'):
+        preset_values = [
+            1 if key == preset_key else 0
+            for key in manager.preset_questions[manager.dashboard_type].keys()
+        ]
+        return (0, 0, 0, *preset_values, '', [], {'active': False, 'task_id': None}, None, chat_mode, [], {}, {})
+
+    def _callback_args_for_send(self, manager, input_value, chat_mode='agent'):
+        preset_values = [0 for _key in manager.preset_questions[manager.dashboard_type].keys()]
+        return (1, 0, 0, *preset_values, input_value, [], {'active': False, 'task_id': None}, None, chat_mode, [], {}, {})
+
+
+class FakeDashApp:
+    def __init__(self):
+        self.callbacks = []
+
+    def callback(self, *_args, **_kwargs):
+        def decorator(func):
+            self.callbacks.append(func)
+            return func
+
+        return decorator
+
+
+class InlineThread:
+    def __init__(self, target=None, daemon=None):
+        self.target = target
+        self.daemon = daemon
+
+    def start(self):
+        if callable(self.target) and getattr(self.target, '__name__', '') != 'heartbeat':
+            self.target()
+
+
+def make_skill_agent_route():
+    return HarnessRouteDecision(
+        requested_mode='agent',
+        handler=HarnessRouteHandler.SKILL_AGENT,
+        reason='test route',
+        llm_mode='summary',
+        advanced_query=False,
+        known_issues_enabled=False,
+        use_agent_enabled=True,
+        has_data=False,
+        should_try_local_data=False,
+    )
 
 
 if __name__ == '__main__':

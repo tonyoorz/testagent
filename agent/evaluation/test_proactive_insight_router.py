@@ -27,6 +27,17 @@ class ProactiveInsightRouterTests(unittest.TestCase):
         self.assertFalse(matched)
         self.assertIsNone(request)
 
+    def test_does_not_match_slash_without_explicit_mode(self):
+        router = ProactiveInsightRouter()
+
+        matched, request = router.match(
+            question='/proactive-insight',
+            extra_context={},
+        )
+
+        self.assertFalse(matched)
+        self.assertIsNone(request)
+
     def test_rejects_missing_scope_with_explicit_command(self):
         router = ProactiveInsightRouter()
 

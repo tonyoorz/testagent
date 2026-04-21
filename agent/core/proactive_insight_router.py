@@ -15,11 +15,8 @@ class ProactiveInsightRouter:
     ) -> Tuple[bool, Optional[ProactiveInsightRequest]]:
         context = dict(extra_context or {})
         explicit_mode = str(context.get('mode') or '').strip().lower()
-        normalized_question = str(question or '').strip().lower()
 
         if explicit_mode == 'proactive_insight':
-            return True, self.parse(question=question, extra_context=context)
-        if normalized_question.startswith('/proactive-insight'):
             return True, self.parse(question=question, extra_context=context)
         return False, None
 

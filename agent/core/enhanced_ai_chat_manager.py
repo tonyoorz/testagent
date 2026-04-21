@@ -957,7 +957,10 @@ class EnhancedAIChatManager:
             self.intelligent_agent = None
 
         # 预设问题模板（增强版）
-        self.preset_questions = {
+        self.preset_questions = self._build_default_presets()
+
+    def _build_default_presets(self) -> Dict[str, Dict[str, str]]:
+        return {
             'defect': {
                 'summary': "请总结当前的缺陷数据情况",
                 'risk': "请分析当前数据中的高风险问题",
@@ -972,7 +975,8 @@ class EnhancedAIChatManager:
                 'project': "请对比分析各项目的缺陷与测试情况",
                 'trend': "请基于缺陷趋势和测试效率给出改进建议",
                 'matrix': "请分析缺陷矩阵分布和严重性问题",
-                'team': "请分析测试团队效率和缺陷发现能力"
+                'team': "请分析测试团队效率和缺陷发现能力",
+                'proactive_insight': "请做主动洞察"
             },
             'test': {
                 'summary': "请总结当前的测试覆盖率情况",
@@ -986,8 +990,42 @@ class EnhancedAIChatManager:
                 'analysis': "请分析当前数据",
                 'insight': "请提供数据洞察",
                 'recommendation': "请给出改进建议",
-                'agent_explore': "请使用智能工具探索数据"
+                'agent_explore': "请使用智能工具探索数据",
+                'proactive_insight': "请做主动洞察"
             }
+        }
+
+    def _normalize_proactive_insight_entry(
+        self,
+        *,
+        question: str,
+        trigger_key: Optional[str],
+        extra_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        normalized_question = str(question or '').strip()
+        updated_context = dict(extra_context or {})
+        trigger = str(trigger_key or '').strip()
+        normalized_lower = normalized_question.lower()
+
+        if trigger == 'proactive_insight':
+            updated_context['mode'] = 'proactive_insight'
+            updated_context['entry_point'] = 'proactive_insight_button'
+            return {
+                'question': normalized_question or '请做主动洞察',
+                'extra_context': updated_context,
+            }
+
+        if normalized_lower == '/proactive-insight' or normalized_lower.startswith('/proactive-insight '):
+            updated_context['mode'] = 'proactive_insight'
+            updated_context['entry_point'] = 'proactive_insight_slash'
+            return {
+                'question': '请做主动洞察',
+                'extra_context': updated_context,
+            }
+
+        return {
+            'question': normalized_question,
+            'extra_context': updated_context,
         }
 
     def _build_agent_request(
@@ -1094,28 +1132,69 @@ class EnhancedAIChatManager:
             包含答案、工具调用结果、洞察等的字典
         """
         self._ensure_proactive_insight_components()
-        proactive_matched, proactive_request = self.proactive_insight_router.match(
-            question=question,
-            extra_context=extra_context,
-        )
-        if proactive_matched:
-            datasets = data if isinstance(data, dict) else {'defects': data}
-            proactive_cards = self.proactive_insight_engine.generate(
-                request=proactive_request,
-                datasets=datasets,
+        try:
+            proactive_matched, proactive_request = self.proactive_insight_router.match(
+                question=question,
+                extra_context=extra_context,
             )
-            proactive_report_text = self.proactive_insight_reporter.render(proactive_cards)
-            return {
-                'success': True,
-                'text': proactive_report_text,
-                'insights': [],
-                'visualizations': [],
-                'tools_used': [],
-                'context': {
+            if proactive_matched:
+                effective_request = agent_request if isinstance(agent_request, dict) else self._build_agent_request(
+                    question,
+                    data,
+                    conversation_state=conversation_state,
+                    extra_context=extra_context,
+                )
+                page_context = effective_request.get('page_context') if isinstance(effective_request.get('page_context'), dict) else {}
+                datasets = data if isinstance(data, dict) else {'defects': data}
+                proactive_cards = self.proactive_insight_engine.generate(
+                    request=proactive_request,
+                    datasets=datasets,
+                )
+                proactive_report_text = self.proactive_insight_reporter.render(proactive_cards)
+                result_context = {
                     'proactive_insight_mode': True,
                     'proactive_insight_request': self._serialize_proactive_value(proactive_request),
                     'proactive_insight_cards': self._serialize_proactive_value(proactive_cards),
-                },
+                }
+                if page_context:
+                    result_context.setdefault('page_context', page_context)
+                if isinstance(extra_context, dict) and extra_context:
+                    result_context.update(extra_context)
+                return {
+                    'success': True,
+                    'text': proactive_report_text,
+                    'insights': [],
+                    'visualizations': [],
+                    'tools_used': [],
+                    'context': result_context,
+                    'agent_used': True,
+                    'conversation_state': conversation_state,
+                    'resolved_question': None,
+                }
+        except Exception as proactive_err:
+            fallback_request = agent_request if isinstance(agent_request, dict) else self._build_agent_request(
+                question,
+                data,
+                conversation_state=conversation_state,
+                extra_context=extra_context,
+            )
+            page_context = fallback_request.get('page_context') if isinstance(fallback_request.get('page_context'), dict) else {}
+            result_context = {
+                'proactive_insight_mode': True,
+                'proactive_insight_error': str(proactive_err),
+            }
+            if page_context:
+                result_context.setdefault('page_context', page_context)
+            if isinstance(extra_context, dict) and extra_context:
+                result_context.update(extra_context)
+            return {
+                'success': True,
+                'error': str(proactive_err),
+                'text': '已进入主动洞察模式，但当前无法完成分析。请检查数据范围或稍后重试。',
+                'insights': [],
+                'visualizations': [],
+                'tools_used': [],
+                'context': result_context,
                 'agent_used': True,
                 'conversation_state': conversation_state,
                 'resolved_question': None,
@@ -2225,7 +2304,8 @@ class EnhancedAIChatManager:
 
         def start_agent_streaming(task_id: str, question: str, current_data: Any,
                       conversation_history: List[Dict[str, Any]],
-                      conversation_state: Optional[Dict[str, Any]]):
+                      conversation_state: Optional[Dict[str, Any]],
+                      extra_context: Optional[Dict[str, Any]] = None):
             def worker():
                 heartbeat_running = {"on": True}
                 reasoning_lines: List[str] = []
@@ -2233,9 +2313,12 @@ class EnhancedAIChatManager:
                     question=question,
                     current_data=current_data,
                     conversation_state=conversation_state,
-                    extra_context={},
+                    extra_context=extra_context,
                 )
                 page_context = agent_request.get("page_context", {}) if isinstance(agent_request, dict) else {}
+                runtime_extra_context = dict(extra_context or {})
+                if page_context:
+                    runtime_extra_context['page_context'] = page_context
 
                 def _append_timeline_event(kind: str, title: str, status: str = "info",
                                            summary: str = "", details: Optional[Any] = None) -> None:
@@ -2383,7 +2466,7 @@ class EnhancedAIChatManager:
                         conversation_history,
                         conversation_state=conversation_state,
                         progress_cb=_on_agent_progress,
-                        extra_context={"page_context": page_context},
+                        extra_context=runtime_extra_context,
                         agent_request=agent_request,
                     )
                     if not result.get('success'):
@@ -3878,7 +3961,13 @@ class EnhancedAIChatManager:
 
             # 确定用户消息
             user_message = ""
+            normalized_message = ""
+            normalized_extra_context = {}
             preset_questions = self.preset_questions.get(self.dashboard_type, self.preset_questions['general'])
+            trigger_key = ''
+
+            if prop_id.startswith(f'{chat_id_prefix}-') and prop_id.endswith('-btn.n_clicks'):
+                trigger_key = prop_id[len(f'{chat_id_prefix}-'):-len('-btn.n_clicks')]
 
             if prop_id in [f'{chat_id_prefix}-send-button.n_clicks', f'{chat_id_prefix}-input.n_submit']:
                 if input_value and input_value.strip():
@@ -3891,6 +3980,17 @@ class EnhancedAIChatManager:
                             chat_mode = "agent"
                         break
 
+            if user_message:
+                normalized_entry = self._normalize_proactive_insight_entry(
+                    question=user_message,
+                    trigger_key=trigger_key,
+                    extra_context={},
+                )
+                normalized_message = normalized_entry['question']
+                normalized_extra_context = normalized_entry['extra_context']
+                if normalized_extra_context.get('mode') == 'proactive_insight':
+                    chat_mode = 'agent'
+
             # 处理用户消息
             agent_results = {}
             status_display = ""
@@ -3899,7 +3999,7 @@ class EnhancedAIChatManager:
 
             if user_message:
                 # 问候语快速路径：避免被分析型提示词放大为长篇数据说明。
-                msg_norm = str(user_message or "").strip().lower()
+                msg_norm = str(normalized_message or user_message or "").strip().lower()
                 greeting_set = {"hi", "hello", "hey", "你好", "嗨", "哈喽", "在吗", "在么", "hi!", "hello!"}
                 if msg_norm in greeting_set and len(msg_norm) <= 12:
                     chat_messages.append({"role": "user", "content": user_message})
@@ -3918,7 +4018,7 @@ class EnhancedAIChatManager:
                 force_skill_agent = should_resume_pending_agent_confirmation(user_message, prior_agent_results)
 
                 route_request = HarnessRouteRequest(
-                    question=user_message,
+                    question=normalized_message,
                     selected_mode=chat_mode,
                     known_issues_enabled=use_known_issues,
                     use_agent=self.use_agent,
@@ -4025,7 +4125,14 @@ class EnhancedAIChatManager:
             elif route_decision.handler == HarnessRouteHandler.DATABASE_SUMMARY:
                 start_db_summary_streaming(task_id, user_message, chat_messages)
             elif route_decision.handler == HarnessRouteHandler.SKILL_AGENT:
-                start_agent_streaming(task_id, user_message, current_data, chat_messages, conversation_state)
+                start_agent_streaming(
+                    task_id,
+                    normalized_message,
+                    current_data,
+                    chat_messages,
+                    conversation_state,
+                    normalized_extra_context,
+                )
             else:
                 start_llm_streaming(task_id, user_message, current_data, chat_messages, chat_mode=route_decision.llm_mode)
 
