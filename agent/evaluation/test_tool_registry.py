@@ -1,5 +1,6 @@
 import unittest
 
+from agent.tools.analysis.statistical_summary import StatisticalSummaryTool
 from agent.tools.registry import ToolRegistry, normalize_params_to_json_schema
 
 
@@ -35,6 +36,14 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertIn('parameters', exported)
         self.assertIn('json_schema', exported)
         self.assertEqual(exported['json_schema']['properties']['group_by']['type'], 'string')
+
+    def test_registry_exports_schema_for_packaged_tool(self):
+        registry = ToolRegistry()
+        registry.register(StatisticalSummaryTool())
+
+        exported = registry.export()['statistical_summary']
+
+        self.assertEqual(exported['json_schema']['properties']['columns']['type'], 'array')
 
 
 if __name__ == '__main__':

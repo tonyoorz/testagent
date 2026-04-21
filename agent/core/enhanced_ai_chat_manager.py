@@ -54,6 +54,8 @@ from agent.core.sql_runtime_service import (
     sanitize_select_sql,
 )
 from agent.core.conversation_orchestrator import ConversationOrchestrator
+from agent.core.prompt_registry import PromptRegistry
+from agent.core.session_manager import SessionManager
 from agent.core.streaming_protocol import append_event as append_protocol_event, init_stream_state
 from agent.evaluation.agent_critic import contains_strong_confident_language
 from duplicate_issue_finder import extract_hints, get_or_build_index
@@ -840,6 +842,8 @@ class EnhancedAIChatManager:
         """
         self.dashboard_type = dashboard_type
         self._conversation_orchestrator = ConversationOrchestrator()
+        self.prompt_registry = PromptRegistry.get_instance()
+        self.session_manager = SessionManager()
         
         # Initialize enhancement modules
         self.smart_context_generator = None
@@ -986,15 +990,63 @@ class EnhancedAIChatManager:
         conversation_state: Optional[Dict[str, Any]] = None,
         extra_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        return self._conversation_orchestrator.build_request(
+        request = self._conversation_orchestrator.build_request(
             question=question,
             dashboard_type=self.dashboard_type,
             current_data=current_data,
             conversation_state=conversation_state,
             extra_context=extra_context,
         )
+        session_id = self._resolve_session_id(
+            extra_context=extra_context,
+            conversation_state=conversation_state,
+        )
+        request['session_id'] = session_id
+        if getattr(self, 'session_manager', None):
+            session = self.session_manager.get_or_create(session_id, dashboard_type=self.dashboard_type)
+            page_context = request.get('page_context') if isinstance(request.get('page_context'), dict) else {}
+            page_filters = {}
+            if isinstance(extra_context, dict) and isinstance(extra_context.get('page_filters'), dict):
+                page_filters = dict(extra_context.get('page_filters') or {})
+            session.data_context.update_from_request(
+                {
+                    'question': request.get('question'),
+                    'page_context': page_context,
+                    'page_filters': page_filters,
+                    'data_summary': page_context.get('data_summary') if isinstance(page_context, dict) else '',
+                }
+            )
+        return request
 
         logger.info(f"增强版AI Chat Manager初始化完成 (Agent: {'启用' if self.use_agent else '禁用'})")
+
+    def _resolve_session_id(
+        self,
+        *,
+        extra_context: Optional[Dict[str, Any]] = None,
+        conversation_state: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        candidates = []
+        if isinstance(extra_context, dict):
+            candidates.extend(
+                [
+                    extra_context.get('session_id'),
+                    extra_context.get('chat_session_id'),
+                    extra_context.get('chat_id_prefix'),
+                ]
+            )
+        if isinstance(conversation_state, dict):
+            candidates.extend(
+                [
+                    conversation_state.get('session_id'),
+                    conversation_state.get('chat_id_prefix'),
+                ]
+            )
+        for candidate in candidates:
+            value = str(candidate or '').strip()
+            if value:
+                return f'{value}:{self.dashboard_type}'
+        return f'{self.dashboard_type}:default'
 
     def process_with_agent(self, question: str, data: pd.DataFrame,
                           conversation_history: List = None,
@@ -1014,6 +1066,99 @@ class EnhancedAIChatManager:
         Returns:
             包含答案、工具调用结果、洞察等的字典
         """
+        if not self.use_agent or not self.intelligent_agent:
+            return {
+                'success': False,
+                'error': '智能Agent系统不可用',
+                'text': '抱歉，智能分析功能当前不可用。请使用普通对话功能。'
+            }
+
+        runtime = self._conversation_orchestrator.prepare_runtime(
+            question=question,
+            dashboard_type=self.dashboard_type,
+            current_data=data,
+            conversation_state=conversation_state,
+            extra_context=extra_context,
+            agent_results={},
+            progress='AI正在分析问题...',
+        )
+        guardrail_decision = runtime['guardrail_decision']
+
+        if guardrail_decision.action == 'confirm':
+            return {
+                'success': True,
+                'text': '需要确认后才能继续执行当前分析请求。',
+                'agent_used': True,
+                'needs_confirmation': True,
+                'context': {
+                    'guardrail_reason': guardrail_decision.reason_code,
+                    'stream_state': runtime['stream_state'],
+                },
+                'conversation_state': conversation_state,
+            }
+
+        if guardrail_decision.action == 'fallback':
+            return self._legacy_process_with_agent(
+                question,
+                data,
+                conversation_history=conversation_history,
+                conversation_state=conversation_state,
+                progress_cb=progress_cb,
+                extra_context=extra_context,
+                agent_request=agent_request,
+            )
+
+        effective_agent_request = agent_request if isinstance(agent_request, dict) else runtime.get('request')
+        result = self._process_with_agent_core(
+            question,
+            data,
+            conversation_history=conversation_history,
+            conversation_state=conversation_state,
+            progress_cb=progress_cb,
+            extra_context=extra_context,
+            agent_request=effective_agent_request,
+        )
+        if result.get('success'):
+            return result
+
+        recovery = self._conversation_orchestrator.recovery_policy.resolve(
+            reason_code='runtime_exception',
+            error=result.get('error'),
+        )
+        if recovery.action == 'fallback':
+            return self._legacy_process_with_agent(
+                question,
+                data,
+                conversation_history=conversation_history,
+                conversation_state=conversation_state,
+                progress_cb=progress_cb,
+                extra_context=extra_context,
+                agent_request=agent_request,
+            )
+        return result
+
+    def _legacy_process_with_agent(self, question: str, data: pd.DataFrame,
+                                   conversation_history: List = None,
+                                   conversation_state: Optional[Dict] = None,
+                                   progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+                                   extra_context: Optional[Dict[str, Any]] = None,
+                                   agent_request: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return self._process_with_agent_core(
+            question,
+            data,
+            conversation_history=conversation_history,
+            conversation_state=conversation_state,
+            progress_cb=progress_cb,
+            extra_context=extra_context,
+            agent_request=agent_request,
+        )
+
+    def _process_with_agent_core(self, question: str, data: pd.DataFrame,
+                                 conversation_history: List = None,
+                                 conversation_state: Optional[Dict] = None,
+                                 progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+                                 extra_context: Optional[Dict[str, Any]] = None,
+                                 agent_request: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if not self.use_agent or not self.intelligent_agent:
             return {
                 'success': False,
@@ -1084,6 +1229,21 @@ class EnhancedAIChatManager:
                 result_context.setdefault('page_context', page_context)
             if isinstance(extra_context, dict) and extra_context:
                 result_context.update(extra_context)
+            if getattr(self, 'session_manager', None) and isinstance(agent_request, dict):
+                session_id = str(agent_request.get('session_id') or '').strip() or self._resolve_session_id(
+                    extra_context=extra_context,
+                    conversation_state=conversation_state,
+                )
+                session = self.session_manager.get_or_create(session_id, dashboard_type=self.dashboard_type)
+                trace = result_context.get('analysis_trace') if isinstance(result_context.get('analysis_trace'), dict) else {}
+                intents = result_context.get('intents') if isinstance(result_context.get('intents'), list) else []
+                session.query_memory.add_query(
+                    resolved_question,
+                    answer=result.get('text', ''),
+                    intents=intents,
+                    trace=trace,
+                    metadata={'tools_used': result.get('tools_used', [])},
+                )
 
             return {
                 'success': True,
@@ -1309,6 +1469,23 @@ class EnhancedAIChatManager:
 
     def _get_enhanced_system_prompt(self, data_context: str = "") -> str:
         """获取增强的系统提示词 - 使用新的统一模板"""
+        registry = getattr(self, 'prompt_registry', None)
+        if registry:
+            try:
+                prompt = registry.render_dashboard_prompt(self.dashboard_type, data_context=data_context)
+                if isinstance(prompt, str) and prompt.strip():
+                    if data_context and "**当前数据上下文：**" not in prompt and 'Current Data Context:' not in prompt:
+                        prompt += f"\n\n**当前数据上下文：**\n{data_context}\n"
+                    prompt += (
+                        "\n\n**引用规则（防止数字幻觉）：**\n"
+                        "1) 任何具体数字/占比/TopN，必须来自“当前数据上下文”或工具输出。\n"
+                        "2) 上下文未提供的数字，不要猜；改用定性描述或明确说明需要补充字段/口径。\n"
+                        "3) 给测试策略时，优先输出：优先级→动作→验收指标（指标必须可从数据计算）。\n"
+                    )
+                    return prompt
+            except Exception as registry_err:
+                logger.warning(f"PromptRegistry 不可用，回退到现有提示词逻辑: {registry_err}")
+
         # 默认增强提示词（确保任何路径都有可用 prompt）
         base_prompts = {
             'defect': """你是 BMW 汽车测试数据分析专家。

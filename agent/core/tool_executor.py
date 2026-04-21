@@ -35,6 +35,14 @@ class ToolExecutor:
         if callable(factory):
             return list(factory(self._llm, self._db_path) or [])
 
+        try:
+            tool_package = importlib.import_module("agent.tools")
+            package_factory = getattr(tool_package, "build_tool_suite", None)
+            if callable(package_factory):
+                return list(package_factory(llm=self._llm, db_path=self._db_path) or [])
+        except Exception as exc:
+            logger.warning(f"package tool suite unavailable, falling back to legacy factory: {exc}")
+
         legacy_agent = importlib.import_module("agent.core.intelligent_agent")
         factory = getattr(legacy_agent, "build_default_tools", None)
         if not callable(factory):

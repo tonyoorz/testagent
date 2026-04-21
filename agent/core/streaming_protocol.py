@@ -18,7 +18,29 @@ def init_stream_state(progress: str) -> Dict[str, Any]:
         "last_update": now,
         "started_at": now,
         "events": [],
+        "runtime_stage": "received",
+        "fallback_active": False,
+        "confirmation_pending": False,
     }
+
+
+def set_runtime_stage(stream_entry: Dict[str, Any], stage: str) -> Dict[str, Any]:
+    stream_entry["runtime_stage"] = str(stage or "received")
+    stream_entry["last_update"] = time.time()
+    return append_event(
+        stream_entry,
+        kind="stage",
+        title="Runtime stage updated",
+        status="info",
+        summary=stream_entry["runtime_stage"],
+        details={"runtime_stage": stream_entry["runtime_stage"]},
+    )
+
+
+def set_runtime_flag(stream_entry: Dict[str, Any], *, key: str, value: Any) -> Dict[str, Any]:
+    stream_entry[str(key)] = value
+    stream_entry["last_update"] = time.time()
+    return stream_entry
 
 
 def append_event(
