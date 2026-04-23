@@ -961,8 +961,7 @@ class TaskPlanner:
                 }
             )
 
-        if isinstance(context, dict):
-            steps = self._apply_smart_tool_selector(query=query, context=context, steps=steps)
+        # SmartToolSelector re-ranking removed — LLM function-calling handles tool selection.
 
         return steps
 

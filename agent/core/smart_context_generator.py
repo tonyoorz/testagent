@@ -24,13 +24,9 @@ from collections import defaultdict
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import new components (with graceful fallback)
-try:
-    from agent.core.semantic_intent_detector import SemanticIntentDetector, detect_intents_semantic
-    SEMANTIC_INTENT_AVAILABLE = True
-except ImportError:
-    SEMANTIC_INTENT_AVAILABLE = False
-    logger.info("SemanticIntentDetector not available, using keyword fallback")
+# SemanticIntentDetector removed — keyword fallback is sufficient and avoids
+# duplicating the intent-detection work that LLM function-calling already does.
+SEMANTIC_INTENT_AVAILABLE = False
 
 try:
     from agent.core.hybrid_retriever import HybridRetriever, create_hybrid_retriever
@@ -51,14 +47,8 @@ class SmartContextGenerator:
             use_semantic_intent: Whether to use semantic intent detection
             use_hybrid_retriever: Whether to use hybrid retrieval strategy
         """
-        # Initialize semantic intent detector
+        # Semantic intent detector removed (LLM function-calling handles this).
         self.semantic_intent_detector = None
-        if use_semantic_intent and SEMANTIC_INTENT_AVAILABLE:
-            try:
-                self.semantic_intent_detector = SemanticIntentDetector()
-                logger.info("✅ SemanticIntentDetector initialized")
-            except Exception as e:
-                logger.warning(f"Failed to initialize SemanticIntentDetector: {e}")
 
         # Initialize hybrid retriever
         self.hybrid_retriever = None

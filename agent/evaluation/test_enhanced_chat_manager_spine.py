@@ -1,4 +1,7 @@
 import unittest
+import os
+import sqlite3
+import tempfile
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -556,6 +559,251 @@ class EnhancedChatManagerSpineTests(unittest.TestCase):
 
         self.assertEqual(captured_request['selected_mode'], 'summary')
 
+    def test_callback_database_summary_uses_full_schema_for_project_breakdown_sql(self):
+        manager = self._build_callback_test_manager()
+        manager.chatbot.chat_completion.return_value = '按项目汇总完成'
+
+        captured = {'sql': ''}
+        schema_columns = [
+            {'name': f'col_{idx}'} for idx in range(24)
+        ] + [
+            {'name': 'team'},
+            {'name': 'status_phase'},
+            {'name': 'severity_group'},
+            {'name': 'defect_id'},
+            {'name': 'detected_by'},
+            {'name': 'creation_time'},
+            {'name': 'project'},
+            {'name': 'tproject'},
+        ]
+
+        def execute_tool(name, _context, **kwargs):
+            if name == 'get_sqlite_schema':
+                return {
+                    'success': True,
+                    'result': {
+                        'tables': {
+                            'octane_defects': schema_columns,
+                        }
+                    },
+                }
+            if name == 'run_sqlite_query':
+                captured['sql'] = str(kwargs.get('sql') or '')
+                return {
+                    'success': True,
+                    'result': {
+                        'sql': captured['sql'],
+                        'rows': [
+                            {'project': 'IDC', 'defect_count': 12, 'active_tester_count': 4},
+                            {'project': 'IDCEVO', 'defect_count': 9, 'active_tester_count': 3},
+                        ],
+                    },
+                }
+            raise AssertionError(f'unexpected tool call: {name}')
+
+        manager.intelligent_agent = SimpleNamespace(
+            tool_executor=SimpleNamespace(execute_tool=Mock(side_effect=execute_tool))
+        )
+
+        app = FakeDashApp()
+        manager.register_enhanced_callbacks(app, chat_id_prefix='defect-chat', data_store_id='defect-data')
+        callback_fn = app.callbacks[0]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, 'summary.db')
+            sqlite3.connect(db_path).close()
+
+            with patch.object(
+                enhanced_chat_module,
+                'callback_context',
+                SimpleNamespace(triggered=[{'prop_id': 'defect-chat-send-button.n_clicks'}]),
+            ), patch.object(enhanced_chat_module, 'resolve_harness_route', return_value=make_database_summary_route()), patch.object(
+                enhanced_chat_module,
+                'should_load_local_data',
+                return_value=False,
+            ), patch.object(enhanced_chat_module.threading, 'Thread', InlineThread), patch.object(
+                enhanced_chat_module,
+                'compute_total_count',
+                return_value=2,
+            ), patch.object(
+                enhanced_chat_module.time,
+                'sleep',
+                lambda _seconds: None,
+            ), patch.dict(
+                os.environ,
+                {
+                    'AGENT_SQLITE_DB_PATH': db_path,
+                    'CHAT_SUMMARY_SQL_MODE': 'deterministic',
+                    'CHAT_SUMMARY_SCOPE_TEAM': 'DTSV_China',
+                },
+                clear=False,
+            ):
+                callback_fn(*self._callback_args_for_send(manager, '请对比分析各项目的缺陷与测试情况', chat_mode='summary'))
+
+        self.assertIn("CAST(project AS TEXT)", captured['sql'])
+        self.assertNotIn("CAST(team AS TEXT)), ''), '未标注') AS project", captured['sql'])
+
+    def test_callback_database_summary_prefers_problem_finder_team_scope_for_defects(self):
+        manager = self._build_callback_test_manager()
+        manager.chatbot.chat_completion.return_value = '按项目汇总完成'
+
+        captured = {'sql': ''}
+        schema_columns = [
+            {'name': 'team'},
+            {'name': 'problem_finder_team'},
+            {'name': 'project'},
+            {'name': 'status_phase'},
+            {'name': 'severity_group'},
+            {'name': 'detected_by'},
+        ]
+
+        def execute_tool(name, _context, **kwargs):
+            if name == 'get_sqlite_schema':
+                return {
+                    'success': True,
+                    'result': {
+                        'tables': {
+                            'octane_defects': schema_columns,
+                        }
+                    },
+                }
+            if name == 'run_sqlite_query':
+                captured['sql'] = str(kwargs.get('sql') or '')
+                return {
+                    'success': True,
+                    'result': {
+                        'sql': captured['sql'],
+                        'rows': [
+                            {'project': 'IDC', 'defect_count': 12, 'active_tester_count': 4},
+                            {'project': 'IDCEVO', 'defect_count': 9, 'active_tester_count': 3},
+                        ],
+                    },
+                }
+            raise AssertionError(f'unexpected tool call: {name}')
+
+        manager.intelligent_agent = SimpleNamespace(
+            tool_executor=SimpleNamespace(execute_tool=Mock(side_effect=execute_tool))
+        )
+
+        app = FakeDashApp()
+        manager.register_enhanced_callbacks(app, chat_id_prefix='defect-chat', data_store_id='defect-data')
+        callback_fn = app.callbacks[0]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, 'summary.db')
+            sqlite3.connect(db_path).close()
+
+            with patch.object(
+                enhanced_chat_module,
+                'callback_context',
+                SimpleNamespace(triggered=[{'prop_id': 'defect-chat-send-button.n_clicks'}]),
+            ), patch.object(enhanced_chat_module, 'resolve_harness_route', return_value=make_database_summary_route()), patch.object(
+                enhanced_chat_module,
+                'should_load_local_data',
+                return_value=False,
+            ), patch.object(enhanced_chat_module.threading, 'Thread', InlineThread), patch.object(
+                enhanced_chat_module,
+                'compute_total_count',
+                return_value=2,
+            ), patch.object(
+                enhanced_chat_module.time,
+                'sleep',
+                lambda _seconds: None,
+            ), patch.dict(
+                os.environ,
+                {
+                    'AGENT_SQLITE_DB_PATH': db_path,
+                    'CHAT_SUMMARY_SQL_MODE': 'deterministic',
+                    'CHAT_SUMMARY_SCOPE_TEAM': 'DTSV_China',
+                },
+                clear=False,
+            ):
+                callback_fn(*self._callback_args_for_send(manager, '请对比分析各项目的缺陷与测试情况', chat_mode='summary'))
+
+        self.assertIn("CAST(problem_finder_team AS TEXT)", captured['sql'])
+        self.assertNotIn("LOWER(TRIM(CAST(team AS TEXT))) = LOWER('DTSV_China')", captured['sql'])
+
+    def test_callback_database_summary_does_not_inject_default_scope_team_without_env(self):
+        manager = self._build_callback_test_manager()
+        manager.chatbot.chat_completion.return_value = '按项目汇总完成'
+
+        captured = {'sql': ''}
+        schema_columns = [
+            {'name': 'team'},
+            {'name': 'problem_finder_team'},
+            {'name': 'project'},
+            {'name': 'status_phase'},
+            {'name': 'severity_group'},
+            {'name': 'detected_by'},
+        ]
+
+        def execute_tool(name, _context, **kwargs):
+            if name == 'get_sqlite_schema':
+                return {
+                    'success': True,
+                    'result': {
+                        'tables': {
+                            'octane_defects': schema_columns,
+                        }
+                    },
+                }
+            if name == 'run_sqlite_query':
+                captured['sql'] = str(kwargs.get('sql') or '')
+                return {
+                    'success': True,
+                    'result': {
+                        'sql': captured['sql'],
+                        'rows': [
+                            {'project': 'IDC', 'defect_count': 12, 'active_tester_count': 4},
+                            {'project': 'IDCEVO', 'defect_count': 9, 'active_tester_count': 3},
+                        ],
+                    },
+                }
+            raise AssertionError(f'unexpected tool call: {name}')
+
+        manager.intelligent_agent = SimpleNamespace(
+            tool_executor=SimpleNamespace(execute_tool=Mock(side_effect=execute_tool))
+        )
+
+        app = FakeDashApp()
+        manager.register_enhanced_callbacks(app, chat_id_prefix='defect-chat', data_store_id='defect-data')
+        callback_fn = app.callbacks[0]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, 'summary.db')
+            sqlite3.connect(db_path).close()
+
+            with patch.object(
+                enhanced_chat_module,
+                'callback_context',
+                SimpleNamespace(triggered=[{'prop_id': 'defect-chat-send-button.n_clicks'}]),
+            ), patch.object(enhanced_chat_module, 'resolve_harness_route', return_value=make_database_summary_route()), patch.object(
+                enhanced_chat_module,
+                'should_load_local_data',
+                return_value=False,
+            ), patch.object(enhanced_chat_module.threading, 'Thread', InlineThread), patch.object(
+                enhanced_chat_module,
+                'compute_total_count',
+                return_value=2,
+            ), patch.object(
+                enhanced_chat_module.time,
+                'sleep',
+                lambda _seconds: None,
+            ), patch.dict(
+                os.environ,
+                {
+                    'AGENT_SQLITE_DB_PATH': db_path,
+                    'CHAT_SUMMARY_SQL_MODE': 'deterministic',
+                    'CHAT_SUMMARY_SCOPE_TEAM': '',
+                    'OCTANE_TEAM': '',
+                },
+                clear=False,
+            ):
+                callback_fn(*self._callback_args_for_send(manager, '请对比分析各项目的缺陷与测试情况', chat_mode='summary'))
+
+        self.assertNotIn('CAST(problem_finder_team AS TEXT)', captured['sql'])
+        self.assertNotIn("LOWER(TRIM(CAST(team AS TEXT))) = LOWER('DTSV_China')", captured['sql'])
+
     def _build_callback_test_manager(self):
         manager = EnhancedAIChatManager.__new__(EnhancedAIChatManager)
         manager.dashboard_type = 'defect_explore'
@@ -564,6 +812,7 @@ class EnhancedChatManagerSpineTests(unittest.TestCase):
         manager._conversation_orchestrator = ConversationOrchestrator()
         manager.preset_questions = EnhancedAIChatManager._build_default_presets(manager)
         manager.chatbot = Mock()
+        manager.chatbot.chat_completion = Mock(return_value='ok')
         manager.process_with_agent = Mock(
             return_value={
                 'success': True,
@@ -628,6 +877,20 @@ def make_skill_agent_route():
         reason='test route',
         llm_mode='summary',
         advanced_query=False,
+        known_issues_enabled=False,
+        use_agent_enabled=True,
+        has_data=False,
+        should_try_local_data=False,
+    )
+
+
+def make_database_summary_route():
+    return HarnessRouteDecision(
+        requested_mode='summary',
+        handler=HarnessRouteHandler.DATABASE_SUMMARY,
+        reason='test route',
+        llm_mode='summary',
+        advanced_query=True,
         known_issues_enabled=False,
         use_agent_enabled=True,
         has_data=False,

@@ -471,6 +471,17 @@ class DeterministicSQLServiceTests(unittest.TestCase):
         self.assertIn("lower(trim(cast(team as text))) = lower('dtsv_china')", sql_lower)
         self.assertIn('from "octane_defects"', sql_lower)
 
+    def test_build_deterministic_sql_prefers_problem_finder_team_scope_for_defects(self):
+        sql = build_deterministic_sql(
+            question="请对比分析各项目的缺陷与测试情况",
+            table_name="octane_defects",
+            columns=["team", "problem_finder_team", "project", "status_phase", "severity_group", "detected_by"],
+            semantic_hints={"scope_team": "DTSV_China"},
+        )
+        sql_lower = sql.lower()
+        self.assertIn("lower(trim(cast(problem_finder_team as text))) = lower('dtsv_china')", sql_lower)
+        self.assertNotIn("lower(trim(cast(team as text))) = lower('dtsv_china')", sql_lower)
+
     def test_build_deterministic_sql_applies_scope_team_filter_for_manual_runs(self):
         sql = build_deterministic_sql(
             question="请看测试执行通过率趋势",

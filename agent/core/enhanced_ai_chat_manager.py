@@ -122,14 +122,8 @@ except ImportError as e:
     EnhancedMemorySystem = None
     logger.warning(f"Enhanced Memory System not available: {e}")
 
-try:
-    from agent.tools.smart_tool_selector import create_smart_tool_selector, SmartToolSelector
-    SMART_TOOL_SELECTOR_AVAILABLE = True
-    logger.info("Smart Tool Selector loaded")
-except ImportError as e:
-    SMART_TOOL_SELECTOR_AVAILABLE = False
-    SmartToolSelector = None
-    logger.warning(f"Smart Tool Selector not available: {e}")
+# SmartToolSelector removed — LLM function-calling already selects tools.
+SMART_TOOL_SELECTOR_AVAILABLE = False
 
 try:
     from agent.core.explainable_agent import create_explainable_agent, ExplainableAgent
@@ -721,6 +715,51 @@ def format_total_count_display(total_count: Optional[int], unknown_marker: str =
     return marker
 
 
+def build_summary_schema_column_views(columns: Optional[List[str]], preview_limit: int = 30) -> Dict[str, List[str]]:
+    normalized: List[str] = []
+    seen = set()
+    for raw in columns or []:
+        text = str(raw or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+
+    safe_limit = max(0, int(preview_limit or 0))
+    return {
+        "full": normalized,
+        "preview": normalized[:safe_limit] if safe_limit else [],
+    }
+
+
+def resolve_summary_scope_team(semantic_hints: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    disabled_tokens = {"*", "all", "any", "none", "off", "false", "0"}
+    hints = semantic_hints if isinstance(semantic_hints, dict) else {}
+
+    existing_scope_team = str(hints.get("scope_team") or "").strip()
+    if existing_scope_team and existing_scope_team.lower() not in disabled_tokens:
+        return {
+            "scope_team": existing_scope_team,
+            "source": "semantic_hints",
+        }
+
+    configured_scope_team = str(
+        os.getenv("CHAT_SUMMARY_SCOPE_TEAM")
+        or os.getenv("OCTANE_TEAM")
+        or ""
+    ).strip()
+    if configured_scope_team and configured_scope_team.lower() not in disabled_tokens:
+        return {
+            "scope_team": configured_scope_team,
+            "source": "CHAT_SUMMARY_SCOPE_TEAM/OCTANE_TEAM",
+        }
+
+    return {
+        "scope_team": "",
+        "source": "",
+    }
+
+
 def decide_summary_query_execution_strategy(
     question: str,
     columns: Optional[List[str]] = None,
@@ -878,15 +917,8 @@ class EnhancedAIChatManager:
             except Exception as e:
                 logger.error(f"Failed to initialize memory system: {e}")
         
-        # Initialize tool selector
-        if SMART_TOOL_SELECTOR_AVAILABLE:
-            try:
-                db_path = os.path.join(PROJECT_ROOT, 'database', 'tool_performance.db')
-                self.tool_selector = create_smart_tool_selector(db_path=db_path)
-                logger.info("Tool selector initialized")
-            except Exception as e:
-                logger.error(f"Failed to initialize tool selector: {e}")
-        
+        # SmartToolSelector removed — LLM function-calling handles tool selection.
+
         # Initialize explainable agent
         if EXPLAINABLE_AGENT_AVAILABLE:
             try:
@@ -1377,6 +1409,9 @@ class EnhancedAIChatManager:
                     intents=intents,
                     trace=trace,
                     metadata={'tools_used': result.get('tools_used', [])},
+                    sql_used=str(trace.get('sql_used') or trace.get('sql') or ''),
+                    row_count=int(trace.get('row_count') or trace.get('sample_count') or 0),
+                    columns_accessed=list(trace.get('key_fields') or []),
                 )
 
             return {
@@ -2910,6 +2945,7 @@ class EnhancedAIChatManager:
             evidence_gaps = bundle.get("evidence_gap") if isinstance(bundle.get("evidence_gap"), list) else []
             uncertainty_line = build_summary_uncertainty_line(evidence_gaps)
 
+            # --- Observed Facts: 仅在 debug 模式下附加，不直接呈现给用户 ---
             observed_lines: List[str] = [
                 "[Observed Facts]",
                 f"- total_count: {total_count_display}",
@@ -2925,10 +2961,7 @@ class EnhancedAIChatManager:
             if rule_ids:
                 observed_lines.append(f"- rule_ids: {', '.join([str(r) for r in rule_ids[:12]])}")
 
-            interpretation_lines: List[str] = [
-                "[Rule-Based Interpretation]",
-                f"- {conclusion}",
-            ]
+            interpretation_lines: List[str] = [conclusion]
             highlights = explanation.get("highlights") if isinstance(explanation, dict) else []
             if isinstance(highlights, list):
                 for h in highlights[:6]:
@@ -2936,7 +2969,7 @@ class EnhancedAIChatManager:
             if uncertainty_line:
                 interpretation_lines.append(f"- {uncertainty_line}")
 
-            suggestion_lines: List[str] = ["[Suggestions / Inference]"]
+            suggestion_lines: List[str] = []
             if row_count == 0:
                 suggestion_lines.append("- 当前查询命中为0，可尝试放宽时间范围、状态或模块筛选")
             if (safe_total is not None) and (safe_total > row_count) and int(sample_limit) > 0:
@@ -2951,10 +2984,19 @@ class EnhancedAIChatManager:
             if isinstance(cautions, list):
                 for c in cautions[:4]:
                     suggestion_lines.append(f"- {str(c)}")
-            if len(suggestion_lines) == 1:
-                suggestion_lines.append("- 当前证据支持基础结论，建议结合业务上下文复核")
 
-            return "\n".join(observed_lines + [""] + interpretation_lines + [""] + suggestion_lines)
+            # --- 用户可见部分：结论 + 建议 ---
+            user_facing = interpretation_lines[:]
+            if suggestion_lines:
+                user_facing.append("")
+                user_facing.extend(suggestion_lines)
+
+            # --- Observed Facts 仅 debug 启用时追加 ---
+            if _summary_debug_enabled():
+                user_facing.append("")
+                user_facing.extend(observed_lines)
+
+            return "\n".join(user_facing)
 
         def start_db_summary_streaming(task_id: str, question: str, conversation_history: List[Dict[str, Any]]):
             """摘要模式：优先走 Agent 统一 SQL 工具链，再按需降级。"""
@@ -3046,23 +3088,18 @@ class EnhancedAIChatManager:
                     except Exception as sem_err:
                         logger.debug(f"语义术语映射失败，继续使用原始问题: {sem_err}")
 
-                    scope_team = str(
-                        os.getenv("CHAT_SUMMARY_SCOPE_TEAM")
-                        or os.getenv("OCTANE_TEAM")
-                        or "DTSV_China"
-                    ).strip()
-                    if scope_team and scope_team.lower() not in {"*", "all", "any", "none", "off", "false", "0"}:
-                        existing_scope_team = str(semantic_hints.get("scope_team") or "").strip()
-                        if not existing_scope_team:
-                            semantic_hints["scope_team"] = scope_team
+                    scope_team_info = resolve_summary_scope_team(semantic_hints)
+                    scope_team = str(scope_team_info.get("scope_team") or "").strip()
+                    if scope_team:
+                        semantic_hints["scope_team"] = scope_team
                         _append_db_event(
                             kind="context_ready",
                             title="团队作用域已应用",
                             status="ok",
-                            summary=f"scope_team={str(semantic_hints.get('scope_team') or scope_team)}",
+                            summary=f"scope_team={scope_team}",
                             details={
-                                "scope_team": str(semantic_hints.get("scope_team") or scope_team),
-                                "source": "CHAT_SUMMARY_SCOPE_TEAM/OCTANE_TEAM/default",
+                                "scope_team": scope_team,
+                                "source": str(scope_team_info.get("source") or ""),
                             },
                         )
 
@@ -3079,6 +3116,7 @@ class EnhancedAIChatManager:
                     if raw_target_table == "octane_manual_runs":
                         target_table = "octane_manual_runs"
                     all_tables: List[str] = []
+                    schema_columns: List[str] = []
                     col_preview: List[str] = []
 
                     if tool_executor:
@@ -3089,14 +3127,19 @@ class EnhancedAIChatManager:
                             table_map = (schema_result or {}).get("tables") or {}
                             all_tables = [str(t) for t in table_map.keys()]
                             if target_table in table_map and isinstance(table_map.get(target_table), list):
-                                col_preview = [str((c or {}).get("name") or "") for c in table_map.get(target_table) if isinstance(c, dict)]
-                                col_preview = [c for c in col_preview if c][:30]
+                                schema_views = build_summary_schema_column_views(
+                                    [str((c or {}).get("name") or "") for c in table_map.get(target_table) if isinstance(c, dict)],
+                                    preview_limit=30,
+                                )
+                                schema_columns = list(schema_views.get("full") or [])
+                                col_preview = list(schema_views.get("preview") or [])
                         except Exception:
                             all_tables = []
+                            schema_columns = []
                             col_preview = []
                             local_fallback_reason = "schema工具失败"
 
-                    if not all_tables or not col_preview:
+                    if not all_tables or not schema_columns:
                         execution_path.append("schema:local")
                         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
                         conn.row_factory = sqlite3.Row
@@ -3134,7 +3177,9 @@ class EnhancedAIChatManager:
                                 columns.append(str(r[1]))
                             except Exception:
                                 continue
-                        col_preview = columns[:30]
+                        schema_views = build_summary_schema_column_views(columns, preview_limit=30)
+                        schema_columns = list(schema_views.get("full") or [])
+                        col_preview = list(schema_views.get("preview") or [])
                         conn.close()
 
                     _append_db_event(
@@ -3151,7 +3196,7 @@ class EnhancedAIChatManager:
 
                     query_strategy = decide_summary_query_execution_strategy(
                         question=normalized_question,
-                        columns=col_preview,
+                        columns=schema_columns,
                         semantic_hints=semantic_hints,
                     )
                     configured_mode = str(os.getenv("CHAT_SUMMARY_SQL_MODE") or "").strip().lower()
@@ -3193,7 +3238,7 @@ class EnhancedAIChatManager:
                         sql = build_deterministic_sql(
                             question=normalized_question,
                             table_name=target_table,
-                            columns=col_preview,
+                            columns=schema_columns,
                             semantic_hints=semantic_hints,
                             row_limit=summary_row_limit,
                         )
@@ -3240,7 +3285,7 @@ class EnhancedAIChatManager:
                         sql = build_deterministic_sql(
                             question=normalized_question,
                             table_name=target_table,
-                            columns=col_preview,
+                            columns=schema_columns,
                             semantic_hints=semantic_hints,
                             row_limit=summary_row_limit,
                         )
@@ -3311,7 +3356,7 @@ class EnhancedAIChatManager:
 
                     # 分析类问题若因噪声实体词导致零结果，先放宽实体词重试；仍为空则切换聚合模板再试一次。
                     if (not out_rows) and summary_sql_mode == "deterministic":
-                        retry_hints = extract_query_hints(normalized_question, col_preview, semantic_hints=semantic_hints)
+                        retry_hints = extract_query_hints(normalized_question, schema_columns, semantic_hints=semantic_hints)
                         analysis_like_intent = bool(
                             retry_hints.get("wants_analysis")
                             or retry_hints.get("wants_aida_dist")
@@ -3337,7 +3382,7 @@ class EnhancedAIChatManager:
                             broad_sql = build_deterministic_sql(
                                 question=normalized_question,
                                 table_name=target_table,
-                                columns=col_preview,
+                                columns=schema_columns,
                                 entity_tokens_override=[],
                                 semantic_hints=semantic_hints,
                                 row_limit=summary_row_limit,
@@ -3362,21 +3407,21 @@ class EnhancedAIChatManager:
                             if (not retry_rows) and analysis_like_intent:
                                 overview_sql = ""
                                 if target_table == "octane_defects":
-                                    if "severity_group" in col_preview:
+                                    if "severity_group" in schema_columns:
                                         overview_sql = (
                                             f'SELECT COALESCE(NULLIF(TRIM(CAST(severity_group AS TEXT)), ""), "未标注") AS severity, '
                                             "COUNT(*) AS defect_count "
                                             f'FROM "{target_table}" '
                                             "GROUP BY 1 ORDER BY defect_count DESC LIMIT 20"
                                         )
-                                    elif "severity" in col_preview:
+                                    elif "severity" in schema_columns:
                                         overview_sql = (
                                             f'SELECT COALESCE(NULLIF(TRIM(CAST(severity AS TEXT)), ""), "未标注") AS severity, '
                                             "COUNT(*) AS defect_count "
                                             f'FROM "{target_table}" '
                                             "GROUP BY 1 ORDER BY defect_count DESC LIMIT 20"
                                         )
-                                    elif "status_phase" in col_preview:
+                                    elif "status_phase" in schema_columns:
                                         overview_sql = (
                                             f'SELECT COALESCE(NULLIF(TRIM(CAST(status_phase AS TEXT)), ""), "未标注") AS status, '
                                             "COUNT(*) AS defect_count "
@@ -3384,7 +3429,7 @@ class EnhancedAIChatManager:
                                             "GROUP BY 1 ORDER BY defect_count DESC LIMIT 20"
                                         )
                                 elif target_table == "octane_manual_runs":
-                                    status_col = "run_status" if "run_status" in col_preview else ("status" if "status" in col_preview else "")
+                                    status_col = "run_status" if "run_status" in schema_columns else ("status" if "status" in schema_columns else "")
                                     if status_col:
                                         overview_sql = (
                                             f'SELECT COALESCE(NULLIF(TRIM(CAST({status_col} AS TEXT)), ""), "未标注") AS run_status, '

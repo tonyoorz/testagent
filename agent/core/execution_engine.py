@@ -1,8 +1,11 @@
+import logging
 import os
 from typing import Any, Callable, Dict, Optional
 
 from agent.core.agentic_runtime import build_tool_specs, run_agentic_loop
 from agent.core.conversation_runtime import serialize_plan_trace
+
+logger = logging.getLogger(__name__)
 
 
 class UnifiedExecutionEngine:
@@ -36,12 +39,38 @@ class UnifiedExecutionEngine:
 
         tools_schema = self.tool_executor.get_tool_schema() or {}
         tool_specs = build_tool_specs(tools_schema)
+
+        # ── Enrich data_summary with column stats + few-shot examples ──
+        data_summary = str(context.get('data_summary') or '')
+        try:
+            db_path = getattr(self.tool_executor, '_db_path', None)
+            if db_path:
+                from agent.core.column_stats_cache import get_column_stats_cache
+                stats_cache = get_column_stats_cache(db_path)
+                stats_context = stats_cache.build_prompt_context(max_tokens=600)
+                if stats_context:
+                    data_summary = stats_context + "\n\n" + data_summary
+                # 基于用户问题的值映射提示
+                value_hints = stats_cache.build_value_mapping_context(question)
+                if value_hints:
+                    data_summary += f"\n\n值映射提示: {value_hints}"
+        except Exception as exc:
+            logger.debug("column_stats enrichment skipped: %s", exc)
+
+        try:
+            from agent.core.few_shot_sql_library import build_few_shot_prompt
+            few_shot = build_few_shot_prompt(question)
+            if few_shot:
+                data_summary += "\n\n" + few_shot
+        except Exception as exc:
+            logger.debug("few-shot enrichment skipped: %s", exc)
+
         agentic_result = run_agentic_loop_fn(
             llm_client=llm_client,
             llm_model=llm_model,
             tool_specs=tool_specs,
             question=question,
-            data_summary=str(context.get('data_summary') or ''),
+            data_summary=data_summary,
             execute_tool=lambda tool_name, args: self.tool_executor.execute_tool(
                 tool_name,
                 prepared_data,

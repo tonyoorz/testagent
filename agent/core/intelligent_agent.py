@@ -71,16 +71,10 @@ from analysis_utils import (
     word_frequencies,
 )
 
-try:
-    from agent.tools.smart_tool_selector import (
-        SmartToolSelector,
-        create_smart_tool_selector,
-    )
-    SMART_TOOL_SELECTOR_AVAILABLE = True
-except Exception:
-    SmartToolSelector = None
-    create_smart_tool_selector = None
-    SMART_TOOL_SELECTOR_AVAILABLE = False
+# SmartToolSelector removed — LLM function-calling already selects tools.
+SmartToolSelector = None
+create_smart_tool_selector = None
+SMART_TOOL_SELECTOR_AVAILABLE = False
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -6250,8 +6244,7 @@ class _LegacyTaskPlanner:
                 'params': {'dataset': primary_dataset}
             })
 
-        if isinstance(context, dict):
-            steps = self._apply_smart_tool_selector(query=query, context=context, steps=steps)
+        # SmartToolSelector re-ranking removed — LLM function-calling handles tool selection.
 
         return steps
 
@@ -6439,13 +6432,7 @@ class IntelligentAgent:
             self.tool_executor = ToolExecutor(**tool_executor_kwargs)
         self.context_manager = IntelligentContextManager()
         self.smart_tool_selector = None
-        if SMART_TOOL_SELECTOR_AVAILABLE and create_smart_tool_selector:
-            try:
-                selector_db_path = os.path.join(PROJECT_ROOT, "database", "tool_performance.db")
-                self.smart_tool_selector = create_smart_tool_selector(db_path=selector_db_path)
-                logger.info("智能工具选择器初始化成功")
-            except Exception as e:
-                logger.warning(f"智能工具选择器初始化失败: {e}")
+        # SmartToolSelector removed — LLM function-calling handles tool selection.
         memory_enabled = os.getenv("AGENT_MEMORY_ENABLED", "0") == "1"
         memory_file = os.getenv("AGENT_MEMORY_FILE")
         if memory_enabled and not memory_file:
@@ -6699,6 +6686,7 @@ class IntelligentAgent:
                 question = str(pending.get("question") or question)
                 qtext = question.strip()
                 confirmed_now = True
+                self._pending_execution_confirmation = None
             else:
                 self._pending_execution_confirmation = None
 
@@ -6782,7 +6770,7 @@ class IntelligentAgent:
         early_confidence = float(analysis_inputs.get('early_confidence') or 0.0)
         clarification = analysis_inputs.get('clarification')
 
-        if clarification and early_confidence < 0.7:
+        if clarification and early_confidence < 0.7 and not confirmed_now:
             return self._normalize_response_payload({
                 "text": clarification,
                 "insights": [],

@@ -1044,6 +1044,8 @@ def build_deterministic_sql(
         scope_col = ""
         if table_name == "octane_manual_runs":
             scope_col = next((c for c in ["run_team", "team", "project", "tproject"] if c in cols), "")
+        elif table_name == "octane_defects":
+            scope_col = next((c for c in ["problem_finder_team", "team", "project", "tproject"] if c in cols), "")
         elif table_name == "octane_defect_histories":
             scope_col = next((c for c in ["team"] if c in cols), "")
         else:

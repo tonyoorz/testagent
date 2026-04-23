@@ -77,7 +77,19 @@ def run_agentic_loop(
     stop_reason = ""
     execution_rows: List[Dict[str, Any]] = []
 
+    # Lazy import context compaction
+    _compact_fn = None
+    try:
+        from agent.core.context_compaction import compact_conversation
+        _compact_fn = compact_conversation
+    except Exception:
+        pass
+
     for iteration in range(1, max_iters + 1):
+        # Compact context window when messages grow large
+        if _compact_fn and len(messages) > 8:
+            messages = _compact_fn(messages, keep_recent=6, max_tool_output_chars=500)
+
         response = llm_client.chat.completions.create(
             model=llm_model,
             messages=messages,

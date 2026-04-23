@@ -84,7 +84,8 @@ class TaskPlannerRegressionTests(unittest.TestCase):
         self.assertEqual(steps[0]["tool"], "groupby_aggregate")
         self.assertEqual(steps[0]["params"]["group_by"], "test_case")
 
-    def test_selector_can_reorder_risk_before_trend(self):
+    def test_selector_removed_steps_stay_in_plan_order(self):
+        """SmartToolSelector was removed — steps now keep their original plan order."""
         context = {
             "intents": ["trend", "risk"],
             "entities": {},
@@ -101,8 +102,9 @@ class TaskPlannerRegressionTests(unittest.TestCase):
         steps = planner.plan("请给我风险趋势", context)
 
         self.assertGreaterEqual(len(steps), 2)
-        self.assertEqual(steps[0]["tool"], "analyze_risk")
-        self.assertTrue(context.get("smart_tool_selector", {}).get("applied"))
+        # Without SmartToolSelector, trend comes before risk (plan order)
+        self.assertEqual(steps[0]["tool"], "analyze_trend")
+        self.assertFalse(context.get("smart_tool_selector", {}).get("applied", False))
 
 
 if __name__ == "__main__":

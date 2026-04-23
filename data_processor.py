@@ -488,6 +488,101 @@ def _normalize_project_value(value) -> str:
     return text
 
 
+def _normalize_project_signal(value) -> str:
+    text = "" if pd.isna(value) else str(value).strip()
+    if not text:
+        return ""
+
+    if text.lower() in {"unknown", "none", "nan", "null", "unknown/empty"}:
+        return ""
+
+    return _normalize_project_value(text)
+
+
+def _infer_project_from_ecu(ecu_value) -> str:
+    ecu_text = "" if pd.isna(ecu_value) else str(ecu_value).strip().upper()
+    if not ecu_text:
+        return ""
+
+    if ecu_text in {"CDE-01", "ICON-25", "BMTH-01", "IPN-10", "IPN-10_DE", "SD-AMAP"} or "IDCEVO" in ecu_text:
+        return "IDCEVO"
+    if "HU-MGU_02_A" in ecu_text or "IDC23" in ecu_text:
+        return "IDC"
+    if ecu_text == "SP_NAVINFO":
+        return "MGU"
+    if ecu_text == "BMT":
+        return "MGU"
+    if "HU-MGU_02_L" in ecu_text or "HU-MGU_01" in ecu_text or "MGU22" in ecu_text or "MGU21" in ecu_text or "MGU18" in ecu_text:
+        return "MGU"
+    if "RSE" in ecu_text or "RSU" in ecu_text:
+        return "RSU"
+    if "MY BMW" in ecu_text or "APP" in ecu_text or "MOBILE" in ecu_text:
+        return "App"
+
+    return ""
+
+
+def _infer_project_from_software_version(sw_value) -> str:
+    text = "" if pd.isna(sw_value) else str(sw_value).strip().upper()
+    if not text:
+        return ""
+
+    if "IDCEVO" in text:
+        return "IDCEVO"
+    if "IDC23" in text or "IDC_23" in text:
+        return "IDC"
+    if "MGU" in text:
+        return "MGU"
+    if "RSE" in text or "RSU" in text:
+        return "RSU"
+    return ""
+
+
+# lead_model → project: only models with ≥0.90 ratio and ≥50 samples in known defects
+_LEAD_MODEL_PROJECT_MAP = {
+    "NA6": "IDCEVO", "NA8": "IDCEVO", "G78": "IDCEVO",
+    "U12": "IDC", "G48": "IDC", "U11": "IDC", "J01": "IDC",
+    "F65": "IDC", "U25": "IDC", "G45": "IDC", "J05": "IDC",
+    "F78": "IDC", "F66": "IDC",
+    "G28": "MGU", "G20": "MGU",
+}
+
+
+def _infer_project_from_lead_model(lead_model_value) -> str:
+    text = "" if pd.isna(lead_model_value) else str(lead_model_value).strip()
+    if not text:
+        return ""
+    return _LEAD_MODEL_PROJECT_MAP.get(text, "")
+
+
+def _resolve_defect_project_value(row, app_top_aidas=None, rsu_top_aidas=None) -> str:
+    for field_name in ('_source_project', '_source_tproject', '_vin_project'):
+        normalized = _normalize_project_signal(row.get(field_name))
+        if normalized:
+            return normalized
+
+    top_aida = "" if pd.isna(row.get('top_aida')) else str(row.get('top_aida')).strip()
+    if top_aida:
+        if app_top_aidas and top_aida in app_top_aidas:
+            return 'App'
+        if rsu_top_aidas and top_aida in rsu_top_aidas:
+            return 'RSU'
+
+    ecu_project = _infer_project_from_ecu(row.get('ecu'))
+    if ecu_project:
+        return ecu_project
+
+    sw_project = _infer_project_from_software_version(row.get('software_version'))
+    if sw_project:
+        return sw_project
+
+    lm_project = _infer_project_from_lead_model(row.get('lead_model'))
+    if lm_project:
+        return lm_project
+
+    return 'Unknown'
+
+
 def _get_existing_columns(conn: sqlite3.Connection, table_name: str) -> List[str]:
     try:
         rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
@@ -1897,8 +1992,18 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
 
     # 加载VIN到项目的映射和VIN到Market的映射
     vin_to_project, vin_to_market = load_vin_project_mapping()
-    
-    # 初始化tproject列
+
+    if 'project' in ddf.columns:
+        ddf['_source_project'] = ddf['project']
+    else:
+        ddf['_source_project'] = ''
+
+    if 'tproject' in ddf.columns:
+        ddf['_source_tproject'] = ddf['tproject']
+    else:
+        ddf['_source_tproject'] = ''
+
+    ddf['_vin_project'] = ''
     ddf['project'] = ''
 
     if 'vin_udf' in ddf.columns:
@@ -1914,7 +2019,7 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
                         if vin.strip() in vin_to_project]
             return ', '.join(filter(None, projects))
 
-        ddf['project'] = ddf['vin_udf'].map(update_tproject)
+        ddf['_vin_project'] = ddf['vin_udf'].map(update_tproject)
         
         # 添加Market字段处理
         def update_market(vin_udf):
@@ -1965,32 +2070,28 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
     # --- top_aida 计算结束 ---
     
     # --- 新增：基于top_aida映射App/RSU项目 ---
-    print("开始根据top_aida映射App/RSU项目...")
+    print("开始根据多信号规则生成缺陷项目...")
     try:
         app_rsu_mapping = load_app_rsu_mapping()
         app_top_aidas = app_rsu_mapping.get('app', [])
         rsu_top_aidas = app_rsu_mapping.get('rsu', [])
-        
-        if 'top_aida' in ddf.columns:
-            # 将符合App条件的记录tproject设为'App'
-            if app_top_aidas:
-                app_mask = ddf['top_aida'].isin(app_top_aidas)
-                ddf.loc[app_mask, 'project'] = 'App'
-                print(f"已将 {app_mask.sum()} 条记录的project设为'App'")
-            
-            # 将符合RSU条件的记录project设为'RSU'
-            if rsu_top_aidas:
-                rsu_mask = ddf['top_aida'].isin(rsu_top_aidas)
-                ddf.loc[rsu_mask, 'project'] = 'RSU'
-                print(f"已将 {rsu_mask.sum()} 条记录的project设为'RSU'")
-                
-            print(f"项目分布: {ddf['project'].value_counts().to_dict()}")
-        else:
-            print("警告: 缺少 'top_aida' 列，无法映射App/RSU项目")
+
+        ddf['project'] = ddf.apply(
+            lambda row: _resolve_defect_project_value(
+                row,
+                app_top_aidas=app_top_aidas,
+                rsu_top_aidas=rsu_top_aidas,
+            ),
+            axis=1,
+        )
+        print(f"项目分布: {ddf['project'].value_counts().to_dict()}")
             
     except Exception as e:
-        print(f"警告: App/RSU项目映射过程中出错: {e}")
-    # --- App/RSU项目映射结束 ---
+        print(f"警告: 缺陷项目生成过程中出错: {e}")
+        ddf['project'] = ddf.apply(lambda row: _resolve_defect_project_value(row), axis=1)
+    # --- 缺陷项目生成结束 ---
+
+    ddf = ddf.drop(columns=['_source_project', '_source_tproject', '_vin_project'], errors='ignore')
 
     # 提取Matrix标签
     def extract_matrix(tags):

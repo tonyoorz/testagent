@@ -181,14 +181,17 @@ def execute_query_with_fix(
     explanation = result.get("business_explanation") if isinstance(result.get("business_explanation"), dict) else {}
 
     if tool_out.get("success") is True:
-        return {
-            "success": True,
-            "rows": rows,
-            "sql": sql_used,
-            "business_explanation": explanation,
-            "source": "query_sqlite_with_fix",
-            "error": "",
-        }
+        return validate_and_annotate(
+            {
+                "success": True,
+                "rows": rows,
+                "sql": sql_used,
+                "business_explanation": explanation,
+                "source": "query_sqlite_with_fix",
+                "error": "",
+            },
+            table_name=safe_table or "octane_defects",
+        )
 
     return {
         "success": False,
@@ -220,13 +223,16 @@ def execute_sql_rows(
                 result = tool_out.get("result") or {}
                 rows = _normalize_tool_rows(result.get("rows"), row_limit=normalized_limit)
                 sql_used = str(result.get("sql") or sql_clean)
-                return {
-                    "success": True,
-                    "rows": rows,
-                    "sql": sql_used,
-                    "source": "tool",
-                    "error": "",
-                }
+                return validate_and_annotate(
+                    {
+                        "success": True,
+                        "rows": rows,
+                        "sql": sql_used,
+                        "source": "tool",
+                        "error": "",
+                    },
+                    table_name=str(table_name or "octane_defects"),
+                )
             tool_error = str((tool_out or {}).get("error") or "run_sqlite_query_failed")
         except Exception as exc:
             tool_error = str(exc)
@@ -266,13 +272,16 @@ def execute_sql_rows(
             rows_local.append({k: item.get(k) for k in list(item.keys())[:18]})
 
         conn.close()
-        return {
-            "success": True,
-            "rows": rows_local,
-            "sql": sql_used,
-            "source": "local",
-            "error": tool_error,
-        }
+        return validate_and_annotate(
+            {
+                "success": True,
+                "rows": rows_local,
+                "sql": sql_used,
+                "source": "local",
+                "error": tool_error,
+            },
+            table_name=str(table_name or "octane_defects"),
+        )
     except Exception as exc:
         local_error = str(exc)
 
@@ -325,3 +334,36 @@ def compute_total_count(
         return None
 
     return None
+
+
+def validate_and_annotate(
+    result: Dict[str, Any],
+    *,
+    table_name: str = "octane_defects",
+) -> Dict[str, Any]:
+    """Post-execution validation wrapper.
+    
+    Runs query_result_validator on successful results and attaches
+    validation_issues + validation_summary to the result dict.
+    """
+    if not result.get("success") or not result.get("rows"):
+        return result
+
+    try:
+        from agent.core.query_result_validator import (
+            validate_sql_result,
+            format_validation_summary,
+        )
+
+        issues = validate_sql_result(
+            sql=result.get("sql", ""),
+            rows=result.get("rows", []),
+            table_name=table_name,
+        )
+        if issues:
+            result["validation_issues"] = [i.to_dict() for i in issues]
+            result["validation_summary"] = format_validation_summary(issues)
+    except Exception:
+        pass
+
+    return result

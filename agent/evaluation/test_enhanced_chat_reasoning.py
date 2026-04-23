@@ -1,8 +1,11 @@
 import unittest
+import os
+from unittest.mock import patch
 
 from agent.core.enhanced_ai_chat_manager import (
     apply_summary_query_strategy_override,
     append_stream_event_to_store,
+    build_summary_schema_column_views,
     build_stream_reasoning_content,
     build_summary_uncertainty_line,
     build_timeline_view_models,
@@ -10,11 +13,29 @@ from agent.core.enhanced_ai_chat_manager import (
     downgrade_unsupported_claims,
     format_total_count_display,
     infer_summary_evidence_gaps,
+    resolve_summary_scope_team,
     should_resume_pending_agent_confirmation,
 )
 
 
 class EnhancedChatReasoningTests(unittest.TestCase):
+    def test_build_summary_schema_column_views_keeps_full_schema_for_runtime(self):
+        columns = [f"col_{idx}" for idx in range(48)] + ["project", "tproject", "severity_group"]
+
+        views = build_summary_schema_column_views(columns, preview_limit=30)
+
+        self.assertEqual(len(views["preview"]), 30)
+        self.assertNotIn("project", views["preview"])
+        self.assertIn("project", views["full"])
+        self.assertIn("tproject", views["full"])
+
+    def test_resolve_summary_scope_team_returns_empty_without_env_or_hints(self):
+        with patch.dict(os.environ, {}, clear=True):
+            resolved = resolve_summary_scope_team({})
+
+        self.assertEqual(resolved.get("scope_team"), "")
+        self.assertEqual(resolved.get("source"), "")
+
     def test_format_total_count_display_uses_numeric_when_known(self):
         self.assertEqual(format_total_count_display(128), "128")
 
