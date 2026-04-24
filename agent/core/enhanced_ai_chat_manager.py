@@ -1,4 +1,4 @@
-"""
+﻿"""
 增强版 AI Chat Manager - 集成智能 Agent 系统
 
 在原有 AI Chat Manager 的基础上，添加以下增强功能：
@@ -122,8 +122,14 @@ except ImportError as e:
     EnhancedMemorySystem = None
     logger.warning(f"Enhanced Memory System not available: {e}")
 
-# SmartToolSelector removed — LLM function-calling already selects tools.
-SMART_TOOL_SELECTOR_AVAILABLE = False
+try:
+    from agent.tools.smart_tool_selector import create_smart_tool_selector, SmartToolSelector
+    SMART_TOOL_SELECTOR_AVAILABLE = True
+    logger.info("Smart Tool Selector loaded")
+except ImportError as e:
+    SMART_TOOL_SELECTOR_AVAILABLE = False
+    SmartToolSelector = None
+    logger.warning(f"Smart Tool Selector not available: {e}")
 
 try:
     from agent.core.explainable_agent import create_explainable_agent, ExplainableAgent
@@ -917,8 +923,15 @@ class EnhancedAIChatManager:
             except Exception as e:
                 logger.error(f"Failed to initialize memory system: {e}")
         
-        # SmartToolSelector removed — LLM function-calling handles tool selection.
-
+        # Initialize tool selector
+        if SMART_TOOL_SELECTOR_AVAILABLE:
+            try:
+                db_path = os.path.join(PROJECT_ROOT, 'database', 'tool_performance.db')
+                self.tool_selector = create_smart_tool_selector(db_path=db_path)
+                logger.info("Tool selector initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize tool selector: {e}")
+        
         # Initialize explainable agent
         if EXPLAINABLE_AGENT_AVAILABLE:
             try:
@@ -1026,6 +1039,58 @@ class EnhancedAIChatManager:
                 'proactive_insight': "请做主动洞察"
             }
         }
+
+    def _get_chat_model_options(self) -> List[str]:
+        env_raw = str(os.getenv("CHAT_MODEL_OPTIONS") or "").strip()
+        env_models = [m.strip() for m in env_raw.split(",") if str(m).strip()] if env_raw else []
+        defaults = [
+            str(DEEPSEEK_MODEL or "").strip(),
+            "glm-5",
+            "qwen3.5-397b-a17b",
+            "deepseek-v3.2",
+        ]
+        merged = env_models + defaults
+        seen = set()
+        ordered: List[str] = []
+        for model_name in merged:
+            name = str(model_name or "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(name)
+        return ordered or ["glm-5"]
+
+    def _get_default_chat_model(self) -> str:
+        options = self._get_chat_model_options()
+        current = str(getattr(self.chatbot, "model", "") or "").strip() if getattr(self, "chatbot", None) else ""
+        if current:
+            for opt in options:
+                if str(opt).strip().lower() == current.lower():
+                    return opt
+        return options[0]
+
+    def _get_internal_endpoint_for_model(self, model_name: str) -> str:
+        raw_map = str(os.getenv("CHAT_MODEL_ENDPOINTS") or "").strip()
+        endpoint_map: Dict[str, str] = {}
+        if raw_map:
+            try:
+                parsed = json.loads(raw_map)
+                if isinstance(parsed, dict):
+                    endpoint_map = {str(k).strip().lower(): str(v).strip() for k, v in parsed.items() if str(k).strip() and str(v).strip()}
+            except Exception:
+                logger.warning("CHAT_MODEL_ENDPOINTS 解析失败，忽略该配置")
+
+        if not endpoint_map:
+            endpoint_map = {
+                "deepseek-v3.2": "https://aistudio.bmwbrill.cn/api/service/160/{access_code}/llama4/v2/chat/completions",
+                "qwen3.5-397b-a17b": "https://aistudio.bmwbrill.cn/api/service/164/ernie/v2/chat/completions",
+            }
+
+        key = str(model_name or "").strip().lower()
+        return str(endpoint_map.get(key) or "").strip()
 
     def _normalize_proactive_insight_entry(
         self,
@@ -1409,9 +1474,6 @@ class EnhancedAIChatManager:
                     intents=intents,
                     trace=trace,
                     metadata={'tools_used': result.get('tools_used', [])},
-                    sql_used=str(trace.get('sql_used') or trace.get('sql') or ''),
-                    row_count=int(trace.get('row_count') or trace.get('sample_count') or 0),
-                    columns_accessed=list(trace.get('key_fields') or []),
                 )
 
             return {
@@ -1829,6 +1891,8 @@ class EnhancedAIChatManager:
 
         # UI 默认选中 Agent（数据库直读）模式，避免首次进入直接落到 Skill 工具链。
         default_mode = "summary"
+        chat_model_options = self._get_chat_model_options()
+        default_chat_model = self._get_default_chat_model()
 
         # 构建界面
         interface = html.Div([
@@ -1893,7 +1957,18 @@ class EnhancedAIChatManager:
                         "检测重复提票",
                         style={'fontSize': '11px', 'color': '#6b7280', 'marginLeft': '5px'}
                     )
-                ], style={'display': 'flex', 'alignItems': 'center'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '8px'}),
+                html.Div([
+                    html.Span("Model", style={'fontSize': '11px', 'color': '#4b5563', 'fontWeight': '600'}),
+                    dcc.Dropdown(
+                        id=f'{chat_id_prefix}-model-select',
+                        options=[{'label': m, 'value': m} for m in chat_model_options],
+                        value=default_chat_model,
+                        clearable=False,
+                        searchable=False,
+                        style={'width': '230px', 'fontSize': '12px'}
+                    )
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px', 'marginLeft': 'auto'})
             ], style={
                 'display': 'flex',
                 'alignItems': 'center',
@@ -1927,7 +2002,7 @@ class EnhancedAIChatManager:
                     type='text',
                     placeholder='请输入您的问题...',
                     style={
-                        'width': '84%',
+                        'flex': '1',
                         'padding': '9px 10px',
                         'marginRight': '8px',
                         'borderRadius': '8px',
@@ -1942,18 +2017,37 @@ class EnhancedAIChatManager:
                     id=f'{chat_id_prefix}-send-button',
                     n_clicks=0,
                     style={
-                        'width': '14%',
-                        'padding': '9px 10px',
+                        'padding': '9px 14px',
                         'backgroundColor': '#3498db',
                         'color': 'white',
                         'border': 'none',
                         'borderRadius': '8px',
                         'cursor': 'pointer',
                         'fontSize': '13px',
-                        'fontWeight': 'bold'
+                        'fontWeight': 'bold',
+                        'whiteSpace': 'nowrap'
+                    }
+                ),
+                html.Button(
+                    [html.I(className="fas fa-stop-circle", style={'marginRight': '5px'}), '停止'],
+                    id=f'{chat_id_prefix}-stop-button',
+                    n_clicks=0,
+                    disabled=True,
+                    style={
+                        'padding': '9px 14px',
+                        'backgroundColor': '#e74c3c',
+                        'color': 'white',
+                        'border': 'none',
+                        'borderRadius': '8px',
+                        'cursor': 'pointer',
+                        'fontSize': '13px',
+                        'fontWeight': 'bold',
+                        'marginLeft': '6px',
+                        'whiteSpace': 'nowrap',
+                        'opacity': '0.4'
                     }
                 )
-            ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '6px'}),
+            ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '6px', 'gap': '0'}),
 
             # 预设问题
             html.Div([
@@ -2606,7 +2700,8 @@ class EnhancedAIChatManager:
 
         def start_llm_streaming(task_id: str, question: str, current_data: Any,
                                 conversation_history: List[Dict[str, Any]],
-                                chat_mode: str = "summary"):
+                                chat_mode: str = "summary",
+                                selected_model: Optional[str] = None):
             # pure 模式用于直连LLM验证，不做数据库摘要兜底。
             if chat_mode != "pure" and not self._has_data(current_data):
                 db_summary = _build_db_profile_summary(question)
@@ -2654,7 +2749,8 @@ class EnhancedAIChatManager:
                 summary=f"模式 {chat_mode}",
             )
 
-            self.chatbot.start_optimized_streaming_thread(
+            model_chatbot = _chatbot_for_model(selected_model)
+            model_chatbot.start_optimized_streaming_thread(
                 messages,
                 task_id=task_id,
                 temperature=DEFAULT_TEMPERATURE,
@@ -2754,13 +2850,15 @@ class EnhancedAIChatManager:
                 streaming_data[task_id]['last_update'] = time.time()
 
         def _safe_chat_completion(task_id: str, messages: List[Dict[str, str]], temperature: float,
-                                  max_tokens: int, stage_text: str) -> str:
+                                  max_tokens: int, stage_text: str,
+                                  selected_model: Optional[str] = None) -> str:
             """调用LLM时做容错，避免摘要模式因单次请求异常而整体失败。"""
-            if not self.chatbot or not hasattr(self.chatbot, 'chat_completion'):
+            model_chatbot = _chatbot_for_model(selected_model)
+            if not model_chatbot or not hasattr(model_chatbot, 'chat_completion'):
                 return ""
 
             try:
-                return str(self.chatbot.chat_completion(messages, temperature=temperature, max_tokens=max_tokens) or "").strip()
+                return str(model_chatbot.chat_completion(messages, temperature=temperature, max_tokens=max_tokens) or "").strip()
             except Exception as e:
                 logger.warning(f"摘要模式LLM调用失败({stage_text}): {e}")
                 append_stream_event(
@@ -2945,7 +3043,6 @@ class EnhancedAIChatManager:
             evidence_gaps = bundle.get("evidence_gap") if isinstance(bundle.get("evidence_gap"), list) else []
             uncertainty_line = build_summary_uncertainty_line(evidence_gaps)
 
-            # --- Observed Facts: 仅在 debug 模式下附加，不直接呈现给用户 ---
             observed_lines: List[str] = [
                 "[Observed Facts]",
                 f"- total_count: {total_count_display}",
@@ -2961,7 +3058,10 @@ class EnhancedAIChatManager:
             if rule_ids:
                 observed_lines.append(f"- rule_ids: {', '.join([str(r) for r in rule_ids[:12]])}")
 
-            interpretation_lines: List[str] = [conclusion]
+            interpretation_lines: List[str] = [
+                "[Rule-Based Interpretation]",
+                f"- {conclusion}",
+            ]
             highlights = explanation.get("highlights") if isinstance(explanation, dict) else []
             if isinstance(highlights, list):
                 for h in highlights[:6]:
@@ -2969,7 +3069,7 @@ class EnhancedAIChatManager:
             if uncertainty_line:
                 interpretation_lines.append(f"- {uncertainty_line}")
 
-            suggestion_lines: List[str] = []
+            suggestion_lines: List[str] = ["[Suggestions / Inference]"]
             if row_count == 0:
                 suggestion_lines.append("- 当前查询命中为0，可尝试放宽时间范围、状态或模块筛选")
             if (safe_total is not None) and (safe_total > row_count) and int(sample_limit) > 0:
@@ -2984,21 +3084,13 @@ class EnhancedAIChatManager:
             if isinstance(cautions, list):
                 for c in cautions[:4]:
                     suggestion_lines.append(f"- {str(c)}")
+            if len(suggestion_lines) == 1:
+                suggestion_lines.append("- 当前证据支持基础结论，建议结合业务上下文复核")
 
-            # --- 用户可见部分：结论 + 建议 ---
-            user_facing = interpretation_lines[:]
-            if suggestion_lines:
-                user_facing.append("")
-                user_facing.extend(suggestion_lines)
+            return "\n".join(observed_lines + [""] + interpretation_lines + [""] + suggestion_lines)
 
-            # --- Observed Facts 仅 debug 启用时追加 ---
-            if _summary_debug_enabled():
-                user_facing.append("")
-                user_facing.extend(observed_lines)
-
-            return "\n".join(user_facing)
-
-        def start_db_summary_streaming(task_id: str, question: str, conversation_history: List[Dict[str, Any]]):
+        def start_db_summary_streaming(task_id: str, question: str, conversation_history: List[Dict[str, Any]],
+                           selected_model: Optional[str] = None):
             """摘要模式：优先走 Agent 统一 SQL 工具链，再按需降级。"""
             def worker():
                 target_table = ""
@@ -3603,7 +3695,8 @@ class EnhancedAIChatManager:
                         messages=ans_messages,
                         temperature=0.2,
                         max_tokens=1200,
-                        stage_text='答案生成'
+                        stage_text='答案生成',
+                        selected_model=selected_model,
                     )
 
                     # 第一次失败时，自动降采样重试，减少上下文负载造成的失败概率。
@@ -3639,7 +3732,8 @@ class EnhancedAIChatManager:
                             messages=retry_messages,
                             temperature=0.2,
                             max_tokens=800,
-                            stage_text='答案生成重试'
+                            stage_text='答案生成重试',
+                            selected_model=selected_model,
                         )
 
                     if not answer:
@@ -3820,7 +3914,22 @@ class EnhancedAIChatManager:
                 logger.warning(f"数据库摘要生成失败: {e}")
                 return ""
 
-        def start_duplicate_check_streaming(task_id: str, question: str, current_data: Any, conversation_history: List[Dict[str, Any]]):
+        def _chatbot_for_model(selected_model: Optional[str]):
+            model_name = str(selected_model or "").strip()
+            if not model_name:
+                return self.chatbot
+            try:
+                internal_endpoint = self._get_internal_endpoint_for_model(model_name)
+                if internal_endpoint:
+                    return DeepSeekStreamingChat(model=model_name, internal_template_url=internal_endpoint)
+                return DeepSeekStreamingChat(model=model_name)
+            except Exception as e:
+                logger.warning(f"按模型创建聊天实例失败({model_name})，回退默认实例: {e}")
+                return self.chatbot
+
+        def start_duplicate_check_streaming(task_id: str, question: str, current_data: Any,
+                            conversation_history: List[Dict[str, Any]],
+                            selected_model: Optional[str] = None):
             df: pd.DataFrame = pd.DataFrame()
             if isinstance(current_data, pd.DataFrame) and not current_data.empty:
                 df = current_data
@@ -3841,7 +3950,8 @@ class EnhancedAIChatManager:
             index = get_or_build_index(cache_key=f"duplicate:{self.dashboard_type}", df=df)
             candidates = index.search(question, hints=hints, top_k=10)
 
-            local_only = not getattr(self.chatbot, "client", None) and not getattr(self.chatbot, "backup_api_key", "")
+            model_chatbot = _chatbot_for_model(selected_model)
+            local_only = not getattr(model_chatbot, "client", None) and not getattr(model_chatbot, "backup_api_key", "")
             if local_only:
                 best = max((c.score_1_10 for c in candidates), default=0)
                 if best >= 8:
@@ -3889,7 +3999,7 @@ class EnhancedAIChatManager:
                     with streaming_lock:
                         streaming_data[task_id]['status'] = 'processing'
                         streaming_data[task_id]['response'] = partial
-                        streaming_data[task_id]['progress'] = '正在输出结果...'
+                        streaming_data[task_id]['progress'] = 'SiSi正在回答...'
                         streaming_data[task_id]['last_update'] = time.time()
                     time.sleep(0.02)
                 with streaming_lock:
@@ -3930,7 +4040,7 @@ class EnhancedAIChatManager:
                     messages.append({"role": msg['role'], "content": content})
             messages.append({"role": "user", "content": question})
 
-            self.chatbot.start_optimized_streaming_thread(
+            model_chatbot.start_optimized_streaming_thread(
                 messages,
                 task_id=task_id,
                 temperature=0.2,
@@ -3945,7 +4055,8 @@ class EnhancedAIChatManager:
              Output(f'{chat_id_prefix}-update-interval', 'disabled'),
              Output(f'{chat_id_prefix}-status', 'children'),
              Output(f'{chat_id_prefix}-agent-results', 'data'),
-             Output(f'{chat_id_prefix}-conversation-state', 'data')],
+             Output(f'{chat_id_prefix}-conversation-state', 'data'),
+             Output(f'{chat_id_prefix}-stop-button', 'disabled')],
             [Input(f'{chat_id_prefix}-send-button', 'n_clicks'),
              Input(f'{chat_id_prefix}-input', 'n_submit'),
              Input(f'{chat_id_prefix}-clear-button', 'n_clicks')] +
@@ -3958,21 +4069,23 @@ class EnhancedAIChatManager:
              State(f'{chat_id_prefix}-chat-mode', 'value'),
              State(f'{chat_id_prefix}-known-issues', 'value'),
              State(f'{chat_id_prefix}-agent-results', 'data'),
-             State(f'{chat_id_prefix}-conversation-state', 'data')]
+             State(f'{chat_id_prefix}-conversation-state', 'data'),
+             State(f'{chat_id_prefix}-model-select', 'value')]
         )
         def handle_enhanced_chat(*args):
             send_clicks = args[0]
             input_submit = args[1]
             clear_clicks = args[2]
-            preset_clicks = args[3:-8]
-            input_value = args[-8]
-            chat_messages = _trim_chat_messages(args[-7] or [])
-            streaming_state = args[-6] or {'active': False, 'task_id': None}
-            filtered_data = args[-5]
-            chat_mode = (args[-4] or "summary")
-            known_issues_checked = args[-3] or []
-            prior_agent_results = dict(args[-2] or {})
-            conversation_state = args[-1] or self._create_initial_conversation_state()
+            preset_clicks = args[3:-9]
+            input_value = args[-9]
+            chat_messages = _trim_chat_messages(args[-8] or [])
+            streaming_state = args[-7] or {'active': False, 'task_id': None}
+            filtered_data = args[-6]
+            chat_mode = (args[-5] or "summary")
+            known_issues_checked = args[-4] or []
+            prior_agent_results = dict(args[-3] or {})
+            conversation_state = args[-2] or self._create_initial_conversation_state()
+            selected_model = str(args[-1] or "").strip() or self._get_default_chat_model()
 
             ctx = callback_context
             if not ctx.triggered:
@@ -3993,14 +4106,14 @@ class EnhancedAIChatManager:
                     'margin': '8px 0',
                     'border': '1px solid #e9ecef'
                 })
-                return [initial_message], "", [], {'active': False, 'task_id': None}, True, "", {}, self._create_initial_conversation_state()
+                return [initial_message], "", [], {'active': False, 'task_id': None}, True, "", {}, self._create_initial_conversation_state(), True
 
             if streaming_state.get('active'):
                 status_display = html.Div([
                     html.I(className="fas fa-spinner fa-spin", style={'marginRight': '8px', 'color': '#3498db'}),
                     html.Span("上一条消息正在生成中，请稍候…（可点击“清空”重置）", style={'color': '#666'})
                 ])
-                return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, status_display, dash.no_update, dash.no_update
+                return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, status_display, dash.no_update, dash.no_update, dash.no_update
 
             use_known_issues = 'known' in (known_issues_checked or [])
 
@@ -4054,7 +4167,7 @@ class EnhancedAIChatManager:
                     })
                     chat_messages = _trim_chat_messages(chat_messages)
                     chat_history_children = render_chat_history(chat_messages)
-                    return chat_history_children, "", chat_messages, {'active': False, 'task_id': None}, True, "", {}, conversation_state
+                    return chat_history_children, "", chat_messages, {'active': False, 'task_id': None}, True, "", {}, conversation_state, True
 
                 # 添加用户消息
                 chat_messages.append({"role": "user", "content": user_message})
@@ -4120,6 +4233,7 @@ class EnhancedAIChatManager:
                     'response': '',
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'started_at': time.time(),
+                    'selected_model': selected_model,
                     'progress': f"{route_trace.get('handler_label', 'AI')} 正在初始化...",
                     'chunk_buffer': '',
                     'events': [],
@@ -4161,14 +4275,14 @@ class EnhancedAIChatManager:
             if route_decision.handler == HarnessRouteHandler.KNOWN_ISSUE:
                 with streaming_lock:
                     if task_id in streaming_data:
-                        streaming_data[task_id]['progress'] = '正在检索已知问题...'
-                start_duplicate_check_streaming(task_id, user_message, current_data, chat_messages)
+                        streaming_data[task_id]['progress'] = 'SiSi正在检索已知问题...'
+                start_duplicate_check_streaming(task_id, user_message, current_data, chat_messages, selected_model=selected_model)
             elif route_decision.handler == HarnessRouteHandler.DIFY_WORKFLOW:
                 start_dify_streaming(task_id, user_message, current_data)
             elif route_decision.handler == HarnessRouteHandler.CONFLUENCE:
                 start_confluence_streaming(task_id, user_message, current_data)
             elif route_decision.handler == HarnessRouteHandler.DATABASE_SUMMARY:
-                start_db_summary_streaming(task_id, user_message, chat_messages)
+                start_db_summary_streaming(task_id, user_message, chat_messages, selected_model=selected_model)
             elif route_decision.handler == HarnessRouteHandler.SKILL_AGENT:
                 start_agent_streaming(
                     task_id,
@@ -4179,13 +4293,20 @@ class EnhancedAIChatManager:
                     normalized_extra_context,
                 )
             else:
-                start_llm_streaming(task_id, user_message, current_data, chat_messages, chat_mode=route_decision.llm_mode)
+                start_llm_streaming(
+                    task_id,
+                    user_message,
+                    current_data,
+                    chat_messages,
+                    chat_mode=route_decision.llm_mode,
+                    selected_model=selected_model,
+                )
 
             streaming_state = {'active': True, 'task_id': task_id}
 
             chat_history_children = render_chat_history(chat_messages)
             interval_disabled = not streaming_state.get('active')
-            return chat_history_children, "", chat_messages, streaming_state, interval_disabled, status_display, agent_results, conversation_state
+            return chat_history_children, "", chat_messages, streaming_state, interval_disabled, status_display, agent_results, conversation_state, False
 
         @app.callback(
             [Output(f'{chat_id_prefix}-history', 'children', allow_duplicate=True),
@@ -4194,7 +4315,8 @@ class EnhancedAIChatManager:
              Output(f'{chat_id_prefix}-update-interval', 'disabled', allow_duplicate=True),
              Output(f'{chat_id_prefix}-status', 'children', allow_duplicate=True),
              Output(f'{chat_id_prefix}-agent-results', 'data', allow_duplicate=True),
-             Output(f'{chat_id_prefix}-conversation-state', 'data', allow_duplicate=True)],
+             Output(f'{chat_id_prefix}-conversation-state', 'data', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-stop-button', 'disabled', allow_duplicate=True)],
             [Input(f'{chat_id_prefix}-update-interval', 'n_intervals')],
             [State(f'{chat_id_prefix}-messages', 'data'),
              State(f'{chat_id_prefix}-streaming-state', 'data'),
@@ -4228,7 +4350,7 @@ class EnhancedAIChatManager:
                 chat_history_children = render_chat_history(chat_messages)
                 interval_disabled = True
                 status_display = ""
-                return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, agent_results, conversation_state
+                return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, agent_results, conversation_state, True
 
             max_stale_seconds = 300
             try:
@@ -4280,7 +4402,7 @@ class EnhancedAIChatManager:
                             break
 
             response_content = stream_data.get('response') or ''
-            if response_index != -1 and status == 'completed':
+            if response_index != -1 and (response_content or status == 'completed'):
                 chat_messages[response_index]["content"] = response_content
             chat_messages = _trim_chat_messages(chat_messages)
 
@@ -4324,6 +4446,16 @@ class EnhancedAIChatManager:
                         logger.info(f"Cleaned up streaming data for failed task {task_id}")
                 status_display = ""
 
+            if status == 'stopped':
+                if response_index != -1:
+                    partial = str(stream_data.get('response') or '').strip()
+                    chat_messages[response_index]["content"] = (partial + "\n\n⏹ 已手动停止。") if partial else "⏹ 已手动停止。"
+                streaming_state = {'active': False, 'task_id': None}
+                with streaming_lock:
+                    if task_id in streaming_data:
+                        del streaming_data[task_id]
+                status_display = ""
+
             if status == 'completed':
                 streaming_state = {'active': False, 'task_id': None}
                 # Clean up streaming data to prevent memory leak
@@ -4335,7 +4467,27 @@ class EnhancedAIChatManager:
 
             chat_history_children = render_chat_history(chat_messages)
             interval_disabled = not streaming_state.get('active')
-            return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, updated_agent_results, updated_conversation_state
+            return chat_history_children, chat_messages, streaming_state, interval_disabled, status_display, updated_agent_results, updated_conversation_state, not streaming_state.get('active')
+
+        @app.callback(
+            [Output(f'{chat_id_prefix}-streaming-state', 'data', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-update-interval', 'disabled', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-status', 'children', allow_duplicate=True),
+             Output(f'{chat_id_prefix}-stop-button', 'disabled', allow_duplicate=True)],
+            [Input(f'{chat_id_prefix}-stop-button', 'n_clicks')],
+            [State(f'{chat_id_prefix}-streaming-state', 'data')],
+            prevent_initial_call=True
+        )
+        def handle_stop_button(n_clicks, streaming_state):
+            if not n_clicks:
+                raise PreventUpdate
+            task_id = (streaming_state or {}).get('task_id')
+            if task_id:
+                with streaming_lock:
+                    if task_id in streaming_data:
+                        streaming_data[task_id]['status'] = 'stopped'
+                        streaming_data[task_id]['last_update'] = time.time()
+            return {'active': False, 'task_id': None}, True, "", True
 
     def _format_agent_message(self, text: str, tools_used: List[str], insights: List[str]) -> str:
         parts = []

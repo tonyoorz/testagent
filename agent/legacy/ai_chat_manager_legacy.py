@@ -96,11 +96,13 @@ streaming_lock = threading.Lock()
 class DeepSeekStreamingChat:
     """优化的DeepSeek流式聊天类，支持推理过程显示和性能优化"""
     
-    def __init__(self, api_key: str = None, model: str = DEEPSEEK_MODEL, api_base: str = None):
+    def __init__(self, api_key: str = None, model: str = DEEPSEEK_MODEL, api_base: str = None,
+                 internal_template_url: Optional[str] = None):
         self.api_key = api_key or DEEPSEEK_API_KEY
         self.access_code = ACCESS_CODE
         self.model = model
         self.api_base = api_base or DEEPSEEK_API_BASE
+        self.internal_template_url = str(internal_template_url or "").strip()
         self.client = self._create_client(self.api_key, self.api_base) if self._should_use_openai_client(self.api_key, self.api_base) else None
         self.response_queue = queue.Queue()
         self.streaming_active = False
@@ -160,7 +162,7 @@ class DeepSeekStreamingChat:
         return bool(self._extract_access_code())
 
     def _resolve_internal_template_url(self) -> str:
-        tmpl = os.environ.get("DEEPSEEK_INTERNAL_TEMPLATE_URL") or INTERNAL_TEMPLATE_URL
+        tmpl = self.internal_template_url or os.environ.get("DEEPSEEK_INTERNAL_TEMPLATE_URL") or INTERNAL_TEMPLATE_URL
         code = self._extract_access_code()
         if not code:
             raise ValueError("未配置 access code，无法调用内网模板接口")
@@ -211,6 +213,50 @@ class DeepSeekStreamingChat:
                 return str(obj.get(k)).strip()
 
         return json.dumps(obj, ensure_ascii=False)
+
+    def _stream_internal_template(self, messages: List[Dict[str, str]],
+                                    temperature: float, max_tokens: int) -> Generator[str, None, None]:
+        """真正的 SSE 流式请求内网 GLM 接口，逐块 yield 文本。"""
+        url = self._resolve_internal_template_url()
+        access_code = self._extract_access_code()
+        if not access_code:
+            raise ValueError("未配置 access code，无法调用内网GLM流式接口")
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self._resolve_temperature(temperature, self.model, self.api_base),
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        headers = {
+            "accept": "text/event-stream",
+            "Content-Type": "application/json",
+            "Authorization": f"ACCESSCODE {access_code}",
+        }
+        timeout_sec = float(os.environ.get("DEEPSEEK_INTERNAL_TIMEOUT", "120"))
+        resp = requests.post(url, headers=headers, json=payload,
+                             timeout=timeout_sec, stream=True, verify=False)
+        resp.raise_for_status()
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            if line.startswith("data:"):
+                raw = line[5:].strip()
+            else:
+                raw = line.strip()
+            if not raw or raw == "[DONE]":
+                continue
+            try:
+                obj = json.loads(raw)
+            except Exception:
+                continue
+            choices = obj.get("choices") if isinstance(obj, dict) else None
+            if not isinstance(choices, list) or not choices:
+                continue
+            delta = (choices[0] or {}).get("delta") or {}
+            chunk = delta.get("content") or ""
+            if chunk:
+                yield chunk
 
     def _probe_non_stream_error(self, messages: List[Dict[str, str]], temperature: float, max_tokens: int) -> str:
         """在SDK返回结构异常时，直接探测原始HTTP返回，给出可读错误。"""
@@ -347,6 +393,9 @@ class DeepSeekStreamingChat:
             yield f"error:{error_msg}"
     
     def _try_stream(self, messages, task_id, temperature, max_tokens, use_backup=False):
+        # Read response_prefix written by the caller (e.g., known-issue prelude)
+        with streaming_lock:
+            _prefix = str((streaming_data.get(task_id) or {}).get('response_prefix', ''))
         # 切换API参数
         if use_backup:
             if not self.backup_api_key:
@@ -358,7 +407,7 @@ class DeepSeekStreamingChat:
                 if task_id in streaming_data:
                     streaming_data[task_id].update({
                         'status': 'processing',
-                        'progress': 'AI正在连接(备用)...',
+                        'progress': 'SiSi正在思考...',
                         'last_update': time.time()
                     })
                 else:
@@ -367,14 +416,14 @@ class DeepSeekStreamingChat:
                         'reasoning': '',
                         'response': '',
                         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'progress': 'AI正在连接(备用)...',
+                        'progress': 'SiSi正在思考...',
                         'chunk_buffer': '',
                         'last_update': time.time()
                     }
             
             # 备用API流式处理
             reasoning_content = ""
-            content = ""
+            content = _prefix
             chunk_buffer = ""
             last_yield_time = time.time()
             reasoning_yielded = False
@@ -394,7 +443,7 @@ class DeepSeekStreamingChat:
                         reasoning_content += reasoning_chunk
                         with streaming_lock:
                             streaming_data[task_id]['reasoning'] = reasoning_content
-                            streaming_data[task_id]['progress'] = 'AI正在深度思考(备用)...'
+                            streaming_data[task_id]['progress'] = 'SiSi正在思考...'
                             streaming_data[task_id]['last_update'] = current_time
                         # 持续yield推理内容更新
                         yield f"reasoning:{reasoning_content}"
@@ -408,7 +457,7 @@ class DeepSeekStreamingChat:
                         if (current_time - last_yield_time > 0.05) or len(chunk_buffer) >= 5:
                             with streaming_lock:
                                 streaming_data[task_id]['response'] = content
-                                streaming_data[task_id]['progress'] = 'AI正在回答(备用)...'
+                                streaming_data[task_id]['progress'] = 'SiSi正在回答...'
                                 streaming_data[task_id]['chunk_buffer'] = chunk_buffer
                                 streaming_data[task_id]['last_update'] = current_time
                             
@@ -440,32 +489,49 @@ class DeepSeekStreamingChat:
                     streaming_data.setdefault(task_id, {})
                     streaming_data[task_id].update({
                         'status': 'processing',
-                        'progress': 'AI正在连接(v3.2模板)...',
+                        'progress': 'SiSi正在思考...',
                         'last_update': time.time(),
                     })
 
-                full_text = self._request_internal_template_nonstream(
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-                full_text = str(full_text or "")
-
-                content = ""
+                content = _prefix
                 chunk_buf = ""
                 last_emit = time.time()
-                for ch in full_text:
-                    content += ch
-                    chunk_buf += ch
-                    now = time.time()
-                    if len(chunk_buf) >= 24 or (now - last_emit) > 0.05:
-                        with streaming_lock:
-                            streaming_data[task_id]['response'] = content
-                            streaming_data[task_id]['progress'] = 'AI正在回答(v3.2模板)...'
-                            streaming_data[task_id]['last_update'] = now
-                        yield f"content:{chunk_buf}"
-                        chunk_buf = ""
-                        last_emit = now
+                try:
+                    for chunk_text in self._stream_internal_template(
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    ):
+                        content += chunk_text
+                        chunk_buf += chunk_text
+                        now = time.time()
+                        if len(chunk_buf) >= 20 or (now - last_emit) > 0.04:
+                            with streaming_lock:
+                                streaming_data[task_id]['response'] = content
+                                streaming_data[task_id]['progress'] = 'SiSi正在回答...'
+                                streaming_data[task_id]['last_update'] = now
+                            yield f"content:{chunk_buf}"
+                            chunk_buf = ""
+                            last_emit = now
+                except Exception as stream_err:
+                    # 流式失败降级为非流式
+                    logger.warning(f"GLM流式请求失败，降级为非流式: {stream_err}")
+                    full_text = self._request_internal_template_nonstream(
+                        messages=messages, temperature=temperature, max_tokens=max_tokens,
+                    )
+                    full_text = str(full_text or "")
+                    for ch in full_text:
+                        content += ch
+                        chunk_buf += ch
+                        now = time.time()
+                        if len(chunk_buf) >= 20 or (now - last_emit) > 0.04:
+                            with streaming_lock:
+                                streaming_data[task_id]['response'] = content
+                                streaming_data[task_id]['progress'] = 'SiSi正在回答...'
+                                streaming_data[task_id]['last_update'] = now
+                            yield f"content:{chunk_buf}"
+                            chunk_buf = ""
+                            last_emit = now
 
                 if chunk_buf:
                     with streaming_lock:
@@ -506,7 +572,7 @@ class DeepSeekStreamingChat:
         
         # --- 内网流式 ---
         reasoning_content = ""
-        content = ""
+        content = _prefix
         chunk_buffer = ""
         last_yield_time = time.time()
         reasoning_yielded = False
@@ -525,7 +591,7 @@ class DeepSeekStreamingChat:
                     reasoning_content += reasoning_chunk
                     with streaming_lock:
                         streaming_data[task_id]['reasoning'] = reasoning_content
-                        streaming_data[task_id]['progress'] = 'AI正在深度思考...'
+                        streaming_data[task_id]['progress'] = 'SiSi正在思考...'
                         streaming_data[task_id]['last_update'] = current_time
                     # 持续yield推理内容更新
                     yield f"reasoning:{reasoning_content}"
@@ -543,7 +609,7 @@ class DeepSeekStreamingChat:
                     if should_yield:
                         with streaming_lock:
                             streaming_data[task_id]['response'] = content
-                            streaming_data[task_id]['progress'] = 'AI正在回复...'
+                            streaming_data[task_id]['progress'] = 'SiSi正在回答...'
                             streaming_data[task_id]['last_update'] = current_time
                         # yield content内容
                         yield f"content:{chunk_buffer}"
@@ -564,7 +630,8 @@ class DeepSeekStreamingChat:
     def start_optimized_streaming_thread(self, messages: List[Dict[str, str]], 
                                        task_id: str,
                                        temperature: float = 0.7, 
-                                       max_tokens: int = 2000):
+                                       max_tokens: int = 2000,
+                                       response_prefix: str = ""):
         """启动优化的流式处理线程"""
         self.streaming_active = True
         
@@ -573,7 +640,8 @@ class DeepSeekStreamingChat:
             streaming_data[task_id] = {
                 'status': 'initializing',
                 'reasoning': '',
-                'response': '',
+                'response': response_prefix,
+                'response_prefix': response_prefix,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'progress': 'AI正在初始化...',
                 'chunk_buffer': '',

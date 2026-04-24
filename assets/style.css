@@ -376,3 +376,6 @@ li {
         margin: 15px 0;
     }
 }
+/* Stop button enabled/disabled state */
+button:disabled { opacity: 0.4; cursor: not-allowed !important; }
+button:not(:disabled) { opacity: 1; }
