@@ -1,9 +1,8 @@
 """
-提供常用 Dash 样式设置的工具函数和常量，用于统一所有看板的样式。
+提供常用样式设置的工具函数和常量，用于统一所有看板的样式。
 """
 
 import plotly.graph_objects as go
-from dash import html, dcc
 
 # 全局样式常量
 DARK_BG = '#000000'
@@ -382,25 +381,6 @@ class ThemeManager:
         return self.current_theme
 
 theme_manager = ThemeManager(default_theme='light')  # 明确设置默认为浅色主题
-
-def create_theme_switcher():
-    """
-    创建主题切换器组件。
-    使用 dcc.RadioItems 允许用户选择 'light' 或 'dark'。
-    """
-    current_theme = theme_manager.get_theme()
-    text_color = LIGHT_TEXT_COLOR if current_theme == 'light' else TEXT_COLOR
-    
-    return dcc.RadioItems(
-        id='global-theme-switcher',
-        options=[
-            {'label': '浅色主题', 'value': 'light'},
-            {'label': '深色主题', 'value': 'dark'},
-        ],
-        value=current_theme, # 默认值，例如 'light'
-        labelStyle={'display': 'inline-block', 'marginRight': '15px', 'color': text_color}, 
-        inputStyle={'marginRight':'5px'} # 可选：调整单选按钮本身的边距
-    )
 
 BOOTSTRAP_CSS_LINK = '<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">'
 

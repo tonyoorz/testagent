@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PreAnalysis</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #0f0f13; color: #e0e0e0; }
+  .container { display: flex; height: 100vh; }
+
+  /* 侧栏 */
+  .sidebar { width: 260px; background: #16161d; border-right: 1px solid #2a2a3a; padding: 20px; display: flex; flex-direction: column; }
+  .sidebar h1 { font-size: 18px; color: #8b8bf5; margin-bottom: 24px; }
+  .sidebar nav a { display: block; padding: 10px 12px; color: #a0a0b0; text-decoration: none; border-radius: 6px; margin-bottom: 4px; font-size: 14px; }
+  .sidebar nav a:hover, .sidebar nav a.active { background: #1e1e2e; color: #e0e0e0; }
+
+  /* 主区域 */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .panel { display: none; flex: 1; flex-direction: column; padding: 24px; overflow-y: auto; }
+  .panel.active { display: flex; }
+  .panel h2 { font-size: 20px; margin-bottom: 16px; color: #c0c0d0; }
+
+  /* 聊天面板 */
+  .chat-messages { flex: 1; overflow-y: auto; margin-bottom: 12px; }
+  .msg { padding: 10px 14px; margin-bottom: 8px; border-radius: 8px; max-width: 80%; white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
+  .msg.user { background: #2a2a5a; margin-left: auto; }
+  .msg.bot { background: #1e1e2e; }
+  .chat-input { display: flex; gap: 8px; }
+  .chat-input input { flex: 1; padding: 10px 14px; border: 1px solid #2a2a3a; border-radius: 8px; background: #16161d; color: #e0e0e0; font-size: 14px; outline: none; }
+  .chat-input input:focus { border-color: #8b8bf5; }
+
+  /* 按钮 */
+  button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; transition: background .2s; }
+  .btn-primary { background: #6c5ce7; color: #fff; }
+  .btn-primary:hover { background: #5a4bd1; }
+  .btn-secondary { background: #2a2a3a; color: #c0c0d0; }
+  .btn-secondary:hover { background: #3a3a4a; }
+
+  /* Duplicate 检测 */
+  .dup-form { display: flex; flex-direction: column; gap: 12px; max-width: 600px; }
+  .dup-form textarea { padding: 10px 14px; border: 1px solid #2a2a3a; border-radius: 8px; background: #16161d; color: #e0e0e0; font-size: 14px; min-height: 100px; resize: vertical; outline: none; }
+  .dup-form textarea:focus { border-color: #8b8bf5; }
+  .dup-form .row { display: flex; gap: 12px; }
+  .dup-form input { padding: 10px 14px; border: 1px solid #2a2a3a; border-radius: 8px; background: #16161d; color: #e0e0e0; font-size: 14px; flex: 1; outline: none; }
+  .dup-form input:focus { border-color: #8b8bf5; }
+
+  /* 结果表格 */
+  .results-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+  .results-table th { text-align: left; padding: 8px 12px; border-bottom: 1px solid #2a2a3a; color: #8b8bf5; }
+  .results-table td { padding: 8px 12px; border-bottom: 1px solid #1a1a2a; }
+  .results-table tr:hover td { background: #1a1a2a; }
+  .score-bar { display: inline-block; height: 6px; border-radius: 3px; }
+  .score-high { background: #6c5ce7; }
+  .score-mid { background: #fdcb6e; }
+  .score-low { background: #636e72; }
+
+  /* 状态 */
+  .status { font-size: 12px; color: #636e72; margin-top: 8px; }
+  .status.connected { color: #00b894; }
+
+  /* KPI 卡片 */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .kpi-card { background: #16161d; border: 1px solid #2a2a3a; border-radius: 10px; padding: 16px; }
+  .kpi-card .label { font-size: 12px; color: #636e72; margin-bottom: 4px; }
+  .kpi-card .value { font-size: 24px; font-weight: 600; color: #e0e0e0; }
+
+  /* 加载动画 */
+  .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid #3a3a4a; border-top-color: #8b8bf5; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- 侧栏 -->
+  <div class="sidebar">
+    <h1>PreAnalysis</h1>
+    <nav>
+      <a href="#" class="active" onclick="showPanel('chat')">AI 聊天</a>
+      <a href="#" onclick="showPanel('dup')">Duplicate 检测</a>
+      <a href="#" onclick="showPanel('dash')">Dashboard</a>
+    </nav>
+    <div style="margin-top:auto; font-size:12px; color:#636e72;">
+      <div id="ws-status" class="status">WebSocket: 未连接</div>
+    </div>
+  </div>
+
+  <!-- 聊天面板 -->
+  <div id="panel-chat" class="main panel active">
+    <h2>AI 聊天</h2>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input">
+      <input id="chat-input" placeholder="输入问题..." onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="btn-primary" onclick="sendChat()">发送</button>
+    </div>
+  </div>
+
+  <!-- Duplicate 检测面板 -->
+  <div id="panel-dup" class="main panel">
+    <h2>Duplicate 检测</h2>
+    <div class="dup-form">
+      <textarea id="dup-query" placeholder="输入缺陷描述，例如：IDCevo HMI 系统启动黑屏问题..."></textarea>
+      <div class="row">
+        <input id="dup-project" placeholder="Project (可选)">
+        <input id="dup-pu" placeholder="PU (可选)">
+      </div>
+      <div class="row">
+        <button class="btn-primary" onclick="searchDup()">TF-IDF 检索</button>
+        <button class="btn-secondary" onclick="judgeDup()">检索 + LLM 判定</button>
+      </div>
+    </div>
+    <div id="dup-status" class="status"></div>
+    <div id="dup-results"></div>
+  </div>
+
+  <!-- Dashboard 面板 -->
+  <div id="panel-dash" class="main panel">
+    <h2>Dashboard</h2>
+    <div class="kpi-grid" id="kpi-grid"></div>
+    <div id="dash-content"></div>
+  </div>
+</div>
+
+<script>
+const API = location.origin;
+
+// ── 面板切换 ─────────────────────────────────────────────────
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
+  event.target.classList.add('active');
+  if (name === 'dash') loadDashboard();
+}
+
+// ── WebSocket 聊天 ────────────────────────────────────────────
+let ws = null;
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/api/chat/ws');
+  ws.onopen = () => {
+    document.getElementById('ws-status').textContent = 'WebSocket: 已连接';
+    document.getElementById('ws-status').className = 'status connected';
+  };
+  ws.onclose = () => {
+    document.getElementById('ws-status').textContent = 'WebSocket: 已断开';
+    document.getElementById('ws-status').className = 'status';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'done') {
+      appendMsg('bot', data.text);
+    } else if (data.type === 'error') {
+      appendMsg('bot', '错误: ' + data.text);
+    }
+  };
+}
+
+function appendMsg(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function sendChat() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  appendMsg('user', text);
+  chatInput.value = '';
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ question: text }));
+  } else {
+    // 回退到 HTTP
+    fetch(API + '/api/chat/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: text }),
+    })
+    .then(r => r.json())
+    .then(d => appendMsg('bot', d.text || d.error || '无响应'))
+    .catch(e => appendMsg('bot', '请求失败: ' + e));
+  }
+}
+
+// ── Duplicate 检测 ────────────────────────────────────────────
+function searchDup() { dupRequest('/search'); }
+function judgeDup() { dupRequest('/judge'); }
+
+function dupRequest(path) {
+  const query = document.getElementById('dup-query').value.trim();
+  if (!query) return;
+  const status = document.getElementById('dup-status');
+  status.textContent = '检索中...';
+  status.className = 'status';
+
+  fetch(API + '/api/duplicate' + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: query,
+      project: document.getElementById('dup-project').value.trim() || null,
+      pu: document.getElementById('dup-pu').value.trim() || null,
+      top_k: 10,
+    }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    status.textContent = `共 ${d.total} 条结果`;
+    renderDupResults(d.candidates || []);
+  })
+  .catch(e => { status.textContent = '检索失败: ' + e; });
+}
+
+function renderDupResults(candidates) {
+  const container = document.getElementById('dup-results');
+  if (!candidates.length) {
+    container.innerHTML = '<p style="color:#636e72;margin-top:16px;">无匹配结果</p>';
+    return;
+  }
+  let html = '<table class="results-table"><thead><tr>' +
+    '<th>评分</th><th>Ticket</th><th>名称</th><th>项目</th><th>PU</th><th>状态</th><th>摘要</th>' +
+    '</tr></thead><tbody>';
+  candidates.forEach(c => {
+    const pct = Math.round(c.similarity * 100);
+    const cls = c.score_1_10 >= 7 ? 'score-high' : c.score_1_10 >= 4 ? 'score-mid' : 'score-low';
+    html += `<tr>
+      <td><span class="score-bar ${cls}" style="width:${pct}px"></span> ${c.score_1_10}/10</td>
+      <td>${c.ticket_id || '-'}</td>
+      <td title="${c.name}">${c.name.slice(0, 40)}${c.name.length > 40 ? '...' : ''}</td>
+      <td>${c.project || '-'}</td>
+      <td>${c.pu || '-'}</td>
+      <td>${c.status_phase || '-'}</td>
+      <td title="${c.snippet}">${c.snippet.slice(0, 60)}${c.snippet.length > 60 ? '...' : ''}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ── Dashboard KPI ─────────────────────────────────────────────
+function loadDashboard() {
+  fetch(API + '/api/explore/kpis')
+    .then(r => r.json())
+    .then(d => {
+      const grid = document.getElementById('kpi-grid');
+      grid.innerHTML = '';
+      const cards = [
+        { label: '缺陷总数', value: d.total || 0 },
+      ];
+      if (d.phase_distribution) {
+        Object.entries(d.phase_distribution).slice(0, 4).forEach(([k, v]) => {
+          cards.push({ label: k, value: v });
+        });
+      }
+      cards.forEach(c => {
+        grid.innerHTML += `<div class="kpi-card"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`;
+      });
+    })
+    .catch(() => {});
+}
+
+// ── 初始化 ────────────────────────────────────────────────────
+connectWS();
+</script>
+</body>
+</html>
