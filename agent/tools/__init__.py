@@ -11,6 +11,7 @@ from agent.tools.analysis.comparison import ComparisonTool
 from agent.tools.analysis.correlate_defects_tests import CorrelateDefectsTestsTool
 from agent.tools.analysis.defect_explore_dashboard import DefectExploreDashboardTool
 from agent.tools.analysis.defect_explore_kpis import DefectExploreKpiTool
+from agent.tools.analysis.duplicate_feedback import SubmitDuplicateSearchFeedbackTool
 from agent.tools.analysis.duplicate_issue_search import DuplicateIssueSearchTool
 from agent.tools.analysis.groupby_aggregate import GroupbyAggregateTool
 from agent.tools.analysis.longrunner_hotlist import LongRunnerHotlistTool
@@ -48,6 +49,7 @@ def build_tool_suite(llm: Any = None, db_path: str = None, **kwargs: Any) -> Lis
 		LongRunnerHotlistTool(),
 		CorrelateDefectsTestsTool(),
 		DuplicateIssueSearchTool(),
+		SubmitDuplicateSearchFeedbackTool(),
 		AnalyzeTesterFindingsTool(),
 		AnalyzeTestRunTool(),
 		GroupbyAggregateTool(),
@@ -93,6 +95,7 @@ __all__ = [
 	'LongRunnerHotlistTool',
 	'CorrelateDefectsTestsTool',
 	'DuplicateIssueSearchTool',
+	'SubmitDuplicateSearchFeedbackTool',
 	'AnalyzeTesterFindingsTool',
 	'AnalyzeTestRunTool',
 	'GroupbyAggregateTool',

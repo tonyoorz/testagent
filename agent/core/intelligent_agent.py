@@ -3606,6 +3606,7 @@ class DuplicateIssueSearchTool(DataAnalysisTool):
                 "query": {"type": "string", "description": "检索文本"},
                 "top_k": {"type": "integer", "description": "返回候选数量", "default": 8},
                 "cache_key": {"type": "string", "description": "索引缓存Key（同数据集复用索引）", "default": "defects"},
+                "feedback_db_path": {"type": "string", "description": "反馈数据库路径（可选）"},
             },
         )
 
@@ -3616,13 +3617,23 @@ class DuplicateIssueSearchTool(DataAnalysisTool):
         top_k = int(kwargs.get("top_k") or 8)
         top_k = max(1, min(50, top_k))
         cache_key = str(kwargs.get("cache_key") or "defects").strip() or "defects"
+        feedback_db_path = str(kwargs.get("feedback_db_path") or "").strip() or None
         try:
             from duplicate_issue_finder import extract_hints, get_or_build_index
+            from feedback_store import FeedbackStore
+            from progressive_reranker import get_progressive_reranker
 
             df = data if isinstance(data, pd.DataFrame) else pd.DataFrame()
             idx = get_or_build_index(cache_key, df)
             hints = extract_hints(query)
-            candidates = idx.search(query, hints=hints, top_k=top_k)
+            reranker = get_progressive_reranker(db_path=feedback_db_path) if feedback_db_path else None
+            candidates, metadata = idx.search_with_metadata(
+                query,
+                hints=hints,
+                top_k=top_k,
+                reranker=reranker,
+                feedback_db_path=feedback_db_path,
+            )
             items = []
             for c in candidates:
                 items.append(
@@ -3637,7 +3648,68 @@ class DuplicateIssueSearchTool(DataAnalysisTool):
                         "snippet": getattr(c, "snippet", ""),
                     }
                 )
-            return {"success": True, "tool": self.name, "result": {"candidates": items}}
+            feedback_store = FeedbackStore(db_path=feedback_db_path) if feedback_db_path else None
+            search_id = FeedbackStore.query_hash(f"{cache_key}:{query}:{time.time()}")
+            return {
+                "success": True,
+                "tool": self.name,
+                "result": {
+                    "search_id": search_id,
+                    "candidates": items,
+                    "model_phase": metadata.get("model_phase", "baseline"),
+                    "feedback_count": (
+                        feedback_store.count_feedback() if feedback_store is not None else metadata.get("feedback_count", 0)
+                    ),
+                },
+            }
+        except Exception as e:
+            return {"success": False, "tool": self.name, "error": str(e)}
+
+
+class SubmitDuplicateSearchFeedbackTool(DataAnalysisTool):
+    def __init__(self):
+        super().__init__(
+            name="submit_search_feedback",
+            description="提交重复问题检索结果的用户反馈，用于逐步优化排序效果",
+            parameters={
+                "query_text": {"type": "string", "description": "原始检索文本"},
+                "ticket_id": {"type": "string", "description": "候选问题ID"},
+                "signal": {"type": "string", "description": "positive | negative | click"},
+                "user_id": {"type": "string", "description": "当前用户标识（可选）"},
+                "base_score": {"type": "number", "description": "原始相似度分数（可选）"},
+                "rank_pos": {"type": "integer", "description": "候选在结果中的位置（可选）"},
+                "feedback_db_path": {"type": "string", "description": "反馈数据库路径（可选）"},
+            },
+        )
+
+    def execute(self, data: Any, **kwargs) -> Dict[str, Any]:
+        query_text = str(kwargs.get("query_text") or "").strip()
+        ticket_id = str(kwargs.get("ticket_id") or "").strip()
+        signal = str(kwargs.get("signal") or "").strip().lower()
+        user_id = str(kwargs.get("user_id") or "").strip() or None
+        feedback_db_path = str(kwargs.get("feedback_db_path") or "").strip() or None
+        if not query_text or not ticket_id or not signal:
+            return {"success": False, "tool": self.name, "error": "query_text/ticket_id/signal 不能为空"}
+        try:
+            from feedback_store import FeedbackStore
+
+            store = FeedbackStore(db_path=feedback_db_path) if feedback_db_path else FeedbackStore()
+            result = store.submit_feedback(
+                query_text=query_text,
+                ticket_id=ticket_id,
+                signal=signal,
+                user_id=user_id,
+                base_score=kwargs.get("base_score"),
+                rank_pos=kwargs.get("rank_pos"),
+            )
+            if not result.get("accepted"):
+                return {
+                    "success": False,
+                    "tool": self.name,
+                    "error": result.get("reason") or "反馈提交失败",
+                    "result": result,
+                }
+            return {"success": True, "tool": self.name, "result": result}
         except Exception as e:
             return {"success": False, "tool": self.name, "error": str(e)}
 
@@ -3662,6 +3734,7 @@ def build_default_tools(llm: Any = None, db_path: Optional[str] = None) -> List[
         ProjectRecentWeeksHealthTool(),
         SemanticCatalogTool(db_path=db_path),
         DuplicateIssueSearchTool(),
+        SubmitDuplicateSearchFeedbackTool(),
         DescribeDatasetTool(),
         MatchTesterTicketsTool(),
         SemanticCoverageReportTool(),

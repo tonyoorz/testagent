@@ -73,6 +73,21 @@ logger = logging.getLogger(__name__)
 _POSITIVE_CONFIRMATION_REPLIES = {
     "继续", "继续执行", "确认", "确认执行", "是", "好的", "好", "ok", "yes", "y", "proceed", "continue",
 }
+_DUPLICATE_FOLLOWUP_MAX_LEN = 40
+_DUPLICATE_FOLLOWUP_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in [
+        r"需要补充",
+        r"补充信息",
+        r"补充.*现象",
+        r"补充.*复现",
+        r"请补充",
+        r"再判断",
+        r"provide more information",
+        r"need more information",
+        r"need more details",
+    ]
+]
 
 
 def _normalize_confirmation_reply(text: str) -> str:
@@ -95,6 +110,118 @@ def should_resume_pending_agent_confirmation(user_message: str, agent_results: O
         return False
 
     return bool(context.get("needs_confirmation") or context.get("confirmation_pending"))
+
+
+def _assistant_requests_duplicate_followup(message: str) -> bool:
+    text = str(message or "").strip()
+    if not text:
+        return False
+    return any(pattern.search(text) for pattern in _DUPLICATE_FOLLOWUP_PATTERNS)
+
+
+def _analyze_duplicate_followup_chain(
+    question: str, conversation_history: Optional[List[Dict[str, Any]]]
+) -> tuple:
+    """Walk backward through conversation history to accumulate a multi-round
+    duplicate-detection follow-up chain.
+
+    Returns ``(effective_query, followup_round_count)``.
+    *followup_round_count* is 0 when the current message is a standalone query.
+    """
+    current_question = str(question or "").strip()
+    if not current_question:
+        return ("", 0)
+    if len(current_question) > _DUPLICATE_FOLLOWUP_MAX_LEN:
+        return (current_question, 0)
+
+    messages = [msg for msg in (conversation_history or []) if isinstance(msg, dict)]
+
+    # Locate the current user message in history
+    current_index = None
+    for idx in range(len(messages) - 1, -1, -1):
+        msg = messages[idx]
+        if str(msg.get("role") or "").strip() != "user":
+            continue
+        if str(msg.get("content") or "").strip() == current_question:
+            current_index = idx
+            break
+
+    if current_index is None:
+        return (current_question, 0)
+
+    # Walk backward collecting all user messages that belong to the chain.
+    # Pattern: ...user → [reasoning*] → assistant("需要补充") → [reasoning*] → user → ...
+    prior_user_messages: List[str] = []
+    scan_idx = current_index - 1
+
+    while scan_idx >= 0:
+        # Step 1: find the nearest meaningful assistant message
+        found_followup_assistant = False
+        while scan_idx >= 0:
+            msg = messages[scan_idx]
+            role = str(msg.get("role") or "").strip()
+            if role != "assistant":
+                scan_idx -= 1
+                continue
+            content = str(msg.get("content") or "").strip()
+            # Skip empty / placeholder assistant messages
+            if not content or content == "AI正在思考...":
+                scan_idx -= 1
+                continue
+            # First real assistant content — does it ask for follow-up?
+            if _assistant_requests_duplicate_followup(content):
+                found_followup_assistant = True
+                scan_idx -= 1
+                break
+            else:
+                # Assistant gave a definitive answer → chain ends
+                break
+
+        if not found_followup_assistant:
+            break
+
+        # Step 2: find the user message before this assistant
+        found_user = False
+        while scan_idx >= 0:
+            msg = messages[scan_idx]
+            role = str(msg.get("role") or "").strip()
+            if role == "user":
+                user_content = str(msg.get("content") or "").strip()
+                if user_content:
+                    prior_user_messages.append(user_content)
+                    found_user = True
+                    scan_idx -= 1
+                    break
+            scan_idx -= 1
+
+        if not found_user:
+            break
+
+    if not prior_user_messages:
+        return (current_question, 0)
+
+    # prior_user_messages is in reverse chronological order → reverse to get [Q1, Q2, …]
+    prior_user_messages.reverse()
+
+    original = prior_user_messages[0]
+    supplements = prior_user_messages[1:] + [current_question]
+    effective_query = f"{original}\n补充信息：{'；'.join(supplements)}"
+    return (effective_query, len(prior_user_messages))
+
+
+def build_duplicate_followup_query(
+    question: str, conversation_history: Optional[List[Dict[str, Any]]]
+) -> str:
+    """Reconstruct the effective search query by merging prior follow-up turns."""
+    return _analyze_duplicate_followup_chain(question, conversation_history)[0]
+
+
+def count_duplicate_followup_rounds(
+    question: str, conversation_history: Optional[List[Dict[str, Any]]]
+) -> int:
+    """Count how many supplementary rounds preceded *question* in a duplicate
+    detection follow-up chain.  Returns 0 for standalone queries."""
+    return _analyze_duplicate_followup_chain(question, conversation_history)[1]
 
 # Dify Workflow (RAG) config
 HARDCODED_DIFY_API_BASE = "http://10.86.150.232/v1"
@@ -3946,12 +4073,15 @@ class EnhancedAIChatManager:
                     logger.warning(f"加载缺陷数据失败: {e}")
                     df = pd.DataFrame()
 
-            hints = extract_hints(question)
+            effective_query = build_duplicate_followup_query(question, conversation_history)
+            followup_rounds = count_duplicate_followup_rounds(question, conversation_history)
+            hints = extract_hints(effective_query)
             index = get_or_build_index(cache_key=f"duplicate:{self.dashboard_type}", df=df)
-            candidates = index.search(question, hints=hints, top_k=10)
+            candidates = index.search(effective_query, hints=hints, top_k=10)
 
             model_chatbot = _chatbot_for_model(selected_model)
             local_only = not getattr(model_chatbot, "client", None) and not getattr(model_chatbot, "backup_api_key", "")
+            force_conclusion = followup_rounds >= 2
             if local_only:
                 best = max((c.score_1_10 for c in candidates), default=0)
                 if best >= 8:
@@ -3960,6 +4090,13 @@ class EnhancedAIChatManager:
                 elif best <= 6:
                     suggestion = "可以提票"
                     reason = "未发现高度相似的已知问题"
+                elif force_conclusion:
+                    if best >= 7:
+                        suggestion = "不建议提票"
+                        reason = "经过多轮补充，与已有问题较为相似，建议优先合并/追加信息"
+                    else:
+                        suggestion = "可以提票"
+                        reason = "经过多轮补充，仍未找到高度匹配的已知问题"
                 else:
                     suggestion = "需要补充信息后再判断"
                     reason = "相似度中等，建议补充复现信息再决定是否新开票"
@@ -4030,6 +4167,15 @@ class EnhancedAIChatManager:
             system_prompt = f"""你是缺陷提票前置审查助手。你的任务是：根据用户的自然语言问题描述，在“候选缺陷列表”中找出最相似的已知问题，并给出是否建议提票的结论。\n\n规则：\n1) 只能基于提供的候选列表，不要编造不存在的ticket。\n2) 相似度评分使用 1-10（10=几乎同一个问题）。你可以参考候选里给定的 score_1_10，但如果你认为不合理可以小幅调整；最终输出仍需按 10→1 排序。\n3) 如果最高相似度 >= 8：结论默认“不建议提票”，建议合并到最相似票或补充复现信息后追踪。\n4) 如果最高相似度 <= 6：结论默认“可以提票”，并给出建议标题与必填信息清单。\n\n输出格式（必须使用以下结构）：\n【结论】\n- 建议：不建议提票 / 可以提票 / 需要补充信息后再判断\n- 依据：一句话说明\n\n【相似已知问题（按相似度降序）】\n- 10分：#id - 标题（project/pu，phase）\\n  匹配点：...\n- 9分：...\n\n【下一步】\n- 如果不建议提票：建议合并到哪一票，以及需要补充哪些信息。\n- 如果可以提票：建议标题、复现步骤、期望/实际、环境、日志/截图等。\n\n候选缺陷列表（JSON Lines）：\n{candidate_block}\n"""
 
             messages = [{"role": "system", "content": system_prompt}]
+
+            if force_conclusion:
+                system_prompt += (
+                    "\n\n【重要】用户已经补充了多轮信息，请基于当前已有的全部信息给出确定性结论"
+                    "（「可以提票」或「不建议提票」），不要再输出「需要补充信息后再判断」。"
+                    "如果相似度处于 7 分左右的中间地带，倾向于给出明确建议而非继续追问。"
+                )
+                messages = [{"role": "system", "content": system_prompt}]
+
             for msg in (conversation_history or [])[-6:]:
                 if msg.get('role') in ['user', 'assistant']:
                     content = str(msg.get('content', '')).strip()

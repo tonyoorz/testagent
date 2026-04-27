@@ -181,6 +181,8 @@ DEFAULT_TEXT_FIELDS = ("name", "description", "project", "pu", "ecu", "top_aida"
 class DuplicateSearchHints:
     project: Optional[str] = None
     pu: Optional[str] = None
+    ecu: Optional[str] = None
+    lead_model: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -209,6 +211,21 @@ def _normalize_pu(value: Any) -> Optional[str]:
     if match:
         return f"{match.group(1)}-{match.group(2)}"
     return text
+
+
+def _normalize_ecu(value: Any) -> Optional[str]:
+    text = _normalize_text(value).lower()
+    if not text:
+        return None
+    text = re.sub(r"\s+", "", text)
+    return text.replace("/", "-")
+
+
+def _normalize_lead_model(value: Any) -> Optional[str]:
+    text = _normalize_text(value).lower()
+    if not text:
+        return None
+    return re.sub(r"\s+", "", text)
 
 
 def _hint_matches(candidate_value: Any, hint_value: Optional[str], normalizer) -> bool:
@@ -242,6 +259,10 @@ def _apply_hint_boost(similarity: float, meta: Dict[str, Any], hints: Optional[D
         score += 0.08
     if hints.pu and _hint_matches_strict(meta.get("pu"), hints.pu, _normalize_pu):
         score += 0.12
+    if hints.ecu and _hint_matches_strict(meta.get("ecu"), hints.ecu, _normalize_ecu):
+        score += 0.10
+    if hints.lead_model and _hint_matches_strict(meta.get("lead_model"), hints.lead_model, _normalize_lead_model):
+        score += 0.05
 
     return max(0.0, min(1.0, score))
 
@@ -304,7 +325,25 @@ def extract_hints(user_text: str) -> DuplicateSearchHints:
             if m:
                 pu = _normalize_pu(m.group(1).strip())
 
-    return DuplicateSearchHints(project=project, pu=pu)
+    ecu = None
+    m = re.search(
+        r"\becu\s*[:：=]?\s*([a-z0-9][a-z0-9._/\-]{1,31})\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        ecu = _normalize_ecu(m.group(1).strip())
+
+    lead_model = None
+    m = re.search(
+        r"\blead(?:\s|_)?model\s*[:：=]?\s*([a-z0-9][a-z0-9._/\-]{0,15})\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        lead_model = _normalize_lead_model(m.group(1).strip())
+
+    return DuplicateSearchHints(project=project, pu=pu, ecu=ecu, lead_model=lead_model)
 
 
 def _normalize_text(value: Any) -> str:
@@ -420,6 +459,8 @@ class DuplicateIssueIndex:
                     "name": _normalize_text(row.get("name")) or _normalize_text(row.get("title")) or "",
                     "project": _normalize_text(row.get("project")) or None,
                     "pu": _normalize_text(row.get("pu")) or None,
+                    "ecu": _normalize_text(row.get("ecu")) or None,
+                    "lead_model": _normalize_text(row.get("lead_model")) or None,
                     "status_phase": _normalize_text(row.get("status_phase")) or None,
                     "description": _normalize_text(row.get("description")) or "",
                 }
@@ -504,7 +545,7 @@ class DuplicateIssueIndex:
         self._embedding_matrix = np.vstack(vecs).astype(np.float32)
         self._use_embeddings = True
 
-    def search(self, query: str, hints: Optional[DuplicateSearchHints] = None, top_k: int = 10) -> List[DuplicateCandidate]:
+    def _coarse_search(self, query: str, hints: Optional[DuplicateSearchHints], top_k: int) -> List[DuplicateCandidate]:
         q = _normalize_text(query)
         if not q:
             return []
@@ -532,6 +573,9 @@ class DuplicateIssueIndex:
             ranked.append((idx, _apply_hint_boost(float(raw_sim), meta, hints)))
 
         ranked.sort(key=lambda x: float(x[1]), reverse=True)
+        return self._ranked_to_candidates(ranked, top_k=top_k)
+
+    def _ranked_to_candidates(self, ranked: Sequence[Tuple[int, float]], top_k: int) -> List[DuplicateCandidate]:
         candidates: List[DuplicateCandidate] = []
         for idx, sim in ranked[: max(1, int(top_k))]:
             meta = self._meta[idx]
@@ -551,6 +595,47 @@ class DuplicateIssueIndex:
                 break
         return candidates
 
+    def search_with_metadata(
+        self,
+        query: str,
+        hints: Optional[DuplicateSearchHints] = None,
+        top_k: int = 10,
+        reranker: Optional[Any] = None,
+        feedback_db_path: Optional[str] = None,
+    ) -> Tuple[List[DuplicateCandidate], Dict[str, Any]]:
+        candidates = self._coarse_search(query, hints=hints, top_k=max(int(top_k), 50))
+        metadata: Dict[str, Any] = {
+            "model_phase": "baseline",
+            "feedback_count": 0,
+        }
+        active_reranker = reranker
+        if active_reranker is None and feedback_db_path is not None:
+            try:
+                from progressive_reranker import get_progressive_reranker
+
+                active_reranker = get_progressive_reranker(db_path=feedback_db_path)
+            except Exception:
+                active_reranker = None
+        if active_reranker is not None:
+            try:
+                candidates = active_reranker.rerank(
+                    query,
+                    candidates,
+                    hints=hints,
+                    index=self,
+                    top_k=top_k,
+                )
+                metadata["model_phase"] = str(getattr(active_reranker, "model_phase", "baseline") or "baseline")
+                metadata["feedback_count"] = int(getattr(active_reranker, "feedback_count", 0) or 0)
+                return candidates[: max(1, int(top_k))], metadata
+            except Exception:
+                pass
+        return candidates[: max(1, int(top_k))], metadata
+
+    def search(self, query: str, hints: Optional[DuplicateSearchHints] = None, top_k: int = 10) -> List[DuplicateCandidate]:
+        candidates, _ = self.search_with_metadata(query, hints=hints, top_k=top_k)
+        return candidates
+
     def _embedding_search(self, query_text: str) -> np.ndarray:
         """Encode query and compute cosine similarity against the embedding matrix."""
         st_model = _get_st_model()
@@ -566,7 +651,14 @@ class DuplicateIssueIndex:
         query_l = query.lower()
         scored: List[Tuple[int, float]] = []
         for i, meta in enumerate(self._meta):
-            hay = f"{meta.get('name','')}\n{meta.get('description','')}\n{meta.get('project','')}\n{meta.get('pu','')}".lower()
+            hay = (
+                f"{meta.get('name','')}\n"
+                f"{meta.get('description','')}\n"
+                f"{meta.get('project','')}\n"
+                f"{meta.get('pu','')}\n"
+                f"{meta.get('ecu','')}\n"
+                f"{meta.get('lead_model','')}"
+            ).lower()
             if hints:
                 if hints.project and not _hint_matches(meta.get("project"), hints.project, _normalize_project):
                     continue
