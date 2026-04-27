@@ -6,11 +6,40 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, Field, field_validator
 
 from agent.tools.base import DataAnalysisTool
 from analysis_utils import pick_risk_score_column
 
 logger = logging.getLogger(__name__)
+
+
+class ComparisonParams(BaseModel):
+    """对比分析工具参数模型"""
+    items: List[str] = Field(default_factory=list, description="要对比的项目列表（为空则自动选择）")
+    dimension: str = Field(default="project", description="对比维度")
+    metrics: List[str] = Field(
+        default=["count", "avg_risk_score", "topissue_ratio"],
+        description="对比指标"
+    )
+
+    @field_validator("dimension")
+    @classmethod
+    def validate_dimension(cls, v: str) -> str:
+        allowed = {"project", "severity", "category", "tester", "aida", "matrix"}
+        if v.lower() in allowed:
+            return v.lower()
+        # 允许其他列名（自定义维度）
+        return v
+
+    @field_validator("metrics")
+    @classmethod
+    def validate_metrics(cls, v: List[str]) -> List[str]:
+        allowed = {"count", "avg_risk_score", "topissue_ratio", "high_risk_ratio", "close_rate"}
+        invalid = [m for m in v if m not in allowed]
+        if invalid:
+            raise ValueError(f"metrics 包含无效值: {invalid}。可用值: {allowed}")
+        return v
 
 
 class ComparisonTool(DataAnalysisTool):
@@ -19,34 +48,43 @@ class ComparisonTool(DataAnalysisTool):
     def __init__(self):
         super().__init__(
             name="compare_items",
-            description="对比不同项目、类别或时间段的指标",
+            description="对比不同项目、严重性、类别等维度的多项指标（缺陷数、风险评分、TopIssue 比例等）",
             parameters={
                 "items": {
                     "type": "array",
-                    "description": "要对比的项目列表",
+                    "description": "要对比的项目列表（为空则自动选择 top-3）",
                     "items": {"type": "string"}
                 },
                 "dimension": {
                     "type": "string",
-                    "description": "对比维度",
-                    "enum": ["project", "severity", "category"],
-                    "default": "project"
+                    "description": "对比维度: project/severity/category/tester/aida/matrix 或自定义列名",
+                    "default": "project",
+                    "enum": ["project", "severity", "category", "tester", "aida", "matrix"]
                 },
                 "metrics": {
                     "type": "array",
-                    "description": "对比指标",
+                    "description": "对比指标: count/avg_risk_score/topissue_ratio/high_risk_ratio/close_rate",
                     "items": {"type": "string"},
                     "default": ["count", "avg_risk_score", "topissue_ratio"]
                 }
-            }
+            },
+            param_model=ComparisonParams,
+        )
+
+        self.usage_guide = (
+            "使用场景: 对比不同项目/类别/测试人员的表现时。"
+            "注意: items 为空时自动选择数据中最多的 top-3；"
+            "支持跨项目对比缺陷数、风险评分、TopIssue 比例等多维度指标。"
         )
 
     def execute(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
         """执行对比分析"""
         try:
-            items = kwargs.get('items', [])
-            dimension = kwargs.get('dimension', 'project')
-            metrics = kwargs.get('metrics', ['count', 'avg_risk_score', 'topissue_ratio'])
+            # 参数校验
+            validated = self.validate_params(**kwargs)
+            items = validated.get('items', [])
+            dimension = validated.get('dimension', 'project')
+            metrics = validated.get('metrics', ['count', 'avg_risk_score', 'topissue_ratio'])
 
             # 映射维度列名
             col_mapping = {

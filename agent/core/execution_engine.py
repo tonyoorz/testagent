@@ -31,6 +31,17 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+# 导入四层架构模块
+try:
+    from agent.core.tool_retriever import ToolRetriever, DEFAULT_TOP_K
+    from agent.core.few_shot_templates import get_relevant_templates, format_templates_for_prompt
+    from agent.core.tool_call_guardrails import ToolCallGuardrail, GuardrailResult
+    from agent.core.retry_strategy import RetryStrategy, ErrorCategory
+    LAYER_MODULES_AVAILABLE = True
+except ImportError:
+    LAYER_MODULES_AVAILABLE = False
+    logger.warning("四层架构模块未完全可用，部分功能降级")
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,6 +73,9 @@ class StepResult:
     error: str = ""
     duration_ms: int = 0
     corrected: bool = False  # 是否经过了self-correction
+    error_category: str = ""  # 错误分类（Layer 4）
+    retry_count: int = 0  # 重试次数（Layer 4）
+    warnings: List[str] = field(default_factory=list)  # 警告信息（Layer 3 后置校验）
 
 
 @dataclass
@@ -118,7 +132,8 @@ class AgenticDecider:
     def __init__(self, llm_client, llm_model, tool_specs, question, data_summary, max_iters=6, tool_call_max=8):
         self._client = llm_client
         self._model = llm_model
-        self._tool_specs = tool_specs
+        self._all_tool_specs = tool_specs  # 保存全量 specs
+        self._tool_specs = tool_specs  # 当前使用的 specs（会被过滤）
         self._question = question
         self._data_summary = data_summary
         self._max_iters = max_iters
@@ -127,6 +142,22 @@ class AgenticDecider:
         self._tool_calls_used = 0
         self._messages = []
         self._final_text = ""
+
+        # Layer 2: 工具检索器和 Few-shot 模板
+        self._tool_retriever = None
+        self._few_shot_templates = []
+        if LAYER_MODULES_AVAILABLE:
+            self._tool_retriever = ToolRetriever(self._all_tool_specs)
+            self._few_shot_templates = get_relevant_templates(question, top_k=3)
+            # 过滤工具 specs
+            selected_tools = self._tool_retriever.retrieve(question, top_k=DEFAULT_TOP_K)
+            selected_set = set(selected_tools)
+            filtered_specs = []
+            for spec in self._all_tool_specs:
+                func = (spec.get("function") or spec) if isinstance(spec, dict) else {}
+                if func.get("name") in selected_set:
+                    filtered_specs.append(spec)
+            self._tool_specs = filtered_specs if filtered_specs else self._all_tool_specs
 
     def next_decision(self, observations: List[StepResult]) -> Decision:
         """让LLM决定下一步。"""
@@ -229,6 +260,11 @@ class AgenticDecider:
 """
         if self._data_summary:
             prompt += f"\n\n数据摘要:\n{self._data_summary}"
+
+        # Layer 2: 注入 Few-shot 模板
+        if LAYER_MODULES_AVAILABLE and self._few_shot_templates:
+            prompt += format_templates_for_prompt(self._few_shot_templates)
+
         return prompt
 
     def _format_observations(self, observations: List[StepResult]) -> str:
@@ -246,6 +282,9 @@ class UnifiedExecutionEngine:
 
     def __init__(self, agent):
         self._agent = agent
+        # Layer 3/4: 初始化护栏和重试策略
+        self._tool_guardrail = ToolCallGuardrail() if LAYER_MODULES_AVAILABLE else None
+        self._retry_strategy = RetryStrategy() if LAYER_MODULES_AVAILABLE else None
 
     def run(
         self,
@@ -368,34 +407,85 @@ class UnifiedExecutionEngine:
         question: str,
         tracer: Any = None,
     ) -> StepResult:
-        """执行单个工具，带 self-correction。"""
+        """执行单个工具，集成四层架构：
+        - Layer 3: 执行前参数校验 + 后置结果校验
+        - Layer 4: 智能重试 + 错误分类
+        """
         t0 = time.perf_counter()
+        retry_count = 0
+        error_category = ""
+        warnings = []
+
+        # Layer 3: 执行前校验
+        if self._tool_guardrail:
+            tool_descriptor = self._get_tool_descriptor(tool_name)
+            guard_result = self._tool_guardrail.check_tool_call(tool_name, params, tool_descriptor)
+            if not guard_result.passed:
+                return StepResult(
+                    tool=tool_name,
+                    params=params,
+                    success=False,
+                    error=f"护栏拦截: {guard_result.message}",
+                    duration_ms=int((time.perf_counter() - t0) * 1000),
+                    corrected=False,
+                    error_category=ErrorCategory.FATAL.value,
+                    warnings=guard_result.error_details,
+                )
 
         # Tracer span
         _span = None
         if tracer and hasattr(tracer, "span"):
             _span = tracer.span(tool_name).__enter__()
 
-        try:
-            result = self._agent.tool_executor.execute_tool(tool_name, data, **params)
-        except Exception as e:
-            result = {"success": False, "tool": tool_name, "error": str(e)}
-        finally:
-            if _span:
-                _span.__exit__(None, None, None)
-
-        success = isinstance(result, dict) and result.get("success") is True
-
-        # Self-Correction
+        # 执行 + Layer 4: 智能重试
+        result = None
+        error_msg = ""
+        success = False
         corrected = False
-        if not success:
+
+        while retry_count <= 1:  # 最多重试1次（可配置）
+            try:
+                result = self._agent.tool_executor.execute_tool(tool_name, data, **params)
+            except Exception as e:
+                result = {"success": False, "tool": tool_name, "error": str(e)}
+
+            success = isinstance(result, dict) and result.get("success") is True
+            error_msg = "" if success else (str(result.get("error", "")) if isinstance(result, dict) else str(result))
+
+            if success:
+                break
+
+            # Layer 4: 错误分类 + 决定是否重试
+            if self._retry_strategy:
+                error_info = self._retry_strategy.should_retry(tool_name, error_msg, retry_count)
+                error_category = error_info.category.value
+
+                if not error_info.retryable:
+                    break
+
+                # RETRYABLE/REPHRASE → 重试
+                if retry_count == 0:
+                    logger.info(f"工具 {tool_name} 失败，准备重试: {error_msg}")
+                    if self._retry_strategy.need_cooldown():
+                        self._retry_strategy.cooldown()
+                    retry_count += 1
+                    continue
+
+            # 不重试，跳出循环
+            break
+
+        if _span:
+            _span.__exit__(None, None, None)
+
+        # Self-Correction (原有逻辑，保留)
+        if not success and not corrected:
             corrector = getattr(self._agent, "_self_corrector", None)
             if corrector is not None:
                 try:
                     corrected_result = corrector.try_correct(
                         tool_name=tool_name,
                         original_params=params,
-                        error_message=str(result.get("error", "")) if isinstance(result, dict) else str(result),
+                        error_message=error_msg,
                         context=context,
                         data=data,
                         available_tools=getattr(self._agent.tool_executor, "tools", {}),
@@ -408,14 +498,34 @@ class UnifiedExecutionEngine:
                 except Exception as e:
                     logger.debug(f"Self-correction skipped: {e}")
 
+        # Layer 3: 后置结果校验
+        if success and self._tool_guardrail:
+            sanity_result = self._tool_guardrail.check_result_sanity(tool_name, result, params)
+            if sanity_result.risk_level.value != "safe":
+                warnings.append(sanity_result.message)
+
         duration_ms = int((time.perf_counter() - t0) * 1000)
+
+        # 记录重试
+        if retry_count > 0 and self._retry_strategy:
+            self._retry_strategy.record_retry(tool_name)
 
         return StepResult(
             tool=tool_name,
             params=params,
             success=success,
             result=result,
-            error="" if success else (str(result.get("error", "")) if isinstance(result, dict) else str(result)),
+            error="" if success else error_msg,
             duration_ms=duration_ms,
             corrected=corrected,
+            error_category=error_category,
+            retry_count=retry_count,
+            warnings=warnings,
         )
+
+    def _get_tool_descriptor(self, tool_name: str) -> Any:
+        """获取工具描述符。"""
+        if hasattr(self._agent.tool_executor, "_tool_registry"):
+            from agent.tools.registry import get_registry
+            return get_registry().get(tool_name)
+        return None

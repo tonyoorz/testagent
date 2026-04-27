@@ -6,28 +6,60 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, Field, field_validator
 
 from agent.tools.base import DataAnalysisTool
 
 logger = logging.getLogger(__name__)
 
 
+class MatrixDistributionParams(BaseModel):
+    """Matrix 分布工具参数模型"""
+    include_unknown: bool = Field(default=True, description="是否包含空值/未知矩阵")
+    top_n: int = Field(default=50, description="返回前 N 个矩阵（限制输出大小）")
+
+    @field_validator("top_n")
+    @classmethod
+    def validate_top_n(cls, v: int) -> int:
+        if v < 1 or v > 100:
+            raise ValueError("top_n 必须在 1 到 100 之间")
+        return v
+
+
 class MatrixDistributionTool(DataAnalysisTool):
     def __init__(self):
         super().__init__(
             name="analyze_matrix_distribution",
-            description="分析缺陷矩阵（matrix）分布与占比",
+            description="分析缺陷矩阵（matrix）分布与占比，支持限制返回数量",
             parameters={
                 "include_unknown": {
                     "type": "boolean",
                     "description": "是否包含空值/未知矩阵",
                     "default": True
+                },
+                "top_n": {
+                    "type": "integer",
+                    "description": "返回前 N 个矩阵（1-100，默认50）",
+                    "default": 50,
+                    "minimum": 1,
+                    "maximum": 100
                 }
-            }
+            },
+            param_model=MatrixDistributionParams,
+        )
+
+        self.usage_guide = (
+            "使用场景: 需要查看不同 matrix 等级的分布情况时。"
+            "注意: top_n 用于限制输出大小，适合矩阵种类较多时使用。"
         )
 
     def execute(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
         try:
+            # 参数校验
+            validated = self.validate_params(**kwargs)
+            include_unknown = validated.get("include_unknown", True)
+            top_n = validated.get("top_n", 50)
+
             if data is None or data.empty:
                 return {
                     "success": True,
@@ -39,8 +71,6 @@ class MatrixDistributionTool(DataAnalysisTool):
             col = "matrix_display" if "matrix_display" in data.columns else "matrix" if "matrix" in data.columns else None
             if not col:
                 return {"success": False, "tool": self.name, "error": "缺陷数据缺少 matrix/matrix_display 列"}
-
-            include_unknown = bool(kwargs.get("include_unknown", True))
             s = data[col].astype(str).map(lambda v: v.strip())
             s = s.replace({"": np.nan, "nan": np.nan, "None": np.nan, "none": np.nan})
 
@@ -82,6 +112,10 @@ class MatrixDistributionTool(DataAnalysisTool):
                     "ratio": round(int(c) / total * 100, 2)
                 })
             items = sorted(items, key=lambda r: _sort_key(r["matrix"]))
+
+            # 限制返回数量
+            if top_n > 0:
+                items = items[:top_n]
 
             insights = []
             top = counts.index[0]

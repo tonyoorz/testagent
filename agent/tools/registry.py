@@ -21,7 +21,14 @@ import json
 import logging
 import os
 import pkgutil
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, Union
+
+try:
+    from pydantic import BaseModel
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    BaseModel = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +36,16 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 
 class ToolDescriptor:
-    """Metadata for a registered tool."""
+    """Metadata for a registered tool.
 
-    __slots__ = ("name", "description", "parameters", "factory", "category", "requires_db", "requires_llm")
+    可选提供 param_model (Pydantic BaseModel) 来实现强类型参数校验。
+    如果提供了 param_model，to_openai_schema() 会优先从 Pydantic 生成 schema。
+    """
+
+    __slots__ = (
+        "name", "description", "parameters", "factory",
+        "category", "requires_db", "requires_llm", "param_model",
+    )
 
     def __init__(
         self,
@@ -42,6 +56,7 @@ class ToolDescriptor:
         category: str = "analysis",
         requires_db: bool = False,
         requires_llm: bool = False,
+        param_model: Optional[Type] = None,
     ):
         self.name = name
         self.description = description
@@ -50,9 +65,29 @@ class ToolDescriptor:
         self.category = category
         self.requires_db = requires_db
         self.requires_llm = requires_llm
+        self.param_model = param_model
 
     def to_openai_schema(self) -> Dict[str, Any]:
-        """Convert to OpenAI function-calling format."""
+        """Convert to OpenAI function-calling format.
+
+        如果有 param_model (Pydantic)，优先从 Pydantic 生成，否则用 parameters dict。
+        """
+        # 优先使用 Pydantic model
+        if PYDANTIC_AVAILABLE and self.param_model is not None and issubclass(self.param_model, BaseModel):
+            try:
+                pydantic_schema = self.param_model.model_json_schema()
+                return {
+                    "type": "function",
+                    "function": {
+                        "name": self.name,
+                        "description": self.description,
+                        "parameters": pydantic_schema,
+                    },
+                }
+            except Exception as e:
+                logger.warning(f"从 Pydantic model 生成 schema 失败: {e}，降级到 parameters dict")
+
+        # 回退到 parameters dict
         properties: Dict[str, Any] = {}
         required: List[str] = []
 

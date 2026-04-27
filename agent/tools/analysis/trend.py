@@ -6,12 +6,37 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, Field, field_validator
 
-from agent.tools.base import DataAnalysisTool
+from agent.tools.base import DataAnalysisTool, ToolValidationError
 from agent.tools.helpers import resolve_dimension_to_column, evaluate_anomaly_rules
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+class TrendAnalysisParams(BaseModel):
+    """趋势分析工具参数模型"""
+    group_by: str = Field(default="week", description="分组维度: week/month/day 或 列名")
+    metric: str = Field(default="count", description="统计指标")
+    time_column: str = Field(default="tcreationtime", description="时间列名")
+
+    @field_validator("group_by")
+    @classmethod
+    def validate_group_by(cls, v: str) -> str:
+        allowed = {"day", "week", "month"}
+        if v.lower() in allowed:
+            return v.lower()
+        # 允许其他列名（用于分组）
+        return v
+
+    @field_validator("metric")
+    @classmethod
+    def validate_metric(cls, v: str) -> str:
+        allowed = {"count", "unique", "sum", "mean", "max", "min"}
+        if v not in allowed:
+            raise ValueError(f"metric 必须是 {allowed} 之一，得到: {v}")
+        return v
 
 
 class TrendAnalysisTool(DataAnalysisTool):
@@ -20,12 +45,13 @@ class TrendAnalysisTool(DataAnalysisTool):
     def __init__(self):
         super().__init__(
             name="analyze_trend",
-            description="分析数据趋势，支持按时间、项目、类别等维度分组",
+            description="分析数据趋势，支持按时间（day/week/month）或自定义维度分组",
             parameters={
                 "group_by": {
                     "type": "string",
-                    "description": "分组维度",
-                    "default": "week"
+                    "description": "分组维度: day/week/month 或项目/类别/状态等列名",
+                    "default": "week",
+                    "enum": ["day", "week", "month", "project", "aida", "severity", "status", "matrix"]
                 },
                 "metric": {
                     "type": "string",
@@ -38,15 +64,24 @@ class TrendAnalysisTool(DataAnalysisTool):
                     "description": "时间列名",
                     "default": "tcreationtime"
                 }
-            }
+            },
+            param_model=TrendAnalysisParams,
+        )
+
+        self.usage_guide = (
+            "使用场景: 需要看缺陷数量/风险分数随时间变化时用 week/month，"
+            "需要看不同项目/类别的分布时用对应的列名。"
+            "注意: day 分组适合短期数据（1-14天），week/month 适合长期趋势。"
         )
 
     def execute(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
         """执行趋势分析"""
         try:
-            group_by = kwargs.get('group_by', 'week')
-            metric = kwargs.get('metric', 'count')
-            time_column = kwargs.get('time_column', 'tcreationtime')
+            # 参数校验
+            validated = self.validate_params(**kwargs)
+            group_by = validated.get('group_by', 'week')
+            metric = validated.get('metric', 'count')
+            time_column = validated.get('time_column', 'tcreationtime')
 
             # 确保时间列是 datetime 类型
             if time_column not in data.columns:

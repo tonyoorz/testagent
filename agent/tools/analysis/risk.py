@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, Field, field_validator
 
 from agent.tools.base import DataAnalysisTool
 from agent.tools.helpers import resolve_dimension_to_column
@@ -14,39 +15,73 @@ from analysis_utils import pick_risk_score_column
 logger = logging.getLogger(__name__)
 
 
+class RiskAnalysisParams(BaseModel):
+    """风险分析工具参数模型"""
+    dimension: str = Field(default="project", description="分析维度")
+    top_n: int = Field(default=10, description="返回前 N 个高风险项")
+
+    @field_validator("dimension")
+    @classmethod
+    def validate_dimension(cls, v: str) -> str:
+        allowed = {"project", "matrix", "severity", "category", "tester", "aida"}
+        if v.lower() in allowed:
+            return v.lower()
+        # 允许其他列名（自定义维度）
+        return v
+
+    @field_validator("top_n")
+    @classmethod
+    def validate_top_n(cls, v: int) -> int:
+        if v < 1 or v > 100:
+            raise ValueError("top_n 必须在 1 到 100 之间")
+        return v
+
+
 class RiskAnalysisTool(DataAnalysisTool):
     """风险分析工具"""
 
     def __init__(self):
         super().__init__(
             name="analyze_risk",
-            description="分析风险分布，识别高风险项目和缺陷",
+            description="分析风险分布，识别高风险项目和缺陷，支持按项目/矩阵/严重性/类别等维度分组",
             parameters={
                 "dimension": {
                     "type": "string",
-                    "description": "分析维度",
-                    "default": "project"
+                    "description": "分析维度: project/matrix/severity/category/tester/aida 或自定义列名",
+                    "default": "project",
+                    "enum": ["project", "matrix", "severity", "category", "tester", "aida"]
                 },
                 "top_n": {
                     "type": "integer",
-                    "description": "返回前 N 个高风险项",
-                    "default": 10
+                    "description": "返回前 N 个高风险项（1-100，默认10）",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 100
                 }
-            }
+            },
+            param_model=RiskAnalysisParams,
+        )
+
+        self.usage_guide = (
+            "使用场景: 识别哪些项目/矩阵/缺陷类别风险最高时。"
+            "注意: dimension 支持常见维度，也可以传入数据中任意列名。"
         )
 
     def execute(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
         """执行风险分析"""
         try:
+            # 参数校验
+            validated = self.validate_params(**kwargs)
+            dimension = validated.get('dimension', 'project')
+            top_n = validated.get('top_n', 10)
+
             if data is None or data.empty:
                 return {
                     "success": True,
                     "tool": self.name,
-                    "result": {"dimension": kwargs.get('dimension', 'project'), "risk_items": []},
+                    "result": {"dimension": dimension, "risk_items": []},
                     "insights": ["数据为空，无法计算风险分布"]
                 }
-            dimension = kwargs.get('dimension', 'project')
-            top_n = kwargs.get('top_n', 10)
 
             dataset = str(kwargs.get("dataset") or "defects").strip().lower()
             group_col = resolve_dimension_to_column(dataset, str(dimension), list(data.columns))

@@ -2,10 +2,12 @@
 import logging
 import os
 import re
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, Field, field_validator
 
 from agent.tools.base import DataAnalysisTool
 from analysis_utils import compute_defect_explore_kpis
@@ -13,21 +15,46 @@ from analysis_utils import compute_defect_explore_kpis
 logger = logging.getLogger(__name__)
 
 
+class DefectKPIParams(BaseModel):
+    """KPI 工具参数模型"""
+    start_date: Optional[str] = Field(default=None, description="起始日期 YYYY-MM-DD")
+    end_date: Optional[str] = Field(default=None, description="结束日期 YYYY-MM-DD")
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def validate_date_format(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v.strip() == "":
+            return None
+        try:
+            datetime.strptime(v, "%Y-%m-%d")
+            return v
+        except ValueError:
+            raise ValueError(f"日期格式必须是 YYYY-MM-DD，得到: {v}")
+
+
 class DefectExploreKpiTool(DataAnalysisTool):
     def __init__(self):
         super().__init__(
             name="defect_explore_kpis",
-            description="生成 Defect Explore 看板常用 KPI（总缺陷、严重缺陷率、活跃 tester、日均缺陷等）",
+            description="生成 Defect Explore 看板常用 KPI（总缺陷、严重缺陷率、活跃 tester、日均缺陷等），支持按日期范围筛选",
             parameters={
-                "start_date": {"type": "string", "description": "筛选起始日期(YYYY-MM-DD)，可为空", "default": ""},
-                "end_date": {"type": "string", "description": "筛选结束日期(YYYY-MM-DD)，可为空", "default": ""},
+                "start_date": {"type": "string", "description": "筛选起始日期 YYYY-MM-DD（可选）", "default": ""},
+                "end_date": {"type": "string", "description": "筛选结束日期 YYYY-MM-DD（可选）", "default": ""},
             },
+            param_model=DefectKPIParams,
+        )
+
+        self.usage_guide = (
+            "使用场景: 获取缺陷数据的概览指标（总数、严重率、top tester、日均）。"
+            "注意: 不指定日期范围则使用全部数据；日期格式必须为 YYYY-MM-DD。"
         )
 
     def execute(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
         try:
-            start_date = (kwargs.get("start_date") or "").strip() or None
-            end_date = (kwargs.get("end_date") or "").strip() or None
+            # 参数校验
+            validated = self.validate_params(**kwargs)
+            start_date = validated.get("start_date")
+            end_date = validated.get("end_date")
             kpis = compute_defect_explore_kpis(data, start_date=start_date, end_date=end_date)
             insights = []
             insights.append(f"总缺陷数: {kpis.get('total_defects', 0)}")
