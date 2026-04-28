@@ -63,7 +63,21 @@ from agent.core.session_manager import SessionManager
 from agent.core.streaming_protocol import append_event as append_protocol_event, init_stream_state
 from agent.evaluation.agent_critic import contains_strong_confident_language
 from duplicate_issue_finder import extract_hints, get_or_build_index
+from feedback_store import FeedbackStore
 from octane_db import default_db_path
+
+
+def _get_current_user_id() -> str:
+    """Read username from login_info.txt, fall back to 'anonymous'."""
+    try:
+        login_path = os.path.join(PROJECT_ROOT, 'login_info.txt')
+        if os.path.isfile(login_path):
+            with open(login_path, 'r', encoding='utf-8') as fh:
+                info = json.loads(fh.read())
+                return str(info.get('username') or 'anonymous').strip()
+    except Exception:
+        pass
+    return 'anonymous'
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Configure logging first before importing enhancement modules
@@ -2540,14 +2554,67 @@ class EnhancedAIChatManager:
                             })
                         )
                     else:
-                        chat_history_children.append(
+                        msg_content = msg.get("content", "")
+                        display_content = msg_content
+                        feedback_buttons = None
+                        # Parse feedback metadata from duplicate search results
+                        if "<!--FEEDBACK_META:" in str(msg_content):
+                            parts = str(msg_content).split("<!--FEEDBACK_META:")
+                            display_content = parts[0].rstrip()
+                            try:
+                                meta_json = parts[1].split("-->")[0]
+                                fb_meta = json.loads(meta_json)
+                                fb_query = fb_meta.get("query", "")
+                                fb_tickets = fb_meta.get("tickets", [])
+                                if fb_tickets:
+                                    top_ticket = fb_tickets[0]
+                                    msg_idx = len(chat_history_children)
+                                    feedback_buttons = html.Div([
+                                        html.Span("这个结果有帮助吗？", style={
+                                            'fontSize': '12px', 'color': '#6b7280', 'marginRight': '8px'
+                                        }),
+                                        html.Button("👍 有帮助", id={
+                                            'type': f'{chat_id_prefix}-dup-feedback',
+                                            'signal': 'positive',
+                                            'query': fb_query[:200],
+                                            'ticket': top_ticket,
+                                            'idx': msg_idx,
+                                        }, n_clicks=0, style={
+                                            'padding': '3px 10px', 'fontSize': '12px',
+                                            'borderRadius': '12px', 'border': '1px solid #d1d5db',
+                                            'backgroundColor': '#f0fdf4', 'cursor': 'pointer',
+                                            'marginRight': '6px',
+                                        }),
+                                        html.Button("👎 不相关", id={
+                                            'type': f'{chat_id_prefix}-dup-feedback',
+                                            'signal': 'negative',
+                                            'query': fb_query[:200],
+                                            'ticket': top_ticket,
+                                            'idx': msg_idx,
+                                        }, n_clicks=0, style={
+                                            'padding': '3px 10px', 'fontSize': '12px',
+                                            'borderRadius': '12px', 'border': '1px solid #d1d5db',
+                                            'backgroundColor': '#fef2f2', 'cursor': 'pointer',
+                                        }),
+                                    ], style={
+                                        'marginTop': '8px', 'paddingTop': '8px',
+                                        'borderTop': '1px solid #e5e7eb',
+                                        'display': 'flex', 'alignItems': 'center',
+                                    })
+                            except Exception:
+                                pass
+
+                        inner_children = [
                             html.Div([
-                                html.Div([
-                                    html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
-                                    html.Span(title, style={'fontWeight': 'bold', 'color': icon_color})
-                                ], style={'marginBottom': '5px'}),
-                                html.Div(msg.get("content", ""), style=content_style)
-                            ], style={
+                                html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
+                                html.Span(title, style={'fontWeight': 'bold', 'color': icon_color})
+                            ], style={'marginBottom': '5px'}),
+                            html.Div(display_content, style=content_style),
+                        ]
+                        if feedback_buttons is not None:
+                            inner_children.append(feedback_buttons)
+                        chat_history_children.append(
+                            html.Div(inner_children, style={
                                 'padding': '12px',
                                 'backgroundColor': bg_color,
                                 'borderRadius': '8px',
@@ -4077,7 +4144,17 @@ class EnhancedAIChatManager:
             followup_rounds = count_duplicate_followup_rounds(question, conversation_history)
             hints = extract_hints(effective_query)
             index = get_or_build_index(cache_key=f"duplicate:{self.dashboard_type}", df=df)
-            candidates = index.search(effective_query, hints=hints, top_k=10)
+            try:
+                from progressive_reranker import get_progressive_reranker
+                _reranker = get_progressive_reranker()
+            except Exception:
+                _reranker = None
+            candidates, _dup_metadata = index.search_with_metadata(
+                effective_query, hints=hints, top_k=10, reranker=_reranker,
+            )
+            _dup_feedback_store = FeedbackStore()
+            _dup_model_phase = _dup_metadata.get('model_phase', 'baseline')
+            _dup_feedback_count = _dup_metadata.get('feedback_count', 0)
 
             model_chatbot = _chatbot_for_model(selected_model)
             local_only = not getattr(model_chatbot, "client", None) and not getattr(model_chatbot, "backup_api_key", "")
@@ -4128,6 +4205,12 @@ class EnhancedAIChatManager:
                     lines.append("- 如果仍要提票：建议补充复现步骤、期望/实际、环境信息、日志/截图，并标注 project/PU。")
                 lines.append("")
                 lines.append("（提示：当前未配置可用的 LLM 密钥，因此以上为本地检索结果生成的建议。）")
+                if _dup_feedback_count > 0:
+                    phase_label = {'click_boost': '统计增强', 'feature': '特征学习', 'adapter': '语义适配'}.get(_dup_model_phase, '基线')
+                    lines.append(f"\n🧠 模型阶段：{phase_label}（基于 {_dup_feedback_count} 条团队反馈）")
+                # Embed candidate ticket IDs as hidden metadata for feedback buttons
+                _candidate_ticket_ids = [c.ticket_id for c in candidates[:10] if c.ticket_id]
+                lines.append(f"\n<!--FEEDBACK_META:{json.dumps({'query': effective_query, 'tickets': _candidate_ticket_ids}, ensure_ascii=False)}-->")
 
                 formatted = "\n".join(lines).strip()
                 chunk_size = 80
@@ -4634,6 +4717,51 @@ class EnhancedAIChatManager:
                         streaming_data[task_id]['status'] = 'stopped'
                         streaming_data[task_id]['last_update'] = time.time()
             return {'active': False, 'task_id': None}, True, "", True
+
+        # --- Duplicate search feedback callback (pattern-matching on button IDs) ---
+        from dash import ALL, MATCH
+        @app.callback(
+            Output(f'{chat_id_prefix}-status', 'children', allow_duplicate=True),
+            Input({'type': f'{chat_id_prefix}-dup-feedback', 'signal': ALL, 'query': ALL, 'ticket': ALL, 'idx': ALL}, 'n_clicks'),
+            prevent_initial_call=True
+        )
+        def handle_duplicate_feedback(n_clicks_list):
+            if not n_clicks_list or not any(n_clicks_list):
+                raise PreventUpdate
+            triggered = callback_context.triggered_id
+            if not isinstance(triggered, dict):
+                raise PreventUpdate
+            signal = triggered.get('signal', '')
+            query_text = triggered.get('query', '')
+            ticket_id = triggered.get('ticket', '')
+            if not signal or not query_text or not ticket_id:
+                raise PreventUpdate
+            try:
+                store = FeedbackStore()
+                user_id = _get_current_user_id()
+                result = store.submit_feedback(
+                    query_text=query_text,
+                    ticket_id=ticket_id,
+                    signal=signal,
+                    user_id=user_id,
+                )
+                if result.get('accepted'):
+                    count = result.get('feedback_count', 0)
+                    phase = result.get('model_phase', 'baseline')
+                    phase_label = {'click_boost': '统计增强', 'feature': '特征学习', 'adapter': '语义适配'}.get(phase, '基线')
+                    return html.Div([
+                        html.I(className="fas fa-check-circle", style={'marginRight': '6px', 'color': '#22c55e'}),
+                        html.Span(
+                            f"感谢反馈！已有 {count} 条学习记录（{phase_label}），下次搜索将更精准。",
+                            style={'color': '#22c55e', 'fontSize': '12px'}
+                        )
+                    ])
+                return html.Div([
+                    html.Span(f"反馈未接受：{result.get('reason', '未知')}", style={'color': '#ef4444', 'fontSize': '12px'})
+                ])
+            except Exception as exc:
+                logger.warning(f"Feedback submission error: {exc}")
+                raise PreventUpdate
 
     def _format_agent_message(self, text: str, tools_used: List[str], insights: List[str]) -> str:
         parts = []

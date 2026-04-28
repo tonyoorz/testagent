@@ -177,6 +177,13 @@ NAVIGATION_CONFIG = [
         'icon': 'fas fa-chart-line',
         'component': 'testing_efficiency_page',
         'enabled': True
+    },
+    {
+        'id': 'tab-feedback-monitor',
+        'label': '反馈学习监控',
+        'icon': 'fas fa-graduation-cap',
+        'component': 'feedback_monitor_page',
+        'enabled': True
     }
 ]
 

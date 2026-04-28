@@ -10514,6 +10514,12 @@ if AI_CHAT_AVAILABLE:
             data_store_id='filtered-data-store',
             data_processor_func=process_filtered_data
         )
+        # Register feedback monitor page callbacks
+        try:
+            from feedback_monitor_callbacks import register_feedback_monitor_callbacks
+            register_feedback_monitor_callbacks(app)
+        except Exception as _fb_err:
+            logger.warning(f"Feedback monitor callbacks not registered: {_fb_err}")
     else:
         # 使用基础版注册（兼容模式）
         ai_chat_manager.register_enhanced_chat_callbacks(

@@ -53,7 +53,12 @@ class TrainingScheduler:
     ADAPTER_THRESHOLD = 200
     RETRAIN_INTERVAL = 20
 
-    def current_phase(self, total_feedback: int) -> str:
+    def __init__(self, store: "FeedbackStore | None" = None) -> None:
+        self._store = store
+
+    def current_phase(self, total_feedback: int | None = None) -> str:
+        if total_feedback is None:
+            total_feedback = self._store.count_feedback() if self._store else 0
         if int(total_feedback) >= self.ADAPTER_THRESHOLD:
             return "adapter"
         if int(total_feedback) >= self.FEATURE_THRESHOLD:
@@ -86,7 +91,9 @@ class FeedbackStore:
             flip_window_seconds=flip_window_seconds,
         )
         self._lock = threading.Lock()
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
         self._ensure_schema()
 
     def _conn(self) -> sqlite3.Connection:
@@ -330,6 +337,57 @@ class FeedbackStore:
         )
         conn.commit()
         conn.close()
+
+    # ── Monitor helpers ──
+
+    def get_total_feedback_count(self) -> int:
+        return self.count_feedback(valid_only=True)
+
+    def get_feedback_count_by_signal(self, signal: str) -> int:
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM feedback_records WHERE is_valid=1 AND signal=?",
+            (signal,),
+        ).fetchone()
+        conn.close()
+        return int(row["cnt"] if row else 0)
+
+    def get_recent_feedback(self, limit: int = 20) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT created_at, query_text, ticket_id, signal, user_id FROM feedback_records WHERE is_valid=1 ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        import datetime as _dt
+        result = []
+        for r in rows:
+            d = dict(r)
+            ts = d.get("created_at")
+            if isinstance(ts, (int, float)):
+                d["created_at"] = _dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+            q = str(d.get("query_text") or "")
+            if len(q) > 60:
+                d["query_text"] = q[:57] + "..."
+            result.append(d)
+        return result
+
+    def get_model_snapshots(self, limit: int = 5) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT phase, feedback_count, metrics, created_at FROM reranker_models ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        import datetime as _dt
+        result = []
+        for r in rows:
+            d = dict(r)
+            ts = d.get("created_at")
+            if isinstance(ts, (int, float)):
+                d["created_at"] = _dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+            result.append(d)
+        return result
 
 
 __all__ = [

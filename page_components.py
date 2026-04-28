@@ -324,6 +324,40 @@ class PageComponentManager:
             })
         ])
     
+    def create_feedback_monitor_page(self) -> html.Div:
+        """创建反馈学习监控页面"""
+        return html.Div([
+            nav_manager.create_breadcrumb('tab-feedback-monitor'),
+            html.H2("反馈学习监控", style={'color': '#2c3e50', 'marginBottom': '20px'}),
+
+            # Summary cards
+            html.Div(id='feedback-monitor-cards', children=[
+                html.P("加载中...", style={'color': '#999'})
+            ]),
+
+            # Phase indicator
+            html.Div(id='feedback-monitor-phase', style={'marginTop': '20px'}),
+
+            # Recent feedback table
+            html.Div([
+                html.H4("最近反馈记录", style={'color': '#34495e', 'marginTop': '30px', 'marginBottom': '15px'}),
+                html.Div(id='feedback-monitor-table', children=[
+                    html.P("暂无反馈记录", style={'color': '#999'})
+                ]),
+            ]),
+
+            # Model history
+            html.Div([
+                html.H4("模型快照历史", style={'color': '#34495e', 'marginTop': '30px', 'marginBottom': '15px'}),
+                html.Div(id='feedback-monitor-models', children=[
+                    html.P("暂无模型快照", style={'color': '#999'})
+                ]),
+            ]),
+
+            # Auto-refresh interval
+            dcc.Interval(id='feedback-monitor-interval', interval=30_000, n_intervals=0),
+        ])
+    
     def get_page_component(self, nav_id: str) -> html.Div:
         """根据导航ID获取页面组件"""
         page_map = {
@@ -335,7 +369,8 @@ class PageComponentManager:
             'tab-word-cloud': self.create_word_cloud_page,
             'tab-risk-analysis': self.create_risk_analysis_page,
             'tab-data-dashboard': self.create_data_dashboard_page,
-            'tab-testing-efficiency': self.create_testing_efficiency_page
+            'tab-testing-efficiency': self.create_testing_efficiency_page,
+            'tab-feedback-monitor': self.create_feedback_monitor_page,
         }
         
         if nav_id in page_map:
