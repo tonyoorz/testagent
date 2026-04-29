@@ -1,0 +1,12 @@
+{
+  "feedback_db": "C:\\Users\\q446328\\Desktop\\TPMDashbaord\\database\\ticket_embeddings.db",
+  "defect_db": "C:\\Users\\q446328\\Desktop\\TPMDashbaord\\database\\local_data_rebuilt.db",
+  "total_feedback": 1,
+  "unique_queries": 1,
+  "total_triplets": 0,
+  "total_pairs": 1,
+  "train_triplets": 0,
+  "train_pairs": 1,
+  "eval_queries": 0,
+  "base_model": "BAAI/bge-small-zh-v1.5"
+}

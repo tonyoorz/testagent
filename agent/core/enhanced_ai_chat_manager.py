@@ -237,6 +237,160 @@ def count_duplicate_followup_rounds(
     detection follow-up chain.  Returns 0 for standalone queries."""
     return _analyze_duplicate_followup_chain(question, conversation_history)[1]
 
+
+def _build_enhanced_duplicate_result_payload(
+    query_text: str,
+    dashboard_type: str,
+    candidates: List[Any],
+) -> Dict[str, Any]:
+    items: List[Dict[str, Any]] = []
+    for rank_pos, candidate in enumerate(candidates or []):
+        items.append(
+            {
+                "ticket_id": getattr(candidate, "ticket_id", None),
+                "name": getattr(candidate, "name", "") or "",
+                "project": getattr(candidate, "project", None),
+                "pu": getattr(candidate, "pu", None),
+                "status_phase": getattr(candidate, "status_phase", None),
+                "snippet": getattr(candidate, "snippet", "") or "",
+                "score_1_10": int(getattr(candidate, "score_1_10", 1) or 1),
+                "similarity": float(getattr(candidate, "similarity", 0.0) or 0.0),
+                "rank_pos": rank_pos,
+            }
+        )
+    return {
+        "query_text": str(query_text or "").strip(),
+        "dashboard_type": str(dashboard_type or "general"),
+        "candidates": items,
+    }
+
+
+def append_duplicate_result_message(
+    chat_messages: List[Dict[str, Any]],
+    stream_state: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    updated_messages = list(chat_messages or [])
+    payload = dict((stream_state or {}).get("duplicate_payload") or {})
+    if not (stream_state or {}).get("is_duplicate_search") or not payload:
+        return updated_messages
+
+    if updated_messages:
+        last_message = updated_messages[-1]
+        if (
+            last_message.get("type") == "duplicate-search-result"
+            and dict(last_message.get("duplicate_result") or {}).get("query_text") == payload.get("query_text")
+        ):
+            return updated_messages
+
+    updated_messages.append(
+        {
+            "role": "assistant",
+            "type": "duplicate-search-result",
+            "content": "",
+            "duplicate_result": payload,
+        }
+    )
+    return updated_messages
+
+
+def render_enhanced_duplicate_result_message(message: Dict[str, Any], chat_id_prefix: str) -> html.Div:
+    payload = dict(message.get("duplicate_result") or {})
+    query_text = str(payload.get("query_text") or "").strip()
+    candidates = list(payload.get("candidates") or [])
+    cards: List[Any] = []
+
+    for candidate in candidates:
+        ticket_id = str(candidate.get("ticket_id") or "")
+        rank_pos = int(candidate.get("rank_pos", 0) or 0)
+        meta = " / ".join(
+            [value for value in [candidate.get("project"), candidate.get("pu"), candidate.get("status_phase")] if value]
+        )
+        cards.append(
+            html.Div(
+                [
+                    html.Div(f"{candidate.get('score_1_10', 1)} 分", style={"fontWeight": "bold", "color": "#1f4b99"}),
+                    html.Div(f"#{ticket_id or '(未知ID)'} - {candidate.get('name', '') or '(无标题)'}", style={"marginTop": "4px"}),
+                    html.Div(meta or "-", style={"marginTop": "4px", "fontSize": "12px", "color": "#64748b"}),
+                    html.Div(
+                        candidate.get("snippet", ""),
+                        style={"marginTop": "6px", "fontSize": "13px", "color": "#475569", "whiteSpace": "pre-line"},
+                    ),
+                    html.Div(
+                        [
+                            html.Button(
+                                "👍 匹配",
+                                id={
+                                    "type": f"{chat_id_prefix}-dup-feedback",
+                                    "signal": "positive",
+                                    "query": query_text[:200],
+                                    "ticket": ticket_id,
+                                    "idx": rank_pos,
+                                },
+                                n_clicks=0,
+                                style={
+                                    "padding": "6px 10px",
+                                    "backgroundColor": "#e8f5e9",
+                                    "border": "1px solid #81c784",
+                                    "borderRadius": "6px",
+                                    "cursor": "pointer",
+                                },
+                            ),
+                            html.Button(
+                                "👎 不匹配",
+                                id={
+                                    "type": f"{chat_id_prefix}-dup-feedback",
+                                    "signal": "negative",
+                                    "query": query_text[:200],
+                                    "ticket": ticket_id,
+                                    "idx": rank_pos,
+                                },
+                                n_clicks=0,
+                                style={
+                                    "padding": "6px 10px",
+                                    "backgroundColor": "#ffebee",
+                                    "border": "1px solid #ef9a9a",
+                                    "borderRadius": "6px",
+                                    "cursor": "pointer",
+                                    "marginLeft": "8px",
+                                },
+                            ),
+                        ],
+                        style={"marginTop": "10px"},
+                    ),
+                ],
+                style={
+                    "padding": "10px",
+                    "border": "1px solid #e2e8f0",
+                    "borderRadius": "8px",
+                    "marginTop": "10px",
+                    "backgroundColor": "#ffffff",
+                },
+            )
+        )
+
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.I(className="fas fa-robot", style={"marginRight": "8px", "color": "#3498db"}),
+                    html.Span("SiSi", style={"fontWeight": "bold", "color": "#3498db"}),
+                ],
+                style={"marginBottom": "5px"},
+            ),
+            html.Div(message.get("content", ""), style={"whiteSpace": "pre-line", "paddingLeft": "24px"}),
+            html.Div(cards, style={"marginTop": "12px", "paddingLeft": "24px"}),
+        ],
+        style={
+            "padding": "12px",
+            "backgroundColor": "#f8f9fa",
+            "borderRadius": "8px",
+            "margin": "8px 0",
+            "textAlign": "left",
+            "border": "1px solid #e9ecef",
+            "marginRight": "20px",
+        },
+    )
+
 # Dify Workflow (RAG) config
 HARDCODED_DIFY_API_BASE = "http://10.86.150.232/v1"
 HARDCODED_DIFY_API_KEY = "app-YweK9LdWefjG11niKLtqTBV8"
@@ -2490,6 +2644,11 @@ class EnhancedAIChatManager:
                     )
                 elif msg.get("role") == "assistant":
                     msg_type = msg.get("type")
+                    if msg_type == "duplicate-search-result":
+                        chat_history_children.append(
+                            render_enhanced_duplicate_result_message(msg, chat_id_prefix=chat_id_prefix)
+                        )
+                        continue
                     if msg_type == "reasoning":
                         bg_color = "#fef9e7"
                         border_color = "#f4d03f"
@@ -4155,6 +4314,15 @@ class EnhancedAIChatManager:
             _dup_feedback_store = FeedbackStore()
             _dup_model_phase = _dup_metadata.get('model_phase', 'baseline')
             _dup_feedback_count = _dup_metadata.get('feedback_count', 0)
+            duplicate_payload = _build_enhanced_duplicate_result_payload(
+                query_text=effective_query,
+                dashboard_type=self.dashboard_type,
+                candidates=candidates,
+            )
+            with streaming_lock:
+                if task_id in streaming_data:
+                    streaming_data[task_id]['is_duplicate_search'] = True
+                    streaming_data[task_id]['duplicate_payload'] = duplicate_payload
 
             model_chatbot = _chatbot_for_model(selected_model)
             local_only = not getattr(model_chatbot, "client", None) and not getattr(model_chatbot, "backup_api_key", "")
@@ -4208,9 +4376,6 @@ class EnhancedAIChatManager:
                 if _dup_feedback_count > 0:
                     phase_label = {'click_boost': '统计增强', 'feature': '特征学习', 'adapter': '语义适配'}.get(_dup_model_phase, '基线')
                     lines.append(f"\n🧠 模型阶段：{phase_label}（基于 {_dup_feedback_count} 条团队反馈）")
-                # Embed candidate ticket IDs as hidden metadata for feedback buttons
-                _candidate_ticket_ids = [c.ticket_id for c in candidates[:10] if c.ticket_id]
-                lines.append(f"\n<!--FEEDBACK_META:{json.dumps({'query': effective_query, 'tickets': _candidate_ticket_ids}, ensure_ascii=False)}-->")
 
                 formatted = "\n".join(lines).strip()
                 chunk_size = 80
@@ -4686,6 +4851,8 @@ class EnhancedAIChatManager:
                 status_display = ""
 
             if status == 'completed':
+                chat_messages = append_duplicate_result_message(chat_messages, stream_data)
+                chat_messages = _trim_chat_messages(chat_messages)
                 streaming_state = {'active': False, 'task_id': None}
                 # Clean up streaming data to prevent memory leak
                 with streaming_lock:

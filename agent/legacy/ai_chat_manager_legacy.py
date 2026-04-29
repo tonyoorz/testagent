@@ -22,7 +22,7 @@ from agent.core.harness_config import load_llm_provider_config, load_workspace_e
 from duplicate_issue_finder import extract_hints, get_or_build_index
 
 import dash
-from dash import dcc, html, Input, Output, State, callback_context
+from dash import ALL, MATCH, dcc, html, Input, Output, State, callback_context
 from dash.exceptions import PreventUpdate
 
 load_workspace_env()
@@ -92,6 +92,212 @@ logger = logging.getLogger(__name__)
 # 全局流式数据存储
 streaming_data = {}
 streaming_lock = threading.Lock()
+
+
+def _build_duplicate_result_payload(query_text: str, dashboard_type: str, candidates: List[Any]) -> Dict[str, Any]:
+    items: List[Dict[str, Any]] = []
+    for rank_pos, candidate in enumerate(candidates or []):
+        items.append(
+            {
+                "ticket_id": getattr(candidate, "ticket_id", None),
+                "name": getattr(candidate, "name", "") or "",
+                "project": getattr(candidate, "project", None),
+                "pu": getattr(candidate, "pu", None),
+                "status_phase": getattr(candidate, "status_phase", None),
+                "snippet": getattr(candidate, "snippet", "") or "",
+                "score_1_10": int(getattr(candidate, "score_1_10", 1) or 1),
+                "similarity": float(getattr(candidate, "similarity", 0.0) or 0.0),
+                "rank_pos": rank_pos,
+            }
+        )
+    return {
+        "query_text": str(query_text or "").strip(),
+        "dashboard_type": str(dashboard_type or "general"),
+        "candidates": items,
+    }
+
+
+def _build_duplicate_recommendation_parts(candidates: List[Any]) -> Dict[str, Any]:
+    best_candidate = None
+    best_score = 0
+    for candidate in candidates or []:
+        score = int(getattr(candidate, "score_1_10", 0) or 0)
+        if best_candidate is None or score > best_score:
+            best_candidate = candidate
+            best_score = score
+
+    if best_score >= 8:
+        suggestion = "不建议提票"
+        reason = "与已有问题高度相似，建议优先合并/追加信息"
+    elif best_score <= 6:
+        suggestion = "可以提票"
+        reason = "未发现高度相似的已知问题"
+    else:
+        suggestion = "需要补充信息后再判断"
+        reason = "相似度中等，建议补充复现信息再决定是否新开票"
+
+    if best_candidate is not None and suggestion == "不建议提票":
+        tid = f"#{getattr(best_candidate, 'ticket_id', None) or '该相似票'}"
+        next_step = f"- 建议合并到 {tid}：在原票补充你的复现步骤、期望/实际、环境、日志/截图。"
+    else:
+        next_step = "- 如果仍要提票：建议补充复现步骤、期望/实际、环境信息、日志/截图，并标注 project/PU。"
+
+    return {
+        "best_candidate": best_candidate,
+        "best_score": best_score,
+        "suggestion": suggestion,
+        "reason": reason,
+        "next_step": next_step,
+    }
+
+
+def _build_duplicate_summary_text(candidates: List[Any]) -> str:
+    recommendation = _build_duplicate_recommendation_parts(candidates)
+    lines = [
+        "【结论】",
+        f"- 建议：{recommendation['suggestion']}",
+        f"- 依据：{recommendation['reason']}",
+        "",
+        "【下一步】",
+        recommendation["next_step"],
+    ]
+    return "\n".join(lines).strip()
+
+
+def _build_latest_duplicate_result_store(payload: Dict[str, Any]) -> Dict[str, Any]:
+    candidates = list((payload or {}).get("candidates") or [])
+    return {
+        "query_text": (payload or {}).get("query_text", ""),
+        "dashboard_type": (payload or {}).get("dashboard_type", "general"),
+        "candidates_by_ticket": {
+            str(candidate.get("ticket_id") or ""): candidate
+            for candidate in candidates
+            if candidate.get("ticket_id")
+        },
+    }
+
+
+def _submit_duplicate_feedback(
+    store_payload: Dict[str, Any],
+    ticket_id: str,
+    signal: str,
+    feedback_db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    from feedback_store import FeedbackStore
+
+    payload = dict(store_payload or {})
+    candidates_by_ticket = dict(payload.get("candidates_by_ticket") or {})
+    candidate = dict(candidates_by_ticket.get(ticket_id) or {})
+    if not payload.get("query_text") or not candidate:
+        return {"success": False, "message": "缺少反馈上下文"}
+
+    store = FeedbackStore(db_path=feedback_db_path) if feedback_db_path else FeedbackStore()
+    result = store.submit_feedback(
+        query_text=str(payload.get("query_text") or ""),
+        ticket_id=str(ticket_id or ""),
+        signal=str(signal or "").lower(),
+        base_score=candidate.get("similarity"),
+        rank_pos=candidate.get("rank_pos"),
+        user_id=None,
+    )
+    if result.get("accepted"):
+        message = "已记录为正向反馈" if str(signal).lower() == "positive" else "已记录为负向反馈"
+        return {"success": True, "message": message, "result": result}
+    return {"success": False, "message": f"反馈提交失败：{result.get('reason') or 'unknown'}", "result": result}
+
+
+def _build_duplicate_feedback_button_id(chat_id_prefix: str, ticket_id: str, signal: str, rank_pos: int) -> Dict[str, Any]:
+    return {
+        "type": "duplicate-feedback-btn",
+        "chat": chat_id_prefix,
+        "ticket_id": str(ticket_id or ""),
+        "signal": str(signal or "").lower(),
+        "rank_pos": int(rank_pos or 0),
+    }
+
+
+def render_duplicate_result_message(message: Dict[str, Any], chat_id_prefix: str) -> html.Div:
+    payload = dict(message.get("duplicate_result") or {})
+    candidates = list(payload.get("candidates") or [])
+    cards: List[Any] = []
+    for candidate in candidates:
+        ticket_id = str(candidate.get("ticket_id") or "")
+        meta = " / ".join(
+            [value for value in [candidate.get("project"), candidate.get("pu"), candidate.get("status_phase")] if value]
+        )
+        cards.append(
+            html.Div(
+                [
+                    html.Div(f"{candidate.get('score_1_10', 1)} 分", style={"fontWeight": "bold", "color": "#1f4b99"}),
+                    html.Div(f"#{ticket_id or '(未知ID)'} - {candidate.get('name', '') or '(无标题)'}", style={"marginTop": "4px"}),
+                    html.Div(meta or "-", style={"marginTop": "4px", "fontSize": "12px", "color": "#64748b"}),
+                    html.Div(candidate.get("snippet", ""), style={"marginTop": "6px", "fontSize": "13px", "color": "#475569", "whiteSpace": "pre-line"}),
+                    html.Div(
+                        [
+                            html.Button(
+                                "👍 匹配",
+                                id=_build_duplicate_feedback_button_id(chat_id_prefix, ticket_id, "positive", candidate.get("rank_pos", 0)),
+                                n_clicks=0,
+                                style={
+                                    "padding": "6px 10px",
+                                    "backgroundColor": "#e8f5e9",
+                                    "border": "1px solid #81c784",
+                                    "borderRadius": "6px",
+                                    "cursor": "pointer",
+                                },
+                            ),
+                            html.Button(
+                                "👎 不匹配",
+                                id=_build_duplicate_feedback_button_id(chat_id_prefix, ticket_id, "negative", candidate.get("rank_pos", 0)),
+                                n_clicks=0,
+                                style={
+                                    "padding": "6px 10px",
+                                    "backgroundColor": "#ffebee",
+                                    "border": "1px solid #ef9a9a",
+                                    "borderRadius": "6px",
+                                    "cursor": "pointer",
+                                    "marginLeft": "8px",
+                                },
+                            ),
+                        ],
+                        style={"marginTop": "10px"},
+                    ),
+                    html.Div(
+                        id={"type": "duplicate-feedback-status", "chat": chat_id_prefix, "ticket_id": ticket_id},
+                        style={"marginTop": "8px", "fontSize": "12px", "color": "#64748b"},
+                    ),
+                ],
+                style={
+                    "padding": "10px",
+                    "border": "1px solid #e2e8f0",
+                    "borderRadius": "8px",
+                    "marginTop": "10px",
+                    "backgroundColor": "#ffffff",
+                },
+            )
+        )
+    return html.Div(
+        [
+            html.I(className="fas fa-robot", style={"marginRight": "8px", "color": "#3498db"}),
+            html.Div(
+                [
+                    html.Div(message.get("content", ""), style={"whiteSpace": "pre-line"}),
+                    html.Div(cards, style={"marginTop": "12px"}),
+                ],
+                style={"display": "inline-block", "width": "calc(100% - 24px)"},
+            ),
+        ],
+        style={
+            "padding": "12px",
+            "backgroundColor": "#f8f9fa",
+            "borderRadius": "8px",
+            "margin": "8px 0",
+            "textAlign": "left",
+            "border": "1px solid #e9ecef",
+            "boxShadow": "0 1px 3px rgba(0,0,0,0.1)",
+            "marginRight": "20px",
+        },
+    )
 
 class DeepSeekStreamingChat:
     """优化的DeepSeek流式聊天类，支持推理过程显示和性能优化"""
@@ -1236,6 +1442,7 @@ class AIChatManager:
             dcc.Store(id=f'{chat_id_prefix}-messages', data=[], storage_type='session'),
             dcc.Store(id=f'{chat_id_prefix}-streaming-response', data='', storage_type='session'),
             dcc.Store(id=f'{chat_id_prefix}-streaming-state', data={'active': False, 'task_id': None}, storage_type='session'),
+            dcc.Store(id=f'{chat_id_prefix}-latest-duplicate-result', data=None, storage_type='session'),
             # 添加定时器用于流式更新
             dcc.Interval(
                 id=f'{chat_id_prefix}-update-interval',
@@ -1271,7 +1478,8 @@ class AIChatManager:
              Output(f'{chat_id_prefix}-messages', 'data'),
              Output(f'{chat_id_prefix}-streaming-state', 'data'),
              Output(f'{chat_id_prefix}-update-interval', 'disabled'),
-             Output(f'{chat_id_prefix}-status', 'children')],
+             Output(f'{chat_id_prefix}-status', 'children'),
+             Output(f'{chat_id_prefix}-latest-duplicate-result', 'data')],
             [Input(f'{chat_id_prefix}-send-button', 'n_clicks'),
              Input(f'{chat_id_prefix}-input', 'n_submit'),
              Input(f'{chat_id_prefix}-clear-button', 'n_clicks')] +
@@ -1282,7 +1490,8 @@ class AIChatManager:
              State(f'{chat_id_prefix}-streaming-state', 'data'),
              State(f'{chat_id_prefix}-show-reasoning', 'value'),
              State(data_store_id, 'data'),
-             State(f'{chat_id_prefix}-known-issues', 'value')]
+               State(f'{chat_id_prefix}-known-issues', 'value'),
+               State(f'{chat_id_prefix}-latest-duplicate-result', 'data')]
         )
         def handle_enhanced_chat(*args):
             """处理增强版聊天交互，支持流式响应"""
@@ -1322,13 +1531,14 @@ class AIChatManager:
             send_clicks = args[0]
             input_submit = args[1]
             clear_clicks = args[2]
-            preset_clicks = args[3:-6]  # 预设按钮点击次数
-            input_value = args[-6]
-            chat_messages = args[-5]
-            streaming_state = args[-4]
-            show_reasoning = args[-3]
-            filtered_data = args[-2]
-            known_issues_checked = args[-1] or []
+            preset_clicks = args[3:-7]  # 预设按钮点击次数
+            input_value = args[-7]
+            chat_messages = args[-6]
+            streaming_state = args[-5]
+            show_reasoning = args[-4]
+            filtered_data = args[-3]
+            known_issues_checked = args[-2] or []
+            latest_duplicate_result = args[-1]
             
             ctx = callback_context
             if not ctx.triggered:
@@ -1351,7 +1561,7 @@ class AIChatManager:
                     'border': '1px solid #e9ecef',
                     'boxShadow': '0 1px 3px rgba(0,0,0,0.1)'
                 })
-                return [initial_message], "", [], {'active': False, 'task_id': None}, True, ""
+                return [initial_message], "", [], {'active': False, 'task_id': None}, True, "", None
             
             # 初始化聊天消息
             if not chat_messages:
@@ -1422,46 +1632,21 @@ class AIChatManager:
                         candidates = index.search(user_message, hints=hints, top_k=10)
 
                         if not getattr(streaming_chat, "client", None) and not getattr(streaming_chat, "backup_api_key", ""):
-                            best = max((c.score_1_10 for c in candidates), default=0)
-                            if best >= 8:
-                                suggestion = "不建议提票"
-                                reason = "与已有问题高度相似，建议优先合并/追加信息"
-                            elif best <= 6:
-                                suggestion = "可以提票"
-                                reason = "未发现高度相似的已知问题"
-                            else:
-                                suggestion = "需要补充信息后再判断"
-                                reason = "相似度中等，建议补充复现信息再决定是否新开票"
-
-                            lines: List[str] = []
-                            lines.append("【结论】")
-                            lines.append(f"- 建议：{suggestion}")
-                            lines.append(f"- 依据：{reason}")
-                            lines.append("")
-                            lines.append("【相似已知问题（按相似度降序）】")
-                            if not candidates:
-                                lines.append("- (未检索到候选；可能当前筛选数据为空或已排除关闭态)")
-                            else:
-                                for c in candidates[:10]:
-                                    tid = f"#{c.ticket_id}" if c.ticket_id else "#(未知ID)"
-                                    meta = " / ".join([x for x in [c.project, c.pu] if x])
-                                    phase = c.status_phase or "-"
-                                    title = c.name or "(无标题)"
-                                    lines.append(f"- {c.score_1_10}分：{tid} - {title}（{meta or '-'}，{phase}）")
-                                    if c.snippet:
-                                        lines.append(f"  匹配点：{c.snippet}")
-                            lines.append("")
-                            lines.append("【下一步】")
-                            if suggestion == "不建议提票" and candidates:
-                                best_c = candidates[0]
-                                tid = f"#{best_c.ticket_id}" if best_c.ticket_id else "该相似票"
-                                lines.append(f"- 建议合并到 {tid}：在原票补充你的复现步骤、期望/实际、环境、日志/截图。")
-                            else:
-                                lines.append("- 如果仍要提票：建议补充复现步骤、期望/实际、环境信息、日志/截图，并标注 project/PU。")
-                            lines.append("")
-                            lines.append("（提示：当前未配置可用的 LLM 密钥，因此以上为本地检索结果生成的建议。）")
-
-                            chat_messages.append({"role": "assistant", "content": "\n".join(lines).strip()})
+                            duplicate_summary = _build_duplicate_summary_text(candidates)
+                            duplicate_payload = _build_duplicate_result_payload(
+                                query_text=user_message,
+                                dashboard_type=dashboard_type,
+                                candidates=candidates,
+                            )
+                            latest_duplicate_result = _build_latest_duplicate_result_store(duplicate_payload)
+                            chat_messages.append(
+                                {
+                                    "role": "assistant",
+                                    "type": "duplicate-search-result",
+                                    "content": duplicate_summary,
+                                    "duplicate_result": duplicate_payload,
+                                }
+                            )
                             new_streaming_state = {'active': False, 'task_id': None}
                             chat_history_children = []
                             for i, msg in enumerate(chat_messages):
@@ -1481,24 +1666,29 @@ class AIChatManager:
                                         })
                                     )
                                 elif msg["role"] == "assistant":
-                                    icon_class = "fas fa-brain" if "思考" in msg["content"] else "fas fa-robot"
-                                    icon_color = "#f39c12" if "思考" in msg["content"] else "#3498db"
-                                    chat_history_children.append(
-                                        html.Div([
-                                            html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
-                                            html.Span(msg["content"], style={'whiteSpace': 'pre-line'})
-                                        ], style={
-                                            'padding': '12px',
-                                            'backgroundColor': '#f8f9fa',
-                                            'borderRadius': '8px',
-                                            'margin': '8px 0',
-                                            'textAlign': 'left',
-                                            'border': '1px solid #e9ecef',
-                                            'marginRight': '20px'
-                                        })
-                                    )
+                                    if msg.get("type") == "duplicate-search-result":
+                                        chat_history_children.append(
+                                            render_duplicate_result_message(msg, chat_id_prefix=chat_id_prefix)
+                                        )
+                                    else:
+                                        icon_class = "fas fa-brain" if "思考" in msg["content"] else "fas fa-robot"
+                                        icon_color = "#f39c12" if "思考" in msg["content"] else "#3498db"
+                                        chat_history_children.append(
+                                            html.Div([
+                                                html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
+                                                html.Span(msg["content"], style={'whiteSpace': 'pre-line'})
+                                            ], style={
+                                                'padding': '12px',
+                                                'backgroundColor': '#f8f9fa',
+                                                'borderRadius': '8px',
+                                                'margin': '8px 0',
+                                                'textAlign': 'left',
+                                                'border': '1px solid #e9ecef',
+                                                'marginRight': '20px'
+                                            })
+                                        )
 
-                            return (chat_history_children, "", chat_messages, new_streaming_state, True, "")
+                            return (chat_history_children, "", chat_messages, new_streaming_state, True, "", latest_duplicate_result)
 
                         candidate_lines: List[str] = []
                         for c in candidates:
@@ -1519,6 +1709,14 @@ class AIChatManager:
 
                         candidate_block = "\n".join(candidate_lines) if candidate_lines else "(无候选)"
                         system_prompt = f"""你是缺陷提票前置审查助手。你的任务是：根据用户的自然语言问题描述，在“候选缺陷列表”中找出最相似的已知问题，并给出是否建议提票的结论。\n\n规则：\n1) 只能基于提供的候选列表，不要编造不存在的ticket。\n2) 相似度评分使用 1-10（10=几乎同一个问题）。你可以参考候选里给定的 score_1_10，但如果你认为不合理可以小幅调整；最终输出仍需按 10→1 排序。\n3) 如果最高相似度 >= 8：结论默认“不建议提票”，建议合并到最相似票或补充复现信息后追踪。\n4) 如果最高相似度 <= 6：结论默认“可以提票”，并给出建议标题与必填信息清单。\n\n输出格式（必须使用以下结构）：\n【结论】\n- 建议：不建议提票 / 可以提票 / 需要补充信息后再判断\n- 依据：一句话说明\n\n【相似已知问题（按相似度降序）】\n- 10分：#id - 标题（project/pu，phase）\\n  匹配点：...\n- 9分：...\n\n【下一步】\n- 如果不建议提票：建议合并到哪一票，以及需要补充哪些信息。\n- 如果可以提票：建议标题、复现步骤、期望/实际、环境、日志/截图等。\n\n候选缺陷列表（JSON Lines）：\n{candidate_block}\n"""
+
+                        # Populate store so feedback buttons work even with LLM path
+                        duplicate_payload = _build_duplicate_result_payload(
+                            query_text=user_message,
+                            dashboard_type=dashboard_type,
+                            candidates=candidates,
+                        )
+                        latest_duplicate_result = _build_latest_duplicate_result_store(duplicate_payload)
 
                         api_messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
                     else:
@@ -1544,6 +1742,9 @@ class AIChatManager:
                     chat_messages = _trim_chat_messages(chat_messages)
                     
                     new_streaming_state = {'active': True, 'task_id': task_id}
+                    if use_known_issues and candidates:
+                        new_streaming_state['is_duplicate_search'] = True
+                        new_streaming_state['duplicate_payload'] = duplicate_payload
                     
                 except Exception as e:
                     error_response = f"抱歉，处理您的请求时出现错误：{str(e)}"
@@ -1590,24 +1791,29 @@ class AIChatManager:
                         })
                     )
                 elif msg["role"] == "assistant":
-                    icon_class = "fas fa-brain" if "思考" in msg["content"] else "fas fa-robot"
-                    icon_color = "#f39c12" if "思考" in msg["content"] else "#3498db"
-                    
-                    chat_history_children.append(
-                        html.Div([
-                            html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
-                            html.Span(msg["content"], style={'whiteSpace': 'pre-line'})
-                        ], style={
-                            'padding': '12px',
-                            'backgroundColor': '#f8f9fa',
-                            'borderRadius': '8px',
-                            'margin': '8px 0',
-                            'textAlign': 'left',
-                            'border': '1px solid #e9ecef',
-                            'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
-                            'marginRight': '20px'
-                        })
-                    )
+                    if msg.get("type") == "duplicate-search-result":
+                        chat_history_children.append(
+                            render_duplicate_result_message(msg, chat_id_prefix=chat_id_prefix)
+                        )
+                    else:
+                        icon_class = "fas fa-brain" if "思考" in msg["content"] else "fas fa-robot"
+                        icon_color = "#f39c12" if "思考" in msg["content"] else "#3498db"
+                        
+                        chat_history_children.append(
+                            html.Div([
+                                html.I(className=icon_class, style={'marginRight': '8px', 'color': icon_color}),
+                                html.Span(msg["content"], style={'whiteSpace': 'pre-line'})
+                            ], style={
+                                'padding': '12px',
+                                'backgroundColor': '#f8f9fa',
+                                'borderRadius': '8px',
+                                'margin': '8px 0',
+                                'textAlign': 'left',
+                                'border': '1px solid #e9ecef',
+                                'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
+                                'marginRight': '20px'
+                            })
+                        )
             
             # 设置状态显示
             status_display = ""
@@ -1621,7 +1827,27 @@ class AIChatManager:
             new_input_value = ""
             
             return (chat_history_children, new_input_value, chat_messages, 
-                   new_streaming_state, not new_streaming_state.get('active'), status_display)
+                     new_streaming_state, not new_streaming_state.get('active'), status_display, latest_duplicate_result)
+
+        @app.callback(
+            Output({"type": "duplicate-feedback-status", "chat": chat_id_prefix, "ticket_id": MATCH}, "children"),
+            [Input({"type": "duplicate-feedback-btn", "chat": chat_id_prefix, "ticket_id": MATCH, "signal": ALL, "rank_pos": ALL}, "n_clicks")],
+            [State({"type": "duplicate-feedback-btn", "chat": chat_id_prefix, "ticket_id": MATCH, "signal": ALL, "rank_pos": ALL}, "id"),
+             State(f'{chat_id_prefix}-latest-duplicate-result', 'data')],
+            prevent_initial_call=True,
+        )
+        def submit_duplicate_feedback_callback(clicks, button_ids, latest_duplicate_result):
+            if not clicks or not any(clicks):
+                raise PreventUpdate
+            triggered = callback_context.triggered_id
+            if not isinstance(triggered, dict):
+                raise PreventUpdate
+            result = _submit_duplicate_feedback(
+                store_payload=latest_duplicate_result,
+                ticket_id=str(triggered.get("ticket_id") or ""),
+                signal=str(triggered.get("signal") or "").lower(),
+            )
+            return result["message"]
         
         # 流式更新回调
         @app.callback(
@@ -1633,10 +1859,11 @@ class AIChatManager:
             [Input(f'{chat_id_prefix}-update-interval', 'n_intervals')],
             [State(f'{chat_id_prefix}-messages', 'data'),
              State(f'{chat_id_prefix}-streaming-state', 'data'),
-             State(f'{chat_id_prefix}-show-reasoning', 'value')],
+             State(f'{chat_id_prefix}-show-reasoning', 'value'),
+             State(f'{chat_id_prefix}-latest-duplicate-result', 'data')],
             prevent_initial_call=True
         )
-        def update_streaming_response(n_intervals, chat_messages, streaming_state, show_reasoning):
+        def update_streaming_response(n_intervals, chat_messages, streaming_state, show_reasoning, latest_dup_result):
             """优化的流式响应更新"""
             if not streaming_state or not streaming_state.get('active'):
                 raise PreventUpdate
@@ -1685,6 +1912,11 @@ class AIChatManager:
                                 })
                             )
                         elif msg["role"] == "assistant":
+                            if msg.get("type") == "duplicate-search-result":
+                                chat_history_children.append(
+                                    render_duplicate_result_message(msg, chat_id_prefix=chat_id_prefix)
+                                )
+                                continue
                             # 根据消息类型设置样式
                             if msg.get("type") == "reasoning":
                                 icon_class = "fas fa-brain"
@@ -1815,6 +2047,14 @@ class AIChatManager:
                 
                 # 检查是否完成
                 if stream_data.get('status') == 'completed':
+                    # If this was a duplicate search, append a card message for buttons
+                    if streaming_state.get('is_duplicate_search') and streaming_state.get('duplicate_payload'):
+                        chat_messages.append({
+                            "role": "assistant",
+                            "type": "duplicate-search-result",
+                            "content": "",
+                            "duplicate_result": streaming_state['duplicate_payload'],
+                        })
                     streaming_state = {'active': False, 'task_id': None}
                     # Clean up streaming data
                     streaming_chat.clear_streaming_data(task_id)
@@ -1856,6 +2096,11 @@ class AIChatManager:
                             })
                         )
                     elif msg["role"] == "assistant":
+                        if msg.get("type") == "duplicate-search-result":
+                            chat_history_children.append(
+                                render_duplicate_result_message(msg, chat_id_prefix=chat_id_prefix)
+                            )
+                            continue
                         # 根据消息类型设置样式
                         if msg.get("type") == "reasoning":
                             icon_class = "fas fa-brain"

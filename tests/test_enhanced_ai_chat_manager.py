@@ -1,8 +1,11 @@
 import unittest
+from dash import html
 
 from agent.core.enhanced_ai_chat_manager import (
     build_duplicate_followup_query,
     count_duplicate_followup_rounds,
+    append_duplicate_result_message,
+    render_enhanced_duplicate_result_message,
 )
 
 
@@ -106,6 +109,67 @@ class TestCountDuplicateFollowupRounds(unittest.TestCase):
             {"role": "user", "content": "出发场景 冷启动"},
         ]
         self.assertEqual(count_duplicate_followup_rounds("出发场景 冷启动", history), 2)
+
+
+class TestEnhancedDuplicateResultCards(unittest.TestCase):
+    def test_render_enhanced_duplicate_result_message_contains_ticket_level_feedback_buttons(self):
+        message = {
+            "role": "assistant",
+            "type": "duplicate-search-result",
+            "content": "【结论】\n- 建议：不建议提票",
+            "duplicate_result": {
+                "query_text": "speech cannot wakeup",
+                "dashboard_type": "defect",
+                "candidates": [
+                    {
+                        "ticket_id": "2649794",
+                        "name": "Speech can't wake up",
+                        "project": "IDCEVO",
+                        "pu": "26-11",
+                        "status_phase": "04-In Progress",
+                        "snippet": "标题完全一致，均为语音无法唤醒。",
+                        "score_1_10": 9,
+                        "similarity": 0.91,
+                        "rank_pos": 0,
+                    }
+                ],
+            },
+        }
+
+        component = render_enhanced_duplicate_result_message(message, chat_id_prefix="defect-explore-chat")
+
+        self.assertIsInstance(component, html.Div)
+        component_repr = repr(component)
+        self.assertIn("2649794", component_repr)
+        self.assertIn("👍 匹配", component_repr)
+        self.assertIn("👎 不匹配", component_repr)
+        self.assertIn("defect-explore-chat-dup-feedback", component_repr)
+
+    def test_append_duplicate_result_message_adds_structured_card_after_llm_summary(self):
+        chat_messages = [
+            {"role": "assistant", "type": "stream_response", "content": "LLM summary"}
+        ]
+        streaming_state = {
+            "is_duplicate_search": True,
+            "duplicate_payload": {
+                "query_text": "speech cannot wakeup",
+                "dashboard_type": "defect",
+                "candidates": [
+                    {
+                        "ticket_id": "2649794",
+                        "name": "Speech can't wake up",
+                        "score_1_10": 9,
+                        "rank_pos": 0,
+                    }
+                ],
+            },
+        }
+
+        updated_messages = append_duplicate_result_message(chat_messages, streaming_state)
+
+        self.assertEqual(len(updated_messages), 2)
+        self.assertEqual(updated_messages[-1]["type"], "duplicate-search-result")
+        self.assertEqual(updated_messages[-1]["duplicate_result"]["candidates"][0]["ticket_id"], "2649794")
 
 
 if __name__ == "__main__":
