@@ -39,7 +39,9 @@ import queue
 import uuid
 import logging
 from collections import defaultdict
-from functools import lru_cache, wraps
+from functools import wraps
+from cache_manager import get_cache
+app_cache = get_cache()
 import base64
 from io import BytesIO, StringIO
 from dimension_utils import normalize_dimension_value, build_preferred_dimension, build_chart_dimension, sort_dimension_with_unknown_last
@@ -930,7 +932,7 @@ def _extract_years_from_date_range(start_date=None, end_date=None):
     return _normalize_defect_years(years)
 
 
-@lru_cache(maxsize=1)
+@app_cache.memoize('discover_years', timeout=3600)
 def _discover_defect_years_from_files():
     """扫描 defect 目录，推断可选缺陷年份。"""
     discovered = set()
@@ -963,7 +965,7 @@ def _combine_yearly_dataframes(dataframes):
     return combined_df
 
 
-@lru_cache(maxsize=8)
+@app_cache.memoize('master_data', timeout=300)
 def _cached_load_master_data(years_key=None, cache_version=None):
     """按年份缓存加载 master 数据。"""
     if cache_version != _DATA_CACHE_VERSION:
@@ -1071,7 +1073,7 @@ def _cached_load_master_data(years_key=None, cache_version=None):
     return _combine_yearly_dataframes(master_frames)
 
 
-@lru_cache(maxsize=8)
+@app_cache.memoize('defect_data', timeout=300)
 def _cached_load_defect_data(years_key=None, cache_version=None):
     """按年份缓存加载缺陷数据，默认仅加载当前配置年份。"""
     if cache_version != _DATA_CACHE_VERSION:
