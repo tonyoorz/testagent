@@ -141,8 +141,8 @@ class TestEnhancedDuplicateResultCards(unittest.TestCase):
         self.assertIsInstance(component, html.Div)
         component_repr = repr(component)
         self.assertIn("2649794", component_repr)
-        self.assertIn("👍 匹配", component_repr)
-        self.assertIn("👎 不匹配", component_repr)
+        self.assertIn("✅ 是重复", component_repr)
+        self.assertIn("❌ 不是", component_repr)
         self.assertIn("defect-explore-chat-dup-feedback", component_repr)
 
     def test_append_duplicate_result_message_adds_structured_card_after_llm_summary(self):

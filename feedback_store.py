@@ -17,15 +17,18 @@ CREATE TABLE IF NOT EXISTS feedback_records (
     query_hash  TEXT NOT NULL,
     ticket_id   TEXT NOT NULL,
     signal      TEXT NOT NULL,
+    source      TEXT NOT NULL DEFAULT 'explicit',
     base_score  REAL,
     rank_pos    INTEGER,
     user_id     TEXT,
+    session_id  TEXT,
     is_valid    INTEGER DEFAULT 1,
     created_at  REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_fb_query ON feedback_records(query_hash);
 CREATE INDEX IF NOT EXISTS idx_fb_ticket ON feedback_records(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_fb_user_time ON feedback_records(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_fb_source ON feedback_records(source);
 
 CREATE TABLE IF NOT EXISTS reranker_models (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,26 +50,99 @@ CREATE TABLE IF NOT EXISTS adapter_weights (
 );
 """
 
+# Migration: add columns to existing databases
+_MIGRATION_SQL = [
+    "ALTER TABLE feedback_records ADD COLUMN source TEXT NOT NULL DEFAULT 'explicit'",
+    "ALTER TABLE feedback_records ADD COLUMN session_id TEXT",
+]
+
 
 class TrainingScheduler:
-    FEATURE_THRESHOLD = 50
-    ADAPTER_THRESHOLD = 200
+    """Two-phase scheduler: LR feature reranker → embedding fine-tune.
+
+    Checks data quality (not just quantity) before training.
+    The adapter phase has been removed — LR covers its value,
+    and embedding fine-tuning is the real upgrade at scale.
+    """
+
+    # ── LR Feature Reranker ──
+    LR_MIN_EXPLICIT = 50        # at least 50 explicit labels (✅ or ❌)
+    LR_MIN_POSITIVE = 20        # at least 20 ✅
+    LR_MIN_NEGATIVE = 15        # at least 15 ❌
+    LR_MIN_QUERIES = 15         # at least 15 distinct queries
+    LR_CV_AUC_THRESHOLD = 0.6   # cross-validation AUC floor
+
+    # ── Embedding Fine-tune ──
+    EMBED_MIN_EXPLICIT = 300
+    EMBED_MIN_PAIRS = 100
+    EMBED_MIN_QUERIES = 40
+
     RETRAIN_INTERVAL = 20
 
     def __init__(self, store: "FeedbackStore | None" = None) -> None:
         self._store = store
 
-    def current_phase(self, total_feedback: int | None = None) -> str:
-        if total_feedback is None:
-            total_feedback = self._store.count_feedback() if self._store else 0
-        if int(total_feedback) >= self.ADAPTER_THRESHOLD:
-            return "adapter"
-        if int(total_feedback) >= self.FEATURE_THRESHOLD:
+    def current_phase(self, total_feedback: Optional[int] = None) -> str:
+        report = self.check_lr_readiness()
+        if report["ready"]:
             return "feature"
         return "click_boost"
 
     def should_retrain(self, total_feedback: int, last_train_count: int) -> bool:
         return int(total_feedback) - int(last_train_count) >= self.RETRAIN_INTERVAL
+
+    def check_lr_readiness(self) -> dict:
+        """Check whether we have enough quality data to train the LR reranker."""
+        if self._store is None:
+            return {"ready": False, "details": []}
+
+        examples = self._store.get_training_examples()
+        explicit = [e for e in examples if e.get("source", "explicit") == "explicit"]
+
+        pos = sum(1 for e in explicit if e["signal"] == "positive")
+        neg = sum(1 for e in explicit if e["signal"] == "negative")
+        queries = len(set(e["query_hash"] for e in explicit))
+        total_explicit = len(explicit)
+
+        checks = [
+            (total_explicit >= self.LR_MIN_EXPLICIT,
+             f"显式标注: {total_explicit}/{self.LR_MIN_EXPLICIT}"),
+            (pos >= self.LR_MIN_POSITIVE,
+             f"✅ 标注: {pos}/{self.LR_MIN_POSITIVE}"),
+            (neg >= self.LR_MIN_NEGATIVE,
+             f"❌ 标注: {neg}/{self.LR_MIN_NEGATIVE}"),
+            (queries >= self.LR_MIN_QUERIES,
+             f"不同查询: {queries}/{self.LR_MIN_QUERIES}"),
+        ]
+
+        ready = all(passed for passed, _ in checks)
+        details = [("✅" if p else "⏳", msg) for p, msg in checks]
+        return {"ready": ready, "details": details}
+
+    def check_embed_readiness(self) -> dict:
+        """Check whether we have enough data for embedding fine-tuning."""
+        if self._store is None:
+            return {"ready": False, "details": []}
+
+        examples = self._store.get_training_examples()
+        explicit = [e for e in examples if e.get("source", "explicit") == "explicit"]
+
+        pos = sum(1 for e in explicit if e["signal"] == "positive")
+        queries = len(set(e["query_hash"] for e in explicit))
+        total_explicit = len(explicit)
+
+        checks = [
+            (total_explicit >= self.EMBED_MIN_EXPLICIT,
+             f"显式标注: {total_explicit}/{self.EMBED_MIN_EXPLICIT}"),
+            (pos >= self.EMBED_MIN_PAIRS,
+             f"正例 pairs: {pos}/{self.EMBED_MIN_PAIRS}"),
+            (queries >= self.EMBED_MIN_QUERIES,
+             f"不同查询: {queries}/{self.EMBED_MIN_QUERIES}"),
+        ]
+
+        ready = all(passed for passed, _ in checks)
+        details = [("✅" if p else "⏳", msg) for p, msg in checks]
+        return {"ready": ready, "details": details}
 
 
 class FeedbackGuard:
@@ -85,7 +161,7 @@ class FeedbackStore:
         flip_window_seconds: int = 300,
     ) -> None:
         self.db_path = db_path
-        self.scheduler = TrainingScheduler()
+        self.scheduler = TrainingScheduler(store=self)
         self.guard = FeedbackGuard(
             max_feedback_per_hour=max_feedback_per_hour,
             flip_window_seconds=flip_window_seconds,
@@ -104,6 +180,12 @@ class FeedbackStore:
     def _ensure_schema(self) -> None:
         conn = self._conn()
         conn.executescript(_FEEDBACK_DDL)
+        # Run migrations for existing databases
+        for sql in _MIGRATION_SQL:
+            try:
+                conn.execute(sql)
+            except Exception:
+                pass  # column already exists
         conn.commit()
         conn.close()
 
@@ -130,6 +212,8 @@ class FeedbackStore:
         user_id: Optional[str] = None,
         base_score: Optional[float] = None,
         rank_pos: Optional[int] = None,
+        source: str = "explicit",
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         normalized_signal = str(signal or "").strip().lower()
         if normalized_signal not in self.VALID_SIGNALS:
@@ -175,17 +259,19 @@ class FeedbackStore:
             conn.execute(
                 """
                 INSERT INTO feedback_records
-                (query_text, query_hash, ticket_id, signal, base_score, rank_pos, user_id, is_valid, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+                (query_text, query_hash, ticket_id, signal, source, base_score, rank_pos, user_id, session_id, is_valid, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                 """,
                 (
                     str(query_text).strip(),
                     query_hash,
                     str(ticket_id).strip(),
                     normalized_signal,
+                    source,
                     None if base_score is None else float(base_score),
                     None if rank_pos is None else int(rank_pos),
                     user_id,
+                    session_id,
                     now,
                 ),
             )

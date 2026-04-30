@@ -354,6 +354,14 @@ class PageComponentManager:
                 ]),
             ]),
 
+            # Search session stats
+            html.Div([
+                html.H4("搜索会话统计", style={'color': '#34495e', 'marginTop': '30px', 'marginBottom': '15px'}),
+                html.Div(id='feedback-monitor-search-stats', children=[
+                    html.P("加载中...", style={'color': '#999'})
+                ]),
+            ]),
+
             # Auto-refresh interval
             dcc.Interval(id='feedback-monitor-interval', interval=30_000, n_intervals=0),
         ])

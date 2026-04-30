@@ -318,7 +318,7 @@ def render_enhanced_duplicate_result_message(message: Dict[str, Any], chat_id_pr
                     html.Div(
                         [
                             html.Button(
-                                "👍 匹配",
+                                "✅ 是重复",
                                 id={
                                     "type": f"{chat_id_prefix}-dup-feedback",
                                     "signal": "positive",
@@ -336,7 +336,7 @@ def render_enhanced_duplicate_result_message(message: Dict[str, Any], chat_id_pr
                                 },
                             ),
                             html.Button(
-                                "👎 不匹配",
+                                "❌ 不是",
                                 id={
                                     "type": f"{chat_id_prefix}-dup-feedback",
                                     "signal": "negative",
@@ -349,6 +349,25 @@ def render_enhanced_duplicate_result_message(message: Dict[str, Any], chat_id_pr
                                     "padding": "6px 10px",
                                     "backgroundColor": "#ffebee",
                                     "border": "1px solid #ef9a9a",
+                                    "borderRadius": "6px",
+                                    "cursor": "pointer",
+                                    "marginLeft": "8px",
+                                },
+                            ),
+                            html.Button(
+                                "🤔 不确定",
+                                id={
+                                    "type": f"{chat_id_prefix}-dup-feedback",
+                                    "signal": "uncertain",
+                                    "query": query_text[:200],
+                                    "ticket": ticket_id,
+                                    "idx": rank_pos,
+                                },
+                                n_clicks=0,
+                                style={
+                                    "padding": "6px 10px",
+                                    "backgroundColor": "#fff8e1",
+                                    "border": "1px solid #ffe082",
                                     "borderRadius": "6px",
                                     "cursor": "pointer",
                                     "marginLeft": "8px",
@@ -4319,10 +4338,25 @@ class EnhancedAIChatManager:
                 dashboard_type=self.dashboard_type,
                 candidates=candidates,
             )
+            # Track search session for training-data mining
+            _search_session_id = None
+            try:
+                from search_session_tracker import get_session_tracker
+                _session_tracker = get_session_tracker()
+                _search_session_id = _session_tracker.begin_session(
+                    query_text=effective_query,
+                    candidates=candidates,
+                    user_id=_get_current_user_id(),
+                    model_phase=_dup_model_phase,
+                )
+            except Exception as _e:
+                logger.debug(f"Session tracking skipped: {_e}")
             with streaming_lock:
                 if task_id in streaming_data:
                     streaming_data[task_id]['is_duplicate_search'] = True
                     streaming_data[task_id]['duplicate_payload'] = duplicate_payload
+                    if _search_session_id:
+                        streaming_data[task_id]['search_session_id'] = _search_session_id
 
             model_chatbot = _chatbot_for_model(selected_model)
             local_only = not getattr(model_chatbot, "client", None) and not getattr(model_chatbot, "backup_api_key", "")
@@ -4374,7 +4408,7 @@ class EnhancedAIChatManager:
                 lines.append("")
                 lines.append("（提示：当前未配置可用的 LLM 密钥，因此以上为本地检索结果生成的建议。）")
                 if _dup_feedback_count > 0:
-                    phase_label = {'click_boost': '统计增强', 'feature': '特征学习', 'adapter': '语义适配'}.get(_dup_model_phase, '基线')
+                    phase_label = {'click_boost': '统计增强', 'feature': '特征学习'}.get(_dup_model_phase, '基线')
                     lines.append(f"\n🧠 模型阶段：{phase_label}（基于 {_dup_feedback_count} 条团队反馈）")
 
                 formatted = "\n".join(lines).strip()
@@ -4906,22 +4940,47 @@ class EnhancedAIChatManager:
             try:
                 store = FeedbackStore()
                 user_id = _get_current_user_id()
+
+                # Map uncertain to 'click' signal — recorded but not used for training
+                effective_signal = signal
+                source = 'explicit'
+                if signal == 'uncertain':
+                    effective_signal = 'click'
+                    source = 'explicit_uncertain'
+
                 result = store.submit_feedback(
                     query_text=query_text,
                     ticket_id=ticket_id,
-                    signal=signal,
+                    signal=effective_signal,
                     user_id=user_id,
+                    source=source,
                 )
+
+                # Also record in search session tracker for mining
+                try:
+                    from search_session_tracker import get_session_tracker
+                    _session_tracker = get_session_tracker()
+                    # Find the latest session for this query
+                    _latest_sid = _session_tracker._conn().execute(
+                        "SELECT session_id FROM search_sessions "
+                        "WHERE query_hash=? ORDER BY created_at DESC LIMIT 1",
+                        (_session_tracker.query_hash(query_text),)
+                    ).fetchone()
+                    if _latest_sid:
+                        _session_tracker.record_explicit(_latest_sid[0], ticket_id, signal)
+                except Exception as _se:
+                    logger.debug(f"Session tracking for feedback skipped: {_se}")
                 if result.get('accepted'):
                     count = result.get('feedback_count', 0)
                     phase = result.get('model_phase', 'baseline')
-                    phase_label = {'click_boost': '统计增强', 'feature': '特征学习', 'adapter': '语义适配'}.get(phase, '基线')
+                    phase_label = {'click_boost': '统计增强', 'feature': '特征学习'}.get(phase, '基线')
+                    if signal == 'uncertain':
+                        msg = f"已记录，系统会学习这种边界情况。已收集 {count} 条反馈。"
+                    else:
+                        msg = f"感谢反馈！已有 {count} 条学习记录（{phase_label}），下次搜索将更精准。"
                     return html.Div([
                         html.I(className="fas fa-check-circle", style={'marginRight': '6px', 'color': '#22c55e'}),
-                        html.Span(
-                            f"感谢反馈！已有 {count} 条学习记录（{phase_label}），下次搜索将更精准。",
-                            style={'color': '#22c55e', 'fontSize': '12px'}
-                        )
+                        html.Span(msg, style={'color': '#22c55e', 'fontSize': '12px'})
                     ])
                 return html.Div([
                     html.Span(f"反馈未接受：{result.get('reason', '未知')}", style={'color': '#ef4444', 'fontSize': '12px'})

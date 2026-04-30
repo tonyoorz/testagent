@@ -7,10 +7,12 @@ from feedback_store import FeedbackStore, TrainingScheduler
 
 class TestTrainingScheduler(unittest.TestCase):
     def test_phase_thresholds(self):
+        # current_phase() now reads actual data via check_lr_readiness()
         scheduler = TrainingScheduler()
+        # No store → always click_boost (not ready)
         self.assertEqual(scheduler.current_phase(0), "click_boost")
-        self.assertEqual(scheduler.current_phase(50), "feature")
-        self.assertEqual(scheduler.current_phase(200), "adapter")
+        self.assertEqual(scheduler.current_phase(50), "click_boost")
+        self.assertEqual(scheduler.current_phase(200), "click_boost")
 
 
 class TestFeedbackStore(unittest.TestCase):
