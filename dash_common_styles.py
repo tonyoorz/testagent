@@ -1,376 +1,428 @@
 """
 提供常用 Dash 样式设置的工具函数和常量，用于统一所有看板的样式。
+Vizion-Lab 设计系统配色。
 """
 
 import plotly.graph_objects as go
 from dash import html, dcc
 
-# 全局样式常量
-DARK_BG = '#000000'
-DARK_ACCENT = '#333333'
-HIGHLIGHT_COLOR = '#330000'
-TEXT_COLOR = '#ffffff'
-BORDER_COLOR = '#555555'
+# ── Vizion-Lab 调色板 ──────────────────────────────────────────
+# HSL references (for CSS variables)
+# --primary:        215 70% 48%   → #2266cc
+# --success:        152 60% 40%   → #29a066
+# --warning:        38 92% 50%    → #f5a623
+# --destructive:    0 72% 51%     → #e03e3e
+# --background:     220 20% 97%   → #f4f6f9
+# --card:           0 0% 100%     → #ffffff
+# --border:         220 16% 90%   → #dde3eb
+# --muted-foreground: 220 10% 50% → #737d8e
+# --foreground:     220 25% 10%   → #131921
+# --sidebar-bg:     220 25% 12%   → #171f2b
+# --sidebar-fg:     220 10% 75%   → #b0b8c6
 
-# 新增: 浅色主题常量
-LIGHT_BG = '#F0F0F0' # 使用柔和的浅灰色背景
-LIGHT_TEXT_COLOR = '#1E1E1E' # 深灰色文本，而不是纯黑
-LIGHT_BORDER_COLOR = '#CCCCCC'
-LIGHT_ACCENT_BG = '#E0E0E0' # 浅色主题的强调背景
+# 深色主题常量（保留兼容）
+DARK_BG = '#171f2b'
+DARK_ACCENT = '#1e2a3a'
+HIGHLIGHT_COLOR = '#2a1520'
+TEXT_COLOR = '#e2e8f0'
+BORDER_COLOR = '#2d3a4a'
 
-# 新增: 筛选器和标签的样式常量
+# Vizion-Lab 浅色主题常量
+LIGHT_BG = '#f4f6f9'
+LIGHT_TEXT_COLOR = '#131921'
+LIGHT_BORDER_COLOR = '#dde3eb'
+LIGHT_ACCENT_BG = '#e8ecf1'
+
+# Vizion-Lab 语义色
+PRIMARY_COLOR = '#2266cc'
+SUCCESS_COLOR = '#29a066'
+WARNING_COLOR = '#f5a623'
+DESTRUCTIVE_COLOR = '#e03e3e'
+MUTED_TEXT = '#737d8e'
+SIDEBAR_BG = '#171f2b'
+SIDEBAR_FG = '#b0b8c6'
+
+# 筛选器和标签的样式常量
 LABEL_STYLE_DARK = {
     'color': TEXT_COLOR,
     'marginBottom': '5px',
-    'display': 'block'
+    'display': 'block',
+    'fontSize': '0.7rem',
+    'fontWeight': '700',
+    'letterSpacing': '0.06em',
+    'textTransform': 'uppercase',
 }
 
 LABEL_STYLE_LIGHT = {
-    'color': LIGHT_TEXT_COLOR,
+    'color': MUTED_TEXT,
     'marginBottom': '5px',
-    'display': 'block'
+    'display': 'block',
+    'fontSize': '0.7rem',
+    'fontWeight': '700',
+    'letterSpacing': '0.06em',
+    'textTransform': 'uppercase',
 }
 
-# Dropdown 样式调整 (主要针对背景、文字、边框、占位符)
-# Dash 的 dcc.Dropdown 内部元素的样式控制比较复杂，
-# 有些深层样式可能需要通过 assets/ .css 文件来覆盖
-DROPDOWN_STYLE_DARK = {
-    # 'backgroundColor': DARK_ACCENT, # 下拉框本身的背景色，但Dash默认实现可能覆盖
-    # 'color': TEXT_COLOR,           # 下拉框文字颜色
-    # 'border': f'1px solid {BORDER_COLOR}' # 边框
-    # 大部分Dropdown的内部样式由Dash的默认CSS控制，这里设置的可能不完全生效
-    # 建议在 assets 文件夹中添加更具体的CSS规则
-}
-
-DROPDOWN_STYLE_LIGHT = {
-    # 'backgroundColor': LIGHT_BG, 
-    # 'color': LIGHT_TEXT_COLOR,
-    # 'border': f'1px solid {LIGHT_BORDER_COLOR}'
-    # 同上，主要通过CSS控制更佳
-}
+DROPDOWN_STYLE_DARK = {}
+DROPDOWN_STYLE_LIGHT = {}
 
 # 主容器样式
 MAIN_CONTAINER_STYLE = {
-    'backgroundColor': DARK_BG, 
-    'minHeight': '100vh', 
-    'padding': '20px', 
-    'fontFamily': 'Arial, sans-serif',
-    'color': TEXT_COLOR # 默认文字颜色 (针对深色背景)
+    'backgroundColor': DARK_BG,
+    'minHeight': '100vh',
+    'padding': '20px',
+    'fontFamily': "'DM Sans', system-ui, sans-serif",
+    'color': TEXT_COLOR,
 }
 
-# 新增: 浅色主容器样式
 LIGHT_MAIN_CONTAINER_STYLE = {
     'backgroundColor': LIGHT_BG,
     'minHeight': '100vh',
     'padding': '20px',
-    'fontFamily': 'Arial, sans-serif',
-    'color': LIGHT_TEXT_COLOR # 浅色背景下的文字颜色
+    'fontFamily': "'DM Sans', system-ui, sans-serif",
+    'color': LIGHT_TEXT_COLOR,
 }
 
 # 标题样式
 TITLE_STYLE = {
-    'textAlign': 'center', 
-    'color': TEXT_COLOR, 
-    'marginBottom': '30px', 
-    'marginTop': '20px'
+    'textAlign': 'center',
+    'color': TEXT_COLOR,
+    'marginBottom': '30px',
+    'marginTop': '20px',
+    'fontWeight': '700',
+    'letterSpacing': '-0.02em',
 }
 
 LIGHT_TITLE_STYLE = {
     'textAlign': 'center',
     'color': LIGHT_TEXT_COLOR,
     'marginBottom': '30px',
-    'marginTop': '20px'
+    'marginTop': '20px',
+    'fontWeight': '700',
+    'letterSpacing': '-0.02em',
 }
 
 # 子标题样式
 SUBTITLE_STYLE = {
-    'textAlign': 'center', 
-    'color': TEXT_COLOR, 
-    'marginBottom': '20px'
+    'textAlign': 'center',
+    'color': MUTED_TEXT,
+    'marginBottom': '20px',
+    'fontSize': '0.875rem',
 }
 
 LIGHT_SUBTITLE_STYLE = {
     'textAlign': 'center',
-    'color': LIGHT_TEXT_COLOR,
-    'marginBottom': '20px'
+    'color': MUTED_TEXT,
+    'marginBottom': '20px',
+    'fontSize': '0.875rem',
 }
 
-# 图表容器样式
+# 图表容器样式 (vizion-lab: white card, rounded, subtle border)
 CHART_CONTAINER_STYLE = {
-    'padding': '20px', 
-    'backgroundColor': DARK_BG, 
-    'borderRadius': '8px', 
-    'marginBottom': '20px'
+    'padding': '16px',
+    'backgroundColor': '#ffffff',
+    'borderRadius': '12px',
+    'border': '1px solid #dde3eb',
+    'boxShadow': '0 1px 3px rgba(15,23,42,0.06)',
+    'marginBottom': '20px',
 }
 
 LIGHT_CHART_CONTAINER_STYLE = {
-    'padding': '20px',
-    'backgroundColor': '#FFFFFF',
-    'borderRadius': '8px',
+    'padding': '16px',
+    'backgroundColor': '#ffffff',
+    'borderRadius': '12px',
+    'border': '1px solid #dde3eb',
+    'boxShadow': '0 1px 3px rgba(15,23,42,0.06)',
     'marginBottom': '20px',
-    'color': LIGHT_TEXT_COLOR
+    'color': LIGHT_TEXT_COLOR,
 }
 
 # 内容容器样式
 CONTENT_CONTAINER_STYLE = {
-    'padding': '20px', 
-    'backgroundColor': DARK_BG, 
-    'borderRadius': '8px', 
-    'marginBottom': '20px', 
-    'display': 'block'
+    'padding': '20px',
+    'backgroundColor': DARK_BG,
+    'borderRadius': '12px',
+    'border': '1px solid #2d3a4a',
+    'marginBottom': '20px',
+    'display': 'block',
 }
 
 LIGHT_CONTENT_CONTAINER_STYLE = {
     'padding': '20px',
-    'backgroundColor': '#FFFFFF',
-    'borderRadius': '8px',
+    'backgroundColor': '#ffffff',
+    'borderRadius': '12px',
+    'border': '1px solid #dde3eb',
+    'boxShadow': '0 1px 3px rgba(15,23,42,0.06)',
     'marginBottom': '20px',
     'display': 'block',
-    'color': LIGHT_TEXT_COLOR
+    'color': LIGHT_TEXT_COLOR,
 }
 
-# 图表样式（如果未使用 apply_chart_style）
-def apply_dark_theme_to_figure(fig, title="", x_title="", y_title="", height=None):
-    """应用暗色主题到图表。"""
-    fig.update_layout(
-        title=title,
-        xaxis_title=x_title,
-        yaxis_title=y_title,
-        paper_bgcolor=DARK_BG,
-        plot_bgcolor=DARK_BG,
-        font={'color': TEXT_COLOR},
-        margin=dict(l=60, r=40, t=50, b=80),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            font=dict(color=TEXT_COLOR),
-            bgcolor='rgba(0,0,0,0.5)',
-            bordercolor=BORDER_COLOR,
-            borderwidth=1
-        ),
-        xaxis=dict(
-            showgrid=True,
-            gridcolor='rgba(80, 80, 80, 0.3)',
-            showline=True,
-            linewidth=1,
-            linecolor='rgba(120, 120, 120, 0.7)',
-            zeroline=True,
-            zerolinecolor='rgba(80, 80, 80, 0.5)',
-            zerolinewidth=1
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor='rgba(80, 80, 80, 0.3)',
-            showline=True,
-            linewidth=1,
-            linecolor='rgba(120, 120, 120, 0.7)',
-            zeroline=True,
-            zerolinecolor='rgba(80, 80, 80, 0.5)',
-            zerolinewidth=1
-        ),
-        hovermode='closest'
-    )
-    if height is not None:
-        fig.update_layout(height=height)
-    return fig
-
-# 新增: 应用浅色主题到图表的函数
-def apply_light_theme_to_figure(fig, title="", x_title="", y_title="", height=None):
-    """应用浅色主题到图表。"""
-    fig.update_layout(
-        title=title,
-        xaxis_title=x_title,
-        yaxis_title=y_title,
-        paper_bgcolor=LIGHT_BG,       # 使用浅色背景
-        plot_bgcolor=LIGHT_BG,        # 使用浅色绘图区背景
-        font={'color': LIGHT_TEXT_COLOR}, # 使用浅色主题的文字颜色
-        margin=dict(l=60, r=40, t=50, b=80),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            font=dict(color=LIGHT_TEXT_COLOR),
-            bgcolor='rgba(255,255,255,0.7)', # 浅色图例背景
-            bordercolor=LIGHT_BORDER_COLOR,
-            borderwidth=1
-        ),
-        xaxis=dict(
-            showgrid=True,
-            gridcolor='rgba(200, 200, 200, 0.5)', # 浅色网格线
-            showline=True,
-            linewidth=1,
-            linecolor='rgba(150, 150, 150, 0.7)', # 浅色轴线
-            zeroline=True,
-            zerolinecolor='rgba(200, 200, 200, 0.5)',
-            zerolinewidth=1
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor='rgba(200, 200, 200, 0.5)', # 浅色网格线
-            showline=True,
-            linewidth=1,
-            linecolor='rgba(150, 150, 150, 0.7)', # 浅色轴线
-            zeroline=True,
-            zerolinecolor='rgba(200, 200, 200, 0.5)',
-            zerolinewidth=1
-        ),
-        hovermode='closest'
-    )
-    if height is not None:
-        fig.update_layout(height=height)
-    return fig
-
-# 表格样式
-def get_datatable_styles(theme='light'):
-    """返回DataTable的样式配置，支持主题切换。"""
+# ── Plotly Layout Template (vizion-lab: minimal, clean) ───────
+def _vizion_layout_colors(theme='light'):
+    """Return common layout dict for vizion-lab styled charts."""
     if theme == 'dark':
-        # 深色主题样式
+        paper_bg = DARK_BG
+        plot_bg = DARK_BG
+        font_color = TEXT_COLOR
+        grid_col = 'rgba(80, 80, 80, 0.2)'
+        line_col = 'rgba(120, 120, 120, 0.3)'
+        legend_bg = 'rgba(0,0,0,0.4)'
+    else:
+        paper_bg = '#ffffff'
+        plot_bg = '#ffffff'
+        font_color = LIGHT_TEXT_COLOR
+        grid_col = 'rgba(0,0,0,0.04)'
+        line_col = 'rgba(0,0,0,0.08)'
+        legend_bg = 'rgba(255,255,255,0.85)'
+    return paper_bg, plot_bg, font_color, grid_col, line_col, legend_bg
+
+
+def apply_dark_theme_to_figure(fig, title="", x_title="", y_title="", height=None):
+    """应用 vizion-lab 风格暗色主题到图表。"""
+    paper_bg, plot_bg, font_color, grid_col, line_col, legend_bg = _vizion_layout_colors('dark')
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=15, color=font_color)),
+        xaxis_title=x_title,
+        yaxis_title=y_title,
+        paper_bgcolor=paper_bg,
+        plot_bgcolor=plot_bg,
+        font=dict(family="'DM Sans', system-ui, sans-serif", color=font_color, size=12),
+        margin=dict(l=56, r=32, t=48, b=56),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="right", x=1,
+            font=dict(size=11, color=font_color),
+            bgcolor=legend_bg,
+            bordercolor=BORDER_COLOR,
+            borderwidth=1,
+        ),
+        xaxis=dict(
+            showgrid=False,
+            showline=True, linewidth=1, linecolor=line_col,
+            zeroline=False,
+            tickfont=dict(size=11),
+        ),
+        yaxis=dict(
+            showgrid=True, gridcolor=grid_col,
+            showline=True, linewidth=1, linecolor=line_col,
+            zeroline=False,
+            tickfont=dict(size=11),
+        ),
+        hovermode='closest',
+        hoverlabel=dict(
+            bgcolor='#1e2a3a',
+            bordercolor='#2d3a4a',
+            font=dict(family="'DM Sans', sans-serif", size=12, color='#fff'),
+        ),
+    )
+    if height is not None:
+        fig.update_layout(height=height)
+    return fig
+
+
+def apply_light_theme_to_figure(fig, title="", x_title="", y_title="", height=None):
+    """应用 vizion-lab 风格浅色主题到图表 (minimal, clean)。"""
+    paper_bg, plot_bg, font_color, grid_col, line_col, legend_bg = _vizion_layout_colors('light')
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=15, color=font_color)),
+        xaxis_title=x_title,
+        yaxis_title=y_title,
+        paper_bgcolor=paper_bg,
+        plot_bgcolor=plot_bg,
+        font=dict(family="'DM Sans', system-ui, sans-serif", color=font_color, size=12),
+        margin=dict(l=56, r=32, t=48, b=56),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="right", x=1,
+            font=dict(size=11, color=MUTED_TEXT),
+            bgcolor=legend_bg,
+            bordercolor=LIGHT_BORDER_COLOR,
+            borderwidth=1,
+        ),
+        xaxis=dict(
+            showgrid=False,
+            showline=True, linewidth=1, linecolor=line_col,
+            zeroline=False,
+            tickfont=dict(size=11, color=MUTED_TEXT),
+        ),
+        yaxis=dict(
+            showgrid=True, gridcolor=grid_col,
+            showline=False,
+            zeroline=False,
+            tickfont=dict(size=11, color=MUTED_TEXT),
+        ),
+        hovermode='closest',
+        hoverlabel=dict(
+            bgcolor='#ffffff',
+            bordercolor=LIGHT_BORDER_COLOR,
+            font=dict(family="'DM Sans', sans-serif", size=12, color=LIGHT_TEXT_COLOR),
+        ),
+    )
+    if height is not None:
+        fig.update_layout(height=height)
+    return fig
+
+
+# ── DataTable Styles ───────────────────────────────────────────
+def get_datatable_styles(theme='light'):
+    """返回 DataTable 的样式配置，vizion-lab 风格。"""
+    if theme == 'dark':
         return {
             'css': [
-                {"selector": ".dash-spreadsheet tr:nth-child(odd)", "rule": "background-color: #000000 !important;"},
-                {"selector": ".dash-tooltip", "rule": "background-color: #000000 !important; color: #ffffff !important; border: 1px solid #555555 !important; border-radius: 4px !important; padding: 8px !important;"},
-                {"selector": ".dash-tooltip *", "rule": "background-color: transparent !important; color: #ffffff !important;"},
-                {"selector": ".dash-tooltip p", "rule": "background-color: transparent !important; color: #ffffff !important;"},
-                {"selector": ".dash-tooltip div", "rule": "background-color: transparent !important; color: #ffffff !important;"},
-                {"selector": ".dash-tooltip span", "rule": "background-color: transparent !important; color: #ffffff !important;"},
-                {"selector": ".dash-spreadsheet tr:hover", "rule": "background-color: #330000 !important; color: #ffffff !important;"},
-                {"selector": ".dash-spreadsheet tr:hover td", "rule": "background-color: #330000 !important;"},
-                {"selector": ".dash-spreadsheet", "rule": "background-color: #000000 !important;"},
-                {"selector": ".dash-spreadsheet-container", "rule": "background-color: #000000 !important;"},
-                {"selector": ".dash-spreadsheet table", "rule": "background-color: #000000 !important;"},
-                {"selector": ".dash-filter", "rule": "background-color: #000000 !important; color: white !important;"},
-                {"selector": "input", "rule": "background-color: #222222 !important; color: white !important; border: 1px solid #555 !important;"}
+                {"selector": ".dash-spreadsheet tr:nth-child(odd)", "rule": "background-color: #171f2b !important;"},
+                {"selector": ".dash-tooltip", "rule": "background-color: #1e2a3a !important; color: #e2e8f0 !important; border: 1px solid #2d3a4a !important; border-radius: 8px !important; padding: 8px !important;"},
+                {"selector": ".dash-tooltip *", "rule": "background-color: transparent !important; color: #e2e8f0 !important;"},
+                {"selector": ".dash-tooltip p", "rule": "background-color: transparent !important; color: #e2e8f0 !important;"},
+                {"selector": ".dash-tooltip div", "rule": "background-color: transparent !important; color: #e2e8f0 !important;"},
+                {"selector": ".dash-tooltip span", "rule": "background-color: transparent !important; color: #e2e8f0 !important;"},
+                {"selector": ".dash-spreadsheet tr:hover", "rule": "background-color: #1e2a3a !important; color: #ffffff !important;"},
+                {"selector": ".dash-spreadsheet tr:hover td", "rule": "background-color: #1e2a3a !important;"},
+                {"selector": ".dash-spreadsheet", "rule": "background-color: #171f2b !important;"},
+                {"selector": ".dash-spreadsheet-container", "rule": "background-color: #171f2b !important;"},
+                {"selector": ".dash-spreadsheet table", "rule": "background-color: #171f2b !important;"},
+                {"selector": ".dash-filter", "rule": "background-color: #171f2b !important; color: #e2e8f0 !important;"},
+                {"selector": "input", "rule": "background-color: #1e2a3a !important; color: #e2e8f0 !important; border: 1px solid #2d3a4a !important; border-radius: 8px !important;"},
             ],
             'style_header': {
-                'backgroundColor': DARK_BG,
+                'backgroundColor': '#1e2a3a',
                 'color': TEXT_COLOR,
-                'fontWeight': 'bold',
-                'border': '1px solid #333',
-                'textAlign': 'left'
+                'fontWeight': '600',
+                'fontSize': '0.75rem',
+                'letterSpacing': '0.04em',
+                'textTransform': 'uppercase',
+                'border': '1px solid #2d3a4a',
+                'textAlign': 'left',
             },
             'style_cell': {
                 'backgroundColor': DARK_BG,
                 'color': TEXT_COLOR,
-                'border': '1px solid #333',
-                'padding': '10px',
+                'border': '1px solid #2d3a4a',
+                'padding': '10px 14px',
                 'textAlign': 'left',
                 'overflow': 'hidden',
                 'textOverflow': 'ellipsis',
-                'maxWidth': 170
+                'maxWidth': 170,
+                'fontSize': '0.875rem',
             },
             'style_data': {
                 'backgroundColor': DARK_BG,
                 'color': TEXT_COLOR,
-                'border': '1px solid #333'
+                'border': '1px solid #2d3a4a',
             },
             'style_filter': {
                 'backgroundColor': DARK_BG,
                 'color': TEXT_COLOR,
-                'border': '1px solid #333'
+                'border': '1px solid #2d3a4a',
             },
             'style_table': {
                 'overflowX': 'auto',
                 'maxHeight': '600px',
                 'borderCollapse': 'collapse',
-                'border': '1px solid #333',
-                'backgroundColor': DARK_BG
-            }
+                'border': '1px solid #2d3a4a',
+                'backgroundColor': DARK_BG,
+                'borderRadius': '12px',
+            },
         }
     else:
-        # 浅色主题样式
         return {
             'css': [
-                {"selector": ".dash-spreadsheet tr:nth-child(odd)", "rule": "background-color: #F8F9FA !important;"},
-                {"selector": ".dash-tooltip", "rule": "background-color: #FFFFFF !important; color: #212529 !important; border: 1px solid #DEE2E6 !important; border-radius: 4px !important; padding: 8px !important;"},
-                {"selector": ".dash-tooltip *", "rule": "background-color: transparent !important; color: #212529 !important;"},
-                {"selector": ".dash-tooltip p", "rule": "background-color: transparent !important; color: #212529 !important;"},
-                {"selector": ".dash-tooltip div", "rule": "background-color: transparent !important; color: #212529 !important;"},
-                {"selector": ".dash-tooltip span", "rule": "background-color: transparent !important; color: #212529 !important;"},
-                {"selector": ".dash-spreadsheet tr:hover", "rule": "background-color: #E9ECEF !important; color: #212529 !important;"},
-                {"selector": ".dash-spreadsheet tr:hover td", "rule": "background-color: #E9ECEF !important;"},
-                {"selector": ".dash-spreadsheet", "rule": "background-color: #FFFFFF !important;"},
-                {"selector": ".dash-spreadsheet-container", "rule": "background-color: #FFFFFF !important;"},
-                {"selector": ".dash-spreadsheet table", "rule": "background-color: #FFFFFF !important;"},
-                {"selector": ".dash-filter", "rule": "background-color: #FFFFFF !important; color: #212529 !important;"},
-                {"selector": "input", "rule": "background-color: #FFFFFF !important; color: #212529 !important; border: 1px solid #CED4DA !important;"}
+                {"selector": ".dash-spreadsheet tr:nth-child(odd)", "rule": "background-color: #f8fafb !important;"},
+                {"selector": ".dash-tooltip", "rule": "background-color: #ffffff !important; color: #131921 !important; border: 1px solid #dde3eb !important; border-radius: 8px !important; padding: 8px !important; box-shadow: 0 4px 12px rgba(15,23,42,0.08) !important;"},
+                {"selector": ".dash-tooltip *", "rule": "background-color: transparent !important; color: #131921 !important;"},
+                {"selector": ".dash-tooltip p", "rule": "background-color: transparent !important; color: #131921 !important;"},
+                {"selector": ".dash-tooltip div", "rule": "background-color: transparent !important; color: #131921 !important;"},
+                {"selector": ".dash-tooltip span", "rule": "background-color: transparent !important; color: #131921 !important;"},
+                {"selector": ".dash-spreadsheet tr:hover", "rule": "background-color: hsl(215 70% 96%) !important; color: #131921 !important;"},
+                {"selector": ".dash-spreadsheet tr:hover td", "rule": "background-color: hsl(215 70% 96%) !important;"},
+                {"selector": ".dash-spreadsheet", "rule": "background-color: #ffffff !important;"},
+                {"selector": ".dash-spreadsheet-container", "rule": "background-color: #ffffff !important;"},
+                {"selector": ".dash-spreadsheet table", "rule": "background-color: #ffffff !important;"},
+                {"selector": ".dash-filter", "rule": "background-color: #ffffff !important; color: #131921 !important;"},
+                {"selector": "input", "rule": "background-color: #ffffff !important; color: #131921 !important; border: 1px solid #dde3eb !important; border-radius: 8px !important;"},
             ],
             'style_header': {
-                'backgroundColor': '#E9ECEF',
-                'color': LIGHT_TEXT_COLOR,
-                'fontWeight': 'bold',
-                'border': '1px solid #DEE2E6',
-                'textAlign': 'left'
+                'backgroundColor': '#e8ecf1',
+                'color': '#737d8e',
+                'fontWeight': '600',
+                'fontSize': '0.75rem',
+                'letterSpacing': '0.04em',
+                'textTransform': 'uppercase',
+                'border': '1px solid #dde3eb',
+                'textAlign': 'left',
             },
             'style_cell': {
-                'backgroundColor': '#FFFFFF',
+                'backgroundColor': '#ffffff',
                 'color': LIGHT_TEXT_COLOR,
-                'border': '1px solid #DEE2E6',
-                'padding': '10px',
+                'border': '1px solid #dde3eb',
+                'padding': '10px 14px',
                 'textAlign': 'left',
                 'overflow': 'hidden',
                 'textOverflow': 'ellipsis',
-                'maxWidth': 170
+                'maxWidth': 170,
+                'fontSize': '0.875rem',
             },
             'style_data': {
-                'backgroundColor': '#FFFFFF',
+                'backgroundColor': '#ffffff',
                 'color': LIGHT_TEXT_COLOR,
-                'border': '1px solid #DEE2E6'
+                'border': '1px solid #dde3eb',
             },
             'style_filter': {
-                'backgroundColor': '#FFFFFF',
+                'backgroundColor': '#ffffff',
                 'color': LIGHT_TEXT_COLOR,
-                'border': '1px solid #DEE2E6'
+                'border': '1px solid #dde3eb',
             },
             'style_table': {
                 'overflowX': 'auto',
                 'maxHeight': '600px',
                 'borderCollapse': 'collapse',
-                'border': '1px solid #DEE2E6',
-                'backgroundColor': '#FFFFFF'
-            }
+                'border': '1px solid #dde3eb',
+                'backgroundColor': '#ffffff',
+                'borderRadius': '12px',
+            },
         }
 
-def create_empty_figure(message="加载中...", height=300, theme='light'):
-    """创建一个符合指定主题的空图表占位符。"""
+
+def create_empty_figure(message="Loading...", height=300, theme='light'):
+    """创建一个符合 vizion-lab 风格的空图表占位符。"""
     fig = go.Figure()
-    
-    # 根据主题选择颜色
+
     if theme == 'dark':
         bg_color = DARK_BG
         text_color = TEXT_COLOR
-    else:  # 默认为浅色主题
-        bg_color = LIGHT_BG
-        text_color = LIGHT_TEXT_COLOR
-    
+    else:
+        bg_color = '#ffffff'
+        text_color = MUTED_TEXT
+
     fig.update_layout(
         height=height,
         xaxis={"visible": False, "showgrid": False, "zeroline": False},
         yaxis={"visible": False, "showgrid": False, "zeroline": False},
         annotations=[{
-            "text": message, 
-            "xref": "paper", 
-            "yref": "paper", 
-            "showarrow": False, 
-            "font": {"size": 16, "color": text_color}
+            "text": message,
+            "xref": "paper",
+            "yref": "paper",
+            "showarrow": False,
+            "font": {"size": 14, "color": text_color, "family": "'DM Sans', sans-serif"},
         }],
         plot_bgcolor=bg_color,
-        paper_bgcolor=bg_color
+        paper_bgcolor=bg_color,
     )
     return fig
 
-# 高亮样式条件（可根据需要自定义）
-def get_highlight_conditional_style(column_id, value, bg_color='rgba(102, 0, 0, 0.7)', text_color='white'):
-    """创建条件样式，例如高亮特定的值。"""
-    return {'if': {'filter_query': f'{{{column_id}}} = "{value}"'}, 
-            'backgroundColor': bg_color, 
-            'color': text_color}
 
-# Placeholder for theme switching functionality
+def get_highlight_conditional_style(column_id, value, bg_color='hsl(0 72% 51% / 0.12)', text_color='hsl(0 72% 51%)'):
+    """创建 vizion-lab badge 风格的条件样式。"""
+    return {
+        'if': {'filter_query': f'{{{column_id}}} = "{value}"'},
+        'backgroundColor': bg_color,
+        'color': text_color,
+    }
+
+
+# ── Theme Manager ──────────────────────────────────────────────
 class ThemeManager:
     def __init__(self, default_theme='light'):
         self.current_theme = default_theme
@@ -381,36 +433,36 @@ class ThemeManager:
     def get_theme(self):
         return self.current_theme
 
-theme_manager = ThemeManager(default_theme='light')  # 明确设置默认为浅色主题
+
+theme_manager = ThemeManager(default_theme='light')
+
 
 def create_theme_switcher():
-    """
-    创建主题切换器组件。
-    使用 dcc.RadioItems 允许用户选择 'light' 或 'dark'。
-    """
+    """创建主题切换器组件 (vizion-lab 风格)。"""
     current_theme = theme_manager.get_theme()
-    text_color = LIGHT_TEXT_COLOR if current_theme == 'light' else TEXT_COLOR
-    
+    text_color = MUTED_TEXT
+
     return dcc.RadioItems(
         id='global-theme-switcher',
         options=[
-            {'label': '浅色主题', 'value': 'light'},
-            {'label': '深色主题', 'value': 'dark'},
+            {'label': ' Light', 'value': 'light'},
+            {'label': ' Dark', 'value': 'dark'},
         ],
-        value=current_theme, # 默认值，例如 'light'
-        labelStyle={'display': 'inline-block', 'marginRight': '15px', 'color': text_color}, 
-        inputStyle={'marginRight':'5px'} # 可选：调整单选按钮本身的边距
+        value=current_theme,
+        labelStyle={
+            'display': 'inline-block',
+            'marginRight': '12px',
+            'color': text_color,
+            'fontSize': '0.8rem',
+            'fontWeight': '500',
+        },
+        inputStyle={'marginRight': '4px'},
     )
+
 
 BOOTSTRAP_CSS_LINK = '<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">'
 
+
 def get_theme_css(theme_name='light'):
     """根据主题名称返回相应的 CSS 链接或样式字符串。"""
-    # 始终包含 Bootstrap CSS 以确保网格系统工作
-    # 未来可以根据 theme_name 加载特定主题的 CSS 文件
-    # 例如:
-    # if theme_name == 'dark':
-    #     return BOOTSTRAP_CSS_LINK + '<link rel="stylesheet" href="/assets/dark_theme_override.css">'
-    # else:
-    #     return BOOTSTRAP_CSS_LINK + '<link rel="stylesheet" href="/assets/light_theme_override.css">'
     return BOOTSTRAP_CSS_LINK

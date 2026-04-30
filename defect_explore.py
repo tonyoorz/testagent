@@ -19,7 +19,7 @@ if IS_RELOADER:
 
 import numpy as np
 import pandas as pd
-from dash_common_styles import create_theme_switcher, get_theme_css, theme_manager, MAIN_CONTAINER_STYLE, LIGHT_MAIN_CONTAINER_STYLE, TEXT_COLOR, LIGHT_TEXT_COLOR, LABEL_STYLE_DARK, LABEL_STYLE_LIGHT, DROPDOWN_STYLE_DARK, DROPDOWN_STYLE_LIGHT, DARK_ACCENT, LIGHT_BORDER_COLOR
+from dash_common_styles import create_theme_switcher, get_theme_css, theme_manager, MAIN_CONTAINER_STYLE, LIGHT_MAIN_CONTAINER_STYLE, TEXT_COLOR, LIGHT_TEXT_COLOR, LABEL_STYLE_DARK, LABEL_STYLE_LIGHT, DROPDOWN_STYLE_DARK, DROPDOWN_STYLE_LIGHT, DARK_ACCENT, LIGHT_BORDER_COLOR, PRIMARY_COLOR, SUCCESS_COLOR, WARNING_COLOR, DESTRUCTIVE_COLOR, MUTED_TEXT, SIDEBAR_BG, SIDEBAR_FG
 from dash import Dash, dcc, html, Input, Output, State, dash_table, no_update, callback_context
 import plotly.express as px
 import plotly.graph_objects as go
@@ -1898,7 +1898,7 @@ def create_long_runner_analysis_content(active_label_style):
                         'fontSize': '13px'
                     },
                     style_header={
-                        'backgroundColor': '#3498db',
+                        'backgroundColor': '#2266cc',
                         'color': 'white',
                         'fontWeight': 'bold',
                         'textAlign': 'center'
@@ -1937,7 +1937,7 @@ def create_long_runner_analysis_content(active_label_style):
                 html.Div([
                     # 模态框头部
                     html.Div([
-                        html.H3(id='modal-title-lr', style={'margin': '0', 'color': '#2c3e50'}),
+                        html.H3(id='modal-title-lr', style={'margin': '0', 'color': '#131921'}),
                         html.Button([
                             html.I(className="fas fa-times")
                         ], id='close-modal-lr', style={
@@ -1983,7 +1983,7 @@ def create_long_runner_analysis_content(active_label_style):
                                     'height': 'auto'
                                 },
                                 style_header={
-                                    'backgroundColor': '#2ecc71', 
+                                    'backgroundColor': '#29a066', 
                                     'color': 'white', 
                                     'fontWeight': 'bold'
                                 },
@@ -2038,7 +2038,7 @@ def create_sidebar_nav():
     ]
     
     return html.Div([
-        # 导航栏切换按钮 - 位置调整为导航栏外侧
+        # 导航栏切换按钮 - vizion-lab primary blue
         html.Button(
             [html.I(className="fas fa-bars", style={'fontSize': '18px'})],
             id='nav-toggle-btn',
@@ -2046,24 +2046,24 @@ def create_sidebar_nav():
             style={
                 'position': 'fixed',
                 'top': '20px',
-                'left': '290px',  # 放在导航栏右侧
+                'left': '290px',
                 'zIndex': '1001',
-                'backgroundColor': '#28a745',
+                'backgroundColor': PRIMARY_COLOR,
                 'color': 'white',
                 'border': 'none',
                 'padding': '12px',
-                'borderRadius': '6px',
+                'borderRadius': '8px',
                 'cursor': 'pointer',
                 'fontSize': '16px',
-                'boxShadow': '0 2px 4px rgba(0,0,0,0.3)',
-                'transition': 'all 0.3s ease'
+                'boxShadow': '0 1px 3px rgba(15,23,42,0.12)',
+                'transition': 'all 0.3s ease',
             }
         ),
         
         # 边缘条 - 当侧边栏关闭时显示
         html.Div([
             html.Button(
-                [html.I(className="fas fa-chevron-right", style={'fontSize': '12px', 'color': 'white'})],
+                [html.I(className="fas fa-chevron-right", style={'fontSize': '12px', 'color': SIDEBAR_FG})],
                 id='nav-edge-toggle-btn',
                 style={
                     'position': 'absolute',
@@ -2075,7 +2075,7 @@ def create_sidebar_nav():
                     'cursor': 'pointer',
                     'padding': '8px',
                     'borderRadius': '50%',
-                    'transition': 'background-color 0.3s ease'
+                    'transition': 'background-color 0.3s ease',
                 }
             )
         ],
@@ -2083,28 +2083,32 @@ def create_sidebar_nav():
         style={
             'position': 'fixed',
             'top': '90px',
-            'left': '-30px',  # 默认隐藏
+            'left': '-30px',
             'width': '30px',
             'height': 'calc(100vh - 90px)',
-            'backgroundColor': '#2c3e50',
+            'backgroundColor': SIDEBAR_BG,
             'zIndex': '999',
             'transition': 'left 0.3s ease',
-            'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
+            'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
             'display': 'flex',
             'alignItems': 'center',
-            'justifyContent': 'center'
+            'justifyContent': 'center',
         }),
         
-        # 侧边导航栏
+        # 侧边导航栏 — vizion-lab dark sidebar
         html.Div([
             # 导航栏头部
             html.Div([
                 html.H3("Navigation", style={
-                    'color': 'white',
+                    'color': '#fff',
                     'margin': '0',
                     'padding': '20px',
-                    'borderBottom': '1px solid #444',
-                    'fontSize': '18px'
+                    'borderBottom': '1px solid #2d3a4a',
+                    'fontSize': '14px',
+                    'fontWeight': '700',
+                    'letterSpacing': '0.04em',
+                    'textTransform': 'uppercase',
+                    'fontFamily': "'DM Sans', system-ui, sans-serif",
                 }),
                 html.Button(
                     [html.I(className="fas fa-times", style={'fontSize': '16px'})],
@@ -2114,48 +2118,57 @@ def create_sidebar_nav():
                         'top': '15px',
                         'right': '15px',
                         'backgroundColor': 'transparent',
-                        'color': 'white',
+                        'color': SIDEBAR_FG,
                         'border': 'none',
                         'cursor': 'pointer',
                         'padding': '5px',
-                        'borderRadius': '3px'
+                        'borderRadius': '4px',
+                        'transition': 'color 0.2s ease',
                     }
                 )
             ], style={'position': 'relative'}),
-            
+
             # 导航项目
             html.Div([
                 html.Div([
-                    html.I(className=item['icon'], style={'marginRight': '12px', 'width': '20px'}),
+                    html.I(className=item['icon'], style={
+                        'marginRight': '12px',
+                        'width': '20px',
+                        'textAlign': 'center',
+                        'fontSize': '14px',
+                    }),
                     html.Span(item['label'])
-                ], 
-                id=f"nav-{item['id']}", 
+                ],
+                id=f"nav-{item['id']}",
                 className='nav-item',
                 style={
-                    'padding': '15px 20px',
+                    'padding': '10px 14px',
+                    'margin': '2px 8px',
                     'cursor': 'pointer',
-                    'borderLeft': '4px solid transparent',
-                    'color': 'white',
-                    'transition': 'all 0.3s ease',
+                    'borderLeft': '3px solid transparent',
+                    'color': SIDEBAR_FG,
+                    'transition': 'all 0.2s ease',
                     'display': 'flex',
                     'alignItems': 'center',
-                    'fontSize': '14px'
+                    'fontSize': '14px',
+                    'borderRadius': '10px',
+                    'fontWeight': '500',
                 }) for item in nav_items
             ])
-        ], 
+        ],
         id='sidebar-nav',
         className='sidebar-nav',
         style={
             'position': 'fixed',
-            'top': '90px',  # 从标题栏下方开始
-            'left': '0px',  # 默认显示
+            'top': '90px',
+            'left': '0px',
             'width': '280px',
-            'height': 'calc(100vh - 90px)',  # 调整高度以适应标题栏
-            'backgroundColor': '#2c3e50',
+            'height': 'calc(100vh - 90px)',
+            'backgroundColor': SIDEBAR_BG,
             'zIndex': '1000',
             'transition': 'left 0.3s ease',
-            'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
-            'overflowY': 'auto'
+            'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
+            'overflowY': 'auto',
         }),
         
         # 遮罩层
@@ -2167,9 +2180,10 @@ def create_sidebar_nav():
                 'left': '0',
                 'width': '100%',
                 'height': '100%',
-                'backgroundColor': 'rgba(0,0,0,0.5)',
+                'backgroundColor': 'rgba(15,23,42,0.4)',
                 'zIndex': '999',
-                'display': 'none'
+                'display': 'none',
+                'backdropFilter': 'blur(2px)',
             }
         ),
         
@@ -2183,28 +2197,28 @@ def create_sidebar_nav():
                     'height': '50px',
                     'backgroundColor': 'transparent',
                     'border': 'none',
-                    'color': 'white',
+                    'color': SIDEBAR_FG,
                     'cursor': 'pointer',
                     'display': 'flex',
                     'alignItems': 'center',
-                    'justifyContent': 'center'
+                    'justifyContent': 'center',
                 }
             )
-        ], 
+        ],
         id='nav-edge-bar-2',
         style={
             'position': 'fixed',
             'top': '90px',
-            'left': '-30px',  # 默认隐藏
+            'left': '-30px',
             'width': '30px',
             'height': 'calc(100vh - 90px)',
-            'backgroundColor': '#2c3e50',
+            'backgroundColor': SIDEBAR_BG,
             'zIndex': '999',
             'transition': 'left 0.3s ease',
-            'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
+            'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
             'display': 'flex',
             'alignItems': 'center',
-            'justifyContent': 'center'
+            'justifyContent': 'center',
         }),
         
         # 存储当前选中的导航项
@@ -2212,49 +2226,77 @@ def create_sidebar_nav():
         dcc.Store(id='filtered-data-store', data=None)
     ])
 
-# 应用布局
+# 应用布局 — vizion-lab styling
 app.layout = html.Div([
-    # 顶部固定标题栏 - 贯穿整个页面宽度
+    # 顶部固定标题栏 — vizion-lab sticky header
     html.Div([
         # 主题切换器
         html.Div([
             create_theme_switcher()
         ], style={'position': 'absolute', 'top': '10px', 'right': '20px', 'zIndex': '1005'}),
-        
-        # 主标题
-        html.H1("DTSV Testing and Defect Data Analysis Dashboard", id='main-title', style={
-            'textAlign': 'center', 
-            'margin': '0', 
-            'padding': '25px 0',
-            'fontSize': '32px',
-            'fontWeight': 'bold',
-            'color': '#2c3e50'
-        })
-    ], style={
+
+        # 左侧标题 + 副标题
+        html.Div([
+            html.H1("PreAnalysis", id='main-title', style={
+                'margin': '0',
+                'padding': '0',
+                'fontSize': '1.25rem',
+                'fontWeight': '700',
+                'color': '#131921',
+                'letterSpacing': '-0.02em',
+                'fontFamily': "'DM Sans', system-ui, sans-serif",
+            }),
+            html.Span("Testing & Defect Data Analysis", style={
+                'fontSize': '0.8rem',
+                'color': '#737d8e',
+                'marginLeft': '12px',
+                'fontWeight': '400',
+            }),
+        ], style={
+            'display': 'flex',
+            'alignItems': 'baseline',
+            'padding': '24px 0',
+        }),
+
+        # 同步状态指示器
+        html.Div([
+            html.Span(className='sync-dot'),
+            html.Span("Synced", style={'fontSize': '0.75rem', 'fontWeight': '500'}),
+        ], className='sync-indicator', style={
+            'position': 'absolute',
+            'top': '34px',
+            'right': '180px',
+        }),
+    ], id='top-header-bar', style={
         'position': 'fixed',
         'top': '0',
         'left': '0',
         'width': '100%',
-        'height': '90px',  # 固定标题栏高度
-        'backgroundColor': 'white',
-        'borderBottom': '2px solid #e5e7eb',
-        'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-        'zIndex': '1002'
+        'height': '90px',
+        'backgroundColor': 'rgba(255,255,255,0.85)',
+        'backdropFilter': 'blur(12px)',
+        'WebkitBackdropFilter': 'blur(12px)',
+        'borderBottom': '1px solid #dde3eb',
+        'zIndex': '1002',
+        'paddingLeft': '24px',
+        'display': 'flex',
+        'alignItems': 'center',
     }),
     
     # 侧边导航栏 - 移到标题下方
     create_sidebar_nav(),
     
-    # 主内容区域 - 添加左边距以适应导航栏
+    # 主内容区域 — vizion-lab light background
     html.Div([
         # 内容区域 - 使用回调动态加载内容
         html.Div(id='tabs-content'),
     ], id='main-content-wrapper', style={
-        'marginLeft': '300px',  # 默认为导航栏留出空间
-        'marginTop': '110px',  # 为固定标题栏留出空间
+        'marginLeft': '300px',
+        'marginTop': '110px',
         'transition': 'margin-left 0.3s ease',
         'minHeight': 'calc(100vh - 110px)',
-        'padding': '20px'
+        'padding': '24px',
+        'backgroundColor': '#f4f6f9',
     }),
     
     # 缺陷详情Modal弹窗
@@ -2275,37 +2317,38 @@ app.layout = html.Div([
                 id='modal-content',
                 children=[
                     html.Div([
-                        html.H3("缺陷详情", style={
-                            'margin': '0', 
-                            'display': 'inline-block', 
-                            'color': '#1f2937',
-                            'fontSize': '20px',
-                            'fontWeight': '600'
+                        html.H3("Defect Details", style={
+                            'margin': '0',
+                            'display': 'inline-block',
+                            'color': '#131921',
+                            'fontSize': '1.125rem',
+                            'fontWeight': '700',
+                            'fontFamily': "'DM Sans', system-ui, sans-serif",
                         }),
                         html.Button(
-                            "×", 
+                            "x",
                             id='close-modal-btn',
                             style={
                                 'float': 'right',
                                 'border': 'none',
                                 'background': 'transparent',
-                                'fontSize': '28px',
+                                'fontSize': '24px',
                                 'cursor': 'pointer',
-                                'color': '#6b7280',
+                                'color': '#737d8e',
                                 'padding': '0',
                                 'width': '32px',
                                 'height': '32px',
-                                'borderRadius': '4px',
-                                'transition': 'all 0.2s ease'
+                                'borderRadius': '8px',
+                                'transition': 'all 0.2s ease',
                             }
                         )
                     ], style={
-                        'borderBottom': '2px solid #f3f4f6', 
-                        'paddingBottom': '12px', 
+                        'borderBottom': '1px solid #dde3eb',
+                        'paddingBottom': '12px',
                         'marginBottom': '18px',
                         'display': 'flex',
                         'alignItems': 'center',
-                        'justifyContent': 'space-between'
+                        'justifyContent': 'space-between',
                     }),
                     
                     html.Div(id='modal-info', style={
@@ -2659,7 +2702,7 @@ app.layout = html.Div([
             html.Div([
                 html.H3("🤖 SiSi", style={
                     'margin': '0',
-                    'color': '#2c3e50',
+                    'color': '#131921',
                     'fontSize': '24px',
                     'fontWeight': 'bold'
                 }),
@@ -2761,67 +2804,69 @@ def toggle_sidebar(toggle_clicks, close_clicks, overlay_clicks, edge_toggle_clic
     
     trigger_id = callback_context.triggered[0]['prop_id'].split('.')[0]
     
-    # 导航栏基础样式
+    # 导航栏基础样式 — vizion-lab
     nav_base_style = {
         'position': 'fixed',
-        'top': '90px',  # 从标题栏下方开始
+        'top': '90px',
         'width': '280px',
-        'height': 'calc(100vh - 90px)',  # 调整高度
-        'backgroundColor': '#2c3e50',
+        'height': 'calc(100vh - 90px)',
+        'backgroundColor': SIDEBAR_BG,
         'zIndex': '1000',
         'transition': 'left 0.3s ease',
-        'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
-        'overflowY': 'auto'
+        'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
+        'overflowY': 'auto',
     }
-    
-    # 主内容区基础样式
+
+    # 主内容区基础样式 — vizion-lab light background
     main_content_base_style = {
-        'marginTop': '110px',  # 为固定标题栏留出空间
+        'marginTop': '110px',
         'transition': 'margin-left 0.3s ease',
         'minHeight': 'calc(100vh - 110px)',
-        'padding': '20px'
+        'padding': '24px',
+        'backgroundColor': '#f4f6f9',
     }
-    
-    # 遮罩层基础样式
+
+    # 遮罩层基础样式 — vizion-lab
     overlay_base_style = {
         'position': 'fixed',
         'top': '0',
         'left': '0',
         'width': '100%',
         'height': '100%',
-        'backgroundColor': 'rgba(0,0,0,0.5)',
-        'zIndex': '999'
+        'backgroundColor': 'rgba(15,23,42,0.4)',
+        'zIndex': '999',
+        'backdropFilter': 'blur(2px)',
     }
-    
-    # 切换按钮基础样式
+
+    # 切换按钮基础样式 — vizion-lab primary
     toggle_btn_base_style = {
         'position': 'fixed',
         'top': '20px',
         'zIndex': '1001',
-        'backgroundColor': '#28a745',
+        'backgroundColor': PRIMARY_COLOR,
         'color': 'white',
         'border': 'none',
         'padding': '12px',
-        'borderRadius': '6px',
+        'borderRadius': '8px',
         'cursor': 'pointer',
         'fontSize': '16px',
-        'boxShadow': '0 2px 4px rgba(0,0,0,0.3)',
-        'transition': 'all 0.3s ease'
+        'boxShadow': '0 1px 3px rgba(15,23,42,0.12)',
+        'transition': 'all 0.3s ease',
     }
-    
-    # 边缘条基础样式
+
+    # 边缘条基础样式 — vizion-lab
     edge_bar_base_style = {
         'position': 'fixed',
         'top': '90px',
         'width': '30px',
         'height': 'calc(100vh - 90px)',
-        'backgroundColor': '#2c3e50',
+        'backgroundColor': SIDEBAR_BG,
         'zIndex': '999',
         'transition': 'left 0.3s ease',
-        'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
+        'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
         'display': 'flex',
         'alignItems': 'center',
-        'justifyContent': 'center'
+        'justifyContent': 'center',
     }
     
     # 切换导航栏显示/隐藏
@@ -2882,24 +2927,27 @@ def update_nav_selection(nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav
         'tab-chat'
     }
     
-    # 基础导航项样式
+    # 基础导航项样式 — vizion-lab
     base_nav_style = {
-        'padding': '15px 20px',
+        'padding': '10px 14px',
+        'margin': '2px 8px',
         'cursor': 'pointer',
-        'borderLeft': '4px solid transparent',
-        'color': 'white',
-        'transition': 'all 0.3s ease',
+        'borderLeft': '3px solid transparent',
+        'color': SIDEBAR_FG,
+        'transition': 'all 0.2s ease',
         'display': 'flex',
         'alignItems': 'center',
-        'fontSize': '14px'
+        'fontSize': '14px',
+        'borderRadius': '10px',
+        'fontWeight': '500',
     }
-    
-    # 激活状态样式
+
+    # 激活状态样式 — vizion-lab primary
     active_nav_style = {
         **base_nav_style,
-        'backgroundColor': '#34495e',
-        'borderLeft': '4px solid #3498db',
-        'color': '#3498db'
+        'backgroundColor': 'hsl(215 70% 48% / 0.15)',
+        'borderLeft': '3px solid ' + PRIMARY_COLOR,
+        'color': PRIMARY_COLOR,
     }
     
     # 确定当前选中的导航项
@@ -2982,7 +3030,7 @@ def render_content(tab):
                                 'top': '50%',
                                 'transform': 'translateY(-50%)',
                                 'padding': '8px 20px',
-                                'backgroundColor': '#3498db',
+                                'backgroundColor': '#2266cc',
                                 'color': 'white',
                                 'border': 'none',
                                 'borderRadius': '20px',
@@ -3072,7 +3120,7 @@ def render_content(tab):
                     ],
                     id='export-excel-btn',
                     style={
-                        'backgroundColor': '#28a745',
+                        'backgroundColor': '#29a066',
                         'color': 'white',
                         'border': 'none',
                         'padding': '10px 20px',
@@ -3362,8 +3410,8 @@ def render_content(tab):
             # 提示信息
                 html.Div([
                 html.Div([
-                    html.I(className="fas fa-info-circle", style={'marginRight': '10px', 'fontSize': '18px', 'color': '#3498db'}),
-                    html.Span("Click on the bar areas in the chart above to view corresponding defect details", style={'fontSize': '16px', 'color': '#2c3e50'})
+                    html.I(className="fas fa-info-circle", style={'marginRight': '10px', 'fontSize': '18px', 'color': '#2266cc'}),
+                    html.Span("Click on the bar areas in the chart above to view corresponding defect details", style={'fontSize': '16px', 'color': '#131921'})
                 ], style={
                     'textAlign': 'center',
                     'padding': '20px',
@@ -3559,7 +3607,7 @@ def render_content(tab):
             html.H2("High Complexity Defect Analysis", style={
                 'textAlign': 'center', 
                 'marginBottom': '30px',
-                'color': '#2c3e50',
+                'color': '#131921',
                 'fontSize': '28px',
                 'fontWeight': 'bold'
             }),
@@ -3571,7 +3619,7 @@ def render_content(tab):
             html.Div([
                 html.H3("Child Complexity Analysis", style={
                     'marginBottom': '15px',
-                    'color': '#34495e',
+                    'color': '#737d8e',
                     'fontSize': '20px',
                     'fontWeight': '600'
                 }),
@@ -3591,7 +3639,7 @@ def render_content(tab):
             html.Div([
                 html.H3("Parent Complexity Analysis", style={
                     'marginBottom': '15px',
-                    'color': '#34495e',
+                    'color': '#737d8e',
                     'fontSize': '20px',
                     'fontWeight': '600'
                 }),
@@ -3609,7 +3657,7 @@ def render_content(tab):
             
             # 说明信息
             html.Div([
-                html.H4("分析说明", style={'color': '#2c3e50', 'marginBottom': '15px'}),
+                html.H4("分析说明", style={'color': '#131921', 'marginBottom': '15px'}),
                 html.P([
                     "Child Complexity：基于子缺陷数量（child_count_of_master）的复杂度分析。",
                     html.Br(),
@@ -4155,7 +4203,7 @@ def render_content(tab):
         return html.Div([
             # 页面标题和导航
             nav_manager.create_breadcrumb('tab-word-cloud'),
-            html.H2("词云分析", style={'color': '#2c3e50', 'marginBottom': '30px'}),
+            html.H2("词云分析", style={'color': '#131921', 'marginBottom': '30px'}),
             
             # 筛选器区域
             html.Div([
@@ -6615,31 +6663,31 @@ def update_testing_kpi_cards(years, projects, start_date, end_date, aidas, statu
     # 创建KPI卡片
     cards = [
         html.Div([
-            html.H4(f"{total_defects}", className='kpi-value', style={'margin': '0', 'color': '#2c3e50'}),
-            html.P("总缺陷数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.H4(f"{total_defects}", className='kpi-value', style={'margin': '0', 'color': '#131921'}),
+            html.P("总缺陷数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ecf0f1', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
             html.H4(f"{total_testers}", className='kpi-value', style={'margin': '0', 'color': '#27ae60'}),
-            html.P("活跃测试人员", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.P("活跃测试人员", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d5f4e6', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{severe_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#e74c3c'}),
-            html.P("严重缺陷率", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.H4(f"{severe_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#e03e3e'}),
+            html.P("严重缺陷率", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#fadbd8', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{daily_avg:.1f}", className='kpi-value', style={'margin': '0', 'color': '#3498db'}),
-            html.P("日均发现缺陷", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.H4(f"{daily_avg:.1f}", className='kpi-value', style={'margin': '0', 'color': '#2266cc'}),
+            html.P("日均发现缺陷", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d6eaf8', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{top_tester}", className='kpi-value', style={'margin': '0', 'color': '#9b59b6', 'fontSize': '13px',
+            html.H4(f"{top_tester}", className='kpi-value', style={'margin': '0', 'color': '#8b5cf6', 'fontSize': '13px',
                             'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
                             'border': '1px solid #f3f4f6',
                             'color': '#374151'}),
-            html.P("最活跃测试员", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.P("最活跃测试员", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ebdef0', 'borderRadius': '8px', 'width': '18%', 'display': 'inline-block', 'margin': '1%'}),
     ]
     
@@ -7101,28 +7149,28 @@ def update_efficiency_kpi_cards(selected_years, start_date, end_date, selected_p
     
     cards = [
         html.Div([
-            html.H4(f"{total_defects:,}", className='kpi-value', style={'margin': '0', 'color': '#2c3e50', 'fontSize': '28px'}),
-            html.P("总缺陷数", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+            html.H4(f"{total_defects:,}", className='kpi-value', style={'margin': '0', 'color': '#131921', 'fontSize': '28px'}),
+            html.P("总缺陷数", className='kpi-label', style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
         ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#ecf0f1', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
         
         html.Div([
-            html.H4(f"{severe_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#e74c3c', 'fontSize': '28px'}),
-            html.P("严重缺陷率", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+            html.H4(f"{severe_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#e03e3e', 'fontSize': '28px'}),
+            html.P("严重缺陷率", className='kpi-label', style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
         ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#fadbd8', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
         
         html.Div([
-            html.H4(f"{daily_avg:.1f}", className='kpi-value', style={'margin': '0', 'color': '#3498db', 'fontSize': '28px'}),
-            html.P("日均发现缺陷", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+            html.H4(f"{daily_avg:.1f}", className='kpi-value', style={'margin': '0', 'color': '#2266cc', 'fontSize': '28px'}),
+            html.P("日均发现缺陷", className='kpi-label', style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
         ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#d6eaf8', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
         
         html.Div([
-            html.H4(f"{defect_density:.1f}", className='kpi-value', style={'margin': '0', 'color': '#f39c12', 'fontSize': '28px'}),
-            html.P("缺陷密度", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+            html.H4(f"{defect_density:.1f}", className='kpi-value', style={'margin': '0', 'color': '#f5a623', 'fontSize': '28px'}),
+            html.P("缺陷密度", className='kpi-label', style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
         ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#fdeaa7', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
         
         html.Div([
-            html.H4(f"{avg_resolution_time:.1f}天", className='kpi-value', style={'margin': '0', 'color': '#9b59b6', 'fontSize': '28px'}),
-            html.P("平均解决时间", className='kpi-label', style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+            html.H4(f"{avg_resolution_time:.1f}天", className='kpi-value', style={'margin': '0', 'color': '#8b5cf6', 'fontSize': '28px'}),
+            html.P("平均解决时间", className='kpi-label', style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
         ], className='kpi-card', style={'textAlign': 'center', 'backgroundColor': '#e8daef', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
     ]
     
@@ -8438,33 +8486,33 @@ def update_project_kpi_cards(tab):
     # 创建KPI卡片列表
     return [
         html.Div([
-            html.H4(f"{total_projects}", className='kpi-value', style={'margin': '0', 'color': '#2c3e50'}),
-            html.P("总项目数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.H4(f"{total_projects}", className='kpi-value', style={'margin': '0', 'color': '#131921'}),
+            html.P("总项目数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ecf0f1', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{total_defects}", className='kpi-value', style={'margin': '0', 'color': '#3498db'}),
-            html.P("总缺陷数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.H4(f"{total_defects}", className='kpi-value', style={'margin': '0', 'color': '#2266cc'}),
+            html.P("总缺陷数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d6eaf8', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{severe_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#e74c3c'}),
-            html.P("严重缺陷率", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.H4(f"{severe_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#e03e3e'}),
+            html.P("严重缺陷率", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#fadbd8', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
             html.H4(f"{resolution_rate:.1f}%", className='kpi-value', style={'margin': '0', 'color': '#27ae60'}),
-            html.P("缺陷解决率", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.P("缺陷解决率", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#d5f4e6', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{total_aidas}", className='kpi-value', style={'margin': '0', 'color': '#9b59b6'}),
-            html.P("AIDA领域数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.H4(f"{total_aidas}", className='kpi-value', style={'margin': '0', 'color': '#8b5cf6'}),
+            html.P("AIDA领域数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#ebdef0', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'}),
         
         html.Div([
-            html.H4(f"{avg_defects_per_project:.1f}", className='kpi-value', style={'margin': '0', 'color': '#f39c12'}),
-            html.P("平均项目缺陷数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#7f8c8d'})
+            html.H4(f"{avg_defects_per_project:.1f}", className='kpi-value', style={'margin': '0', 'color': '#f5a623'}),
+            html.P("平均项目缺陷数", className='kpi-label', style={'margin': '0', 'fontSize': '14px', 'color': '#737d8e'})
         ], className='kpi-card', style={'textAlign': 'center', 'padding': '20px', 'backgroundColor': '#fdeaa7', 'borderRadius': '8px', 'width': '15%', 'display': 'inline-block', 'margin': '1%'})
     ]
 
@@ -9907,9 +9955,9 @@ def create_phase_duration_bar_chart_lr(df, show_all=True):
     colors = []
     for days in df_top['Avg_Days']:
         if days > max_days * 0.7:
-            colors.append('#e74c3c')  # 红色
+            colors.append('#e03e3e')  # 红色
         elif days > max_days * 0.3:
-            colors.append('#f39c12')  # 橙色
+            colors.append('#f5a623')  # 橙色
         else:
             colors.append('#27ae60')  # 绿色
     
@@ -10169,16 +10217,16 @@ def update_phase_data_and_charts(min_count, phase_type, selected_years, current_
             
             if global_phase_df.empty:
                 status_msg = html.Div([
-                    html.I(className="fas fa-exclamation-triangle", style={'color': '#e74c3c', 'marginRight': '8px'}),
-                    html.Span("没有找到数据", style={'color': '#e74c3c', 'fontSize': '14px'})
+                    html.I(className="fas fa-exclamation-triangle", style={'color': '#e03e3e', 'marginRight': '8px'}),
+                    html.Span("没有找到数据", style={'color': '#e03e3e', 'fontSize': '14px'})
                 ])
                 return status_msg, go.Figure(), []
         
         except Exception as e:
             print(f"加载数据时出错: {e}")
             status_msg = html.Div([
-                html.I(className="fas fa-exclamation-triangle", style={'color': '#e74c3c', 'marginRight': '8px'}),
-                html.Span(f"加载失败: {str(e)}", style={'color': '#e74c3c', 'fontSize': '14px'})
+                html.I(className="fas fa-exclamation-triangle", style={'color': '#e03e3e', 'marginRight': '8px'}),
+                html.Span(f"加载失败: {str(e)}", style={'color': '#e03e3e', 'fontSize': '14px'})
             ])
             return status_msg, go.Figure(), []
         
@@ -10192,8 +10240,8 @@ def update_phase_data_and_charts(min_count, phase_type, selected_years, current_
         # 筛选条件变化，保持原有的status message
         if global_phase_df.empty:
             status_msg = html.Div([
-                html.I(className="fas fa-info-circle", style={'color': '#3498db', 'marginRight': '8px'}),
-                html.Span("请先点击'加载/刷新数据'按钮", style={'color': '#3498db', 'fontSize': '14px'})
+                html.I(className="fas fa-info-circle", style={'color': '#2266cc', 'marginRight': '8px'}),
+                html.Span("请先点击'加载/刷新数据'按钮", style={'color': '#2266cc', 'fontSize': '14px'})
             ])
             return status_msg, go.Figure(), []
         else:
@@ -10290,22 +10338,22 @@ def display_phase_click_data(clickData):
             modal_info = html.Div([
                 html.Div([
                     html.Div([
-                        html.H5("总计", style={'margin': '0', 'color': '#2c3e50'}),
+                        html.H5("总计", style={'margin': '0', 'color': '#131921'}),
                         html.P(f"{len(tickets)} 个tickets", style={'margin': '0', 'fontSize': '16px', 'fontWeight': 'bold'})
                     ], style={'textAlign': 'center', 'padding': '10px', 'backgroundColor': '#e8f4f8', 'borderRadius': '5px', 'margin': '5px'}),
                     
                     html.Div([
-                        html.H5("平均耗时", style={'margin': '0', 'color': '#2c3e50'}),
+                        html.H5("平均耗时", style={'margin': '0', 'color': '#131921'}),
                         html.P(f"{avg_hours:.1f} 小时", style={'margin': '0', 'fontSize': '16px', 'fontWeight': 'bold'})
                     ], style={'textAlign': 'center', 'padding': '10px', 'backgroundColor': '#fff2e6', 'borderRadius': '5px', 'margin': '5px'}),
                     
                     html.Div([
-                        html.H5("最大耗时", style={'margin': '0', 'color': '#2c3e50'}),
+                        html.H5("最大耗时", style={'margin': '0', 'color': '#131921'}),
                         html.P(f"{max_hours:.1f} 小时", style={'margin': '0', 'fontSize': '16px', 'fontWeight': 'bold'})
                     ], style={'textAlign': 'center', 'padding': '10px', 'backgroundColor': '#ffe6e6', 'borderRadius': '5px', 'margin': '5px'}),
                     
                     html.Div([
-                        html.H5("最小耗时", style={'margin': '0', 'color': '#2c3e50'}),
+                        html.H5("最小耗时", style={'margin': '0', 'color': '#131921'}),
                         html.P(f"{min_hours:.1f} 小时", style={'margin': '0', 'fontSize': '16px', 'fontWeight': 'bold'})
                     ], style={'textAlign': 'center', 'padding': '10px', 'backgroundColor': '#e6ffe6', 'borderRadius': '5px', 'margin': '5px'})
                 ], style={'display': 'flex', 'justifyContent': 'space-around', 'marginBottom': '20px'}),
@@ -10316,9 +10364,9 @@ def display_phase_click_data(clickData):
             
             # 点击提示信息
             click_info = html.Div([
-                html.I(className="fas fa-info-circle", style={'color': '#3498db', 'marginRight': '8px'}),
+                html.I(className="fas fa-info-circle", style={'color': '#2266cc', 'marginRight': '8px'}),
                 html.Span(f"点击了: {clicked_phase} (共{len(tickets)}个tickets，已在弹窗中显示)", 
-                         style={'fontSize': '14px', 'color': '#2c3e50'})
+                         style={'fontSize': '14px', 'color': '#131921'})
             ], style={'padding': '10px', 'backgroundColor': '#e8f4f8', 'borderRadius': '5px'})
             
             # 显示模态框
@@ -10338,16 +10386,16 @@ def display_phase_click_data(clickData):
             return modal_style, modal_title, modal_info, tickets_sorted, click_info
         else:
             click_info = html.Div([
-                html.I(className="fas fa-exclamation-triangle", style={'color': '#e74c3c', 'marginRight': '8px'}),
-                html.Span("未找到该phase的详细数据", style={'color': '#e74c3c'})
+                html.I(className="fas fa-exclamation-triangle", style={'color': '#e03e3e', 'marginRight': '8px'}),
+                html.Span("未找到该phase的详细数据", style={'color': '#e03e3e'})
             ])
             return {'display': 'none'}, "", "", [], click_info
     
     except Exception as e:
         print(f"处理点击事件时出错: {e}")
         click_info = html.Div([
-            html.I(className="fas fa-exclamation-triangle", style={'color': '#e74c3c', 'marginRight': '8px'}),
-            html.Span("处理点击事件时出错", style={'color': '#e74c3c'})
+            html.I(className="fas fa-exclamation-triangle", style={'color': '#e03e3e', 'marginRight': '8px'}),
+            html.Span("处理点击事件时出错", style={'color': '#e03e3e'})
         ])
         return {'display': 'none'}, "", "", [], click_info
 
@@ -11139,7 +11187,7 @@ def update_test_status_charts(current_nav, years, projects, test_weeks, fvs, sta
                 
                 # 定义状态颜色
                 status_colors = {
-                    'Passed': '#28a745',
+                    'Passed': '#29a066',
                     'Failed': '#dc3545', 
                     'In Progress': '#ffc107',
                     'Skipped': '#6c757d',
@@ -11272,33 +11320,33 @@ def update_test_status_charts(current_nav, years, projects, test_weeks, fvs, sta
         # 创建KPI指标显示 - 使用与Testing Efficiency & Quality相同的样式
         kpi_indicators = html.Div([
             html.Div([
-                html.H4(f"{total_count:,}", style={'margin': '0', 'color': '#2c3e50', 'fontSize': '28px'}),
-                html.P("总用例数", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+                html.H4(f"{total_count:,}", style={'margin': '0', 'color': '#131921', 'fontSize': '28px'}),
+                html.P("总用例数", style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
             ], style={'textAlign': 'center', 'backgroundColor': '#ecf0f1', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
             
             html.Div([
                 html.H4(f"{pass_rate:.1f}%", style={'margin': '0', 'color': '#27ae60', 'fontSize': '28px'}),
-                html.P("通过率", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+                html.P("通过率", style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
             ], style={'textAlign': 'center', 'backgroundColor': '#d5f4e6', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
             
             html.Div([
-                html.H4(f"{fail_rate:.1f}%", style={'margin': '0', 'color': '#e74c3c', 'fontSize': '28px'}),
-                html.P("失败率", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+                html.H4(f"{fail_rate:.1f}%", style={'margin': '0', 'color': '#e03e3e', 'fontSize': '28px'}),
+                html.P("失败率", style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
             ], style={'textAlign': 'center', 'backgroundColor': '#fadbd8', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
             
             html.Div([
-                html.H4(f"{block_rate:.1f}%", style={'margin': '0', 'color': '#f39c12', 'fontSize': '28px'}),
-                html.P("阻塞率", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+                html.H4(f"{block_rate:.1f}%", style={'margin': '0', 'color': '#f5a623', 'fontSize': '28px'}),
+                html.P("阻塞率", style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
             ], style={'textAlign': 'center', 'backgroundColor': '#fdeaa7', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
             
             html.Div([
-                html.H4(f"{execution_rate:.1f}%", style={'margin': '0', 'color': '#3498db', 'fontSize': '28px'}),
-                html.P("执行率", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+                html.H4(f"{execution_rate:.1f}%", style={'margin': '0', 'color': '#2266cc', 'fontSize': '28px'}),
+                html.P("执行率", style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
             ], style={'textAlign': 'center', 'backgroundColor': '#d6eaf8', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
             
             html.Div([
-                html.H4(f"{100-execution_rate:.1f}%", style={'margin': '0', 'color': '#9b59b6', 'fontSize': '28px'}),
-                html.P("计划中", style={'margin': '0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+                html.H4(f"{100-execution_rate:.1f}%", style={'margin': '0', 'color': '#8b5cf6', 'fontSize': '28px'}),
+                html.P("计划中", style={'margin': '0', 'color': '#737d8e', 'fontSize': '14px'}),
             ], style={'textAlign': 'center', 'backgroundColor': '#e8daef', 'padding': '20px', 'borderRadius': '8px', 'margin': '10px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
         ], style={'display': 'flex', 'flexWrap': 'wrap', 'justifyContent': 'space-around', 'marginBottom': '25px'})
         
