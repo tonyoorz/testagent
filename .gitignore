@@ -52,3 +52,15 @@ testcase/dtsv_testcases_all*.json
 .traces/
 agent/ml_intent/model/model.safetensors
 *.safetensors
+
+# Generated reports and data files (too large for git)
+report/qgate_kpi_dashboard.html
+report/phase_transfer_report*.html
+report/ad_hoc/
+report/analysis_snapshots/
+project/project_vin_mapping.csv
+pic/
+obsidian_export/
+.docs/
+*.xlsx
+*.csv
