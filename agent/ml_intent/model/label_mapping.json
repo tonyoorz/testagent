@@ -1,0 +1,40 @@
+{
+  "label2id": {
+    "anomaly": 0,
+    "association": 1,
+    "comparison": 2,
+    "coverage": 3,
+    "cross": 4,
+    "dashboard": 5,
+    "matrix": 6,
+    "predict": 7,
+    "quality": 8,
+    "risk": 9,
+    "risk_eval": 10,
+    "root_cause": 11,
+    "strategy": 12,
+    "summary": 13,
+    "test": 14,
+    "tester": 15,
+    "trend": 16
+  },
+  "id2label": {
+    "0": "anomaly",
+    "1": "association",
+    "2": "comparison",
+    "3": "coverage",
+    "4": "cross",
+    "5": "dashboard",
+    "6": "matrix",
+    "7": "predict",
+    "8": "quality",
+    "9": "risk",
+    "10": "risk_eval",
+    "11": "root_cause",
+    "12": "strategy",
+    "13": "summary",
+    "14": "test",
+    "15": "tester",
+    "16": "trend"
+  }
+}
