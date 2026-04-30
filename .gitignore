@@ -50,3 +50,5 @@ report/generated_runs/
 testcase/dtsv_testcases_all*.json
 .env
 .traces/
+agent/ml_intent/model/model.safetensors
+*.safetensors
