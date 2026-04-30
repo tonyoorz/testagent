@@ -224,37 +224,44 @@ def apply_dark_theme_to_figure(fig, title="", x_title="", y_title="", height=Non
 
 def apply_light_theme_to_figure(fig, title="", x_title="", y_title="", height=None):
     """应用 vizion-lab 风格浅色主题到图表 (minimal, clean)。"""
-    paper_bg, plot_bg, font_color, grid_col, line_col, legend_bg = _vizion_layout_colors('light')
+    paper_bg = '#ffffff'
+    plot_bg = '#ffffff'
+    font_color = LIGHT_TEXT_COLOR
+    grid_col = 'rgba(0,0,0,0.04)'
+    line_col = 'rgba(0,0,0,0.08)'
+    legend_bg = 'rgba(255,255,255,0.9)'
 
     fig.update_layout(
-        title=dict(text=title, font=dict(size=15, color=font_color)),
+        title=dict(text=title, font=dict(size=14, color=font_color, family="'DM Sans', system-ui, sans-serif")),
         xaxis_title=x_title,
         yaxis_title=y_title,
         paper_bgcolor=paper_bg,
         plot_bgcolor=plot_bg,
         font=dict(family="'DM Sans', system-ui, sans-serif", color=font_color, size=12),
-        margin=dict(l=56, r=32, t=48, b=56),
+        margin=dict(l=48, r=24, t=44, b=48),
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02,
             xanchor="right", x=1,
             font=dict(size=11, color=MUTED_TEXT),
             bgcolor=legend_bg,
             bordercolor=LIGHT_BORDER_COLOR,
-            borderwidth=1,
+            borderwidth=0,
         ),
         xaxis=dict(
             showgrid=False,
-            showline=True, linewidth=1, linecolor=line_col,
+            showline=False,
             zeroline=False,
             tickfont=dict(size=11, color=MUTED_TEXT),
+            linecolor=line_col,
         ),
         yaxis=dict(
             showgrid=True, gridcolor=grid_col,
+            griddash='dot',
             showline=False,
             zeroline=False,
             tickfont=dict(size=11, color=MUTED_TEXT),
         ),
-        hovermode='closest',
+        hovermode='x unified',
         hoverlabel=dict(
             bgcolor='#ffffff',
             bordercolor=LIGHT_BORDER_COLOR,

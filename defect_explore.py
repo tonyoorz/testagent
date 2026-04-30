@@ -2038,7 +2038,7 @@ def create_sidebar_nav():
     ]
     
     return html.Div([
-        # 导航栏切换按钮 - vizion-lab primary blue
+        # 导航栏切换按钮
         html.Button(
             [html.I(className="fas fa-bars", style={'fontSize': '18px'})],
             id='nav-toggle-btn',
@@ -2048,15 +2048,9 @@ def create_sidebar_nav():
                 'top': '20px',
                 'left': '290px',
                 'zIndex': '1001',
-                'backgroundColor': PRIMARY_COLOR,
-                'color': 'white',
-                'border': 'none',
                 'padding': '12px',
-                'borderRadius': '8px',
                 'cursor': 'pointer',
                 'fontSize': '16px',
-                'boxShadow': '0 1px 3px rgba(15,23,42,0.12)',
-                'transition': 'all 0.3s ease',
             }
         ),
         
@@ -2065,18 +2059,7 @@ def create_sidebar_nav():
             html.Button(
                 [html.I(className="fas fa-chevron-right", style={'fontSize': '12px', 'color': SIDEBAR_FG})],
                 id='nav-edge-toggle-btn',
-                style={
-                    'position': 'absolute',
-                    'top': '50%',
-                    'left': '50%',
-                    'transform': 'translate(-50%, -50%)',
-                    'backgroundColor': 'transparent',
-                    'border': 'none',
-                    'cursor': 'pointer',
-                    'padding': '8px',
-                    'borderRadius': '50%',
-                    'transition': 'background-color 0.3s ease',
-                }
+                className='edge-bar-btn',
             )
         ],
         id='nav-edge-bar',
@@ -2086,57 +2069,35 @@ def create_sidebar_nav():
             'left': '-30px',
             'width': '30px',
             'height': 'calc(100vh - 90px)',
-            'backgroundColor': SIDEBAR_BG,
             'zIndex': '999',
             'transition': 'left 0.3s ease',
-            'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
             'display': 'flex',
             'alignItems': 'center',
             'justifyContent': 'center',
         }),
         
-        # 侧边导航栏 — vizion-lab dark sidebar
+        # 侧边导航栏
         html.Div([
             # 导航栏头部
             html.Div([
-                html.H3("Navigation", style={
-                    'color': '#fff',
-                    'margin': '0',
-                    'padding': '20px',
-                    'borderBottom': '1px solid #2d3a4a',
-                    'fontSize': '14px',
-                    'fontWeight': '700',
-                    'letterSpacing': '0.04em',
-                    'textTransform': 'uppercase',
-                    'fontFamily': "'DM Sans', system-ui, sans-serif",
-                }),
+                html.Div([
+                    html.Span("DTSV", className='sidebar-logo-icon'),
+                    html.Div([
+                        html.H3("DTSV", style={'margin': '0', 'fontSize': '16px', 'padding': '0', 'border': 'none'}),
+                        html.Span("数据分析平台", style={'fontSize': '11px', 'color': '#b0b8c6', 'fontWeight': '400'}),
+                    ], style={'display': 'flex', 'flexDirection': 'column'}),
+                ], className='sidebar-logo-area'),
                 html.Button(
                     [html.I(className="fas fa-times", style={'fontSize': '16px'})],
                     id='nav-close-btn',
-                    style={
-                        'position': 'absolute',
-                        'top': '15px',
-                        'right': '15px',
-                        'backgroundColor': 'transparent',
-                        'color': SIDEBAR_FG,
-                        'border': 'none',
-                        'cursor': 'pointer',
-                        'padding': '5px',
-                        'borderRadius': '4px',
-                        'transition': 'color 0.2s ease',
-                    }
+                    className='sidebar-close-btn',
                 )
             ], style={'position': 'relative'}),
 
             # 导航项目
             html.Div([
                 html.Div([
-                    html.I(className=item['icon'], style={
-                        'marginRight': '12px',
-                        'width': '20px',
-                        'textAlign': 'center',
-                        'fontSize': '14px',
-                    }),
+                    html.I(className=item['icon'] + ' nav-item-icon'),
                     html.Span(item['label'])
                 ],
                 id=f"nav-{item['id']}",
@@ -2164,10 +2125,8 @@ def create_sidebar_nav():
             'left': '0px',
             'width': '280px',
             'height': 'calc(100vh - 90px)',
-            'backgroundColor': SIDEBAR_BG,
             'zIndex': '1000',
             'transition': 'left 0.3s ease',
-            'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
             'overflowY': 'auto',
         }),
         
@@ -2180,10 +2139,8 @@ def create_sidebar_nav():
                 'left': '0',
                 'width': '100%',
                 'height': '100%',
-                'backgroundColor': 'rgba(15,23,42,0.4)',
                 'zIndex': '999',
                 'display': 'none',
-                'backdropFilter': 'blur(2px)',
             }
         ),
         
@@ -2212,10 +2169,8 @@ def create_sidebar_nav():
             'left': '-30px',
             'width': '30px',
             'height': 'calc(100vh - 90px)',
-            'backgroundColor': SIDEBAR_BG,
             'zIndex': '999',
             'transition': 'left 0.3s ease',
-            'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
             'display': 'flex',
             'alignItems': 'center',
             'justifyContent': 'center',
@@ -2233,30 +2188,13 @@ app.layout = html.Div([
         # 主题切换器
         html.Div([
             create_theme_switcher()
-        ], style={'position': 'absolute', 'top': '10px', 'right': '20px', 'zIndex': '1005'}),
+        ], className='theme-switcher-wrap'),
 
         # 左侧标题 + 副标题
         html.Div([
-            html.H1("PreAnalysis", id='main-title', style={
-                'margin': '0',
-                'padding': '0',
-                'fontSize': '1.25rem',
-                'fontWeight': '700',
-                'color': '#131921',
-                'letterSpacing': '-0.02em',
-                'fontFamily': "'DM Sans', system-ui, sans-serif",
-            }),
-            html.Span("Testing & Defect Data Analysis", style={
-                'fontSize': '0.8rem',
-                'color': '#737d8e',
-                'marginLeft': '12px',
-                'fontWeight': '400',
-            }),
-        ], style={
-            'display': 'flex',
-            'alignItems': 'baseline',
-            'padding': '24px 0',
-        }),
+            html.H1("PreAnalysis", id='main-title', className='header-title'),
+            html.Span("Testing & Defect Data Analysis", className='header-subtitle'),
+        ], className='header-brand'),
 
         # 同步状态指示器
         html.Div([
@@ -2273,10 +2211,6 @@ app.layout = html.Div([
         'left': '0',
         'width': '100%',
         'height': '90px',
-        'backgroundColor': 'rgba(255,255,255,0.85)',
-        'backdropFilter': 'blur(12px)',
-        'WebkitBackdropFilter': 'blur(12px)',
-        'borderBottom': '1px solid #dde3eb',
         'zIndex': '1002',
         'paddingLeft': '24px',
         'display': 'flex',
@@ -2296,7 +2230,6 @@ app.layout = html.Div([
         'transition': 'margin-left 0.3s ease',
         'minHeight': 'calc(100vh - 110px)',
         'padding': '24px',
-        'backgroundColor': '#f4f6f9',
     }),
     
     # 缺陷详情Modal弹窗
@@ -2317,50 +2250,15 @@ app.layout = html.Div([
                 id='modal-content',
                 children=[
                     html.Div([
-                        html.H3("Defect Details", style={
-                            'margin': '0',
-                            'display': 'inline-block',
-                            'color': '#131921',
-                            'fontSize': '1.125rem',
-                            'fontWeight': '700',
-                            'fontFamily': "'DM Sans', system-ui, sans-serif",
-                        }),
+                        html.H3("Defect Details", className='modal-header-title'),
                         html.Button(
                             "x",
                             id='close-modal-btn',
-                            style={
-                                'float': 'right',
-                                'border': 'none',
-                                'background': 'transparent',
-                                'fontSize': '24px',
-                                'cursor': 'pointer',
-                                'color': '#737d8e',
-                                'padding': '0',
-                                'width': '32px',
-                                'height': '32px',
-                                'borderRadius': '8px',
-                                'transition': 'all 0.2s ease',
-                            }
+                            className='modal-close-btn',
                         )
-                    ], style={
-                        'borderBottom': '1px solid #dde3eb',
-                        'paddingBottom': '12px',
-                        'marginBottom': '18px',
-                        'display': 'flex',
-                        'alignItems': 'center',
-                        'justifyContent': 'space-between',
-                    }),
+                    ], className='modal-header'),
                     
-                    html.Div(id='modal-info', style={
-                        'marginBottom': '16px', 
-                        'fontSize': '13px', 
-                        'color': '#4b5563',
-                        'backgroundColor': '#f8fafc',
-                        'padding': '8px 12px',
-                        'borderRadius': '6px',
-                        'border': '1px solid #e5e7eb',
-                        'fontWeight': '500'
-                    }),
+                    html.Div(id='modal-info', className='modal-info'),
                     
                     dash_table.DataTable(
                         id='modal-defect-table',
@@ -2804,66 +2702,53 @@ def toggle_sidebar(toggle_clicks, close_clicks, overlay_clicks, edge_toggle_clic
     
     trigger_id = callback_context.triggered[0]['prop_id'].split('.')[0]
     
-    # 导航栏基础样式 — vizion-lab
+    # 导航栏基础样式
     nav_base_style = {
         'position': 'fixed',
         'top': '90px',
         'width': '280px',
         'height': 'calc(100vh - 90px)',
-        'backgroundColor': SIDEBAR_BG,
         'zIndex': '1000',
         'transition': 'left 0.3s ease',
-        'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
         'overflowY': 'auto',
     }
 
-    # 主内容区基础样式 — vizion-lab light background
+    # 主内容区基础样式
     main_content_base_style = {
         'marginTop': '110px',
         'transition': 'margin-left 0.3s ease',
         'minHeight': 'calc(100vh - 110px)',
         'padding': '24px',
-        'backgroundColor': '#f4f6f9',
     }
 
-    # 遮罩层基础样式 — vizion-lab
+    # 遮罩层基础样式
     overlay_base_style = {
         'position': 'fixed',
         'top': '0',
         'left': '0',
         'width': '100%',
         'height': '100%',
-        'backgroundColor': 'rgba(15,23,42,0.4)',
         'zIndex': '999',
-        'backdropFilter': 'blur(2px)',
     }
 
-    # 切换按钮基础样式 — vizion-lab primary
+    # 切换按钮基础样式
     toggle_btn_base_style = {
         'position': 'fixed',
         'top': '20px',
         'zIndex': '1001',
-        'backgroundColor': PRIMARY_COLOR,
-        'color': 'white',
-        'border': 'none',
         'padding': '12px',
-        'borderRadius': '8px',
         'cursor': 'pointer',
         'fontSize': '16px',
-        'boxShadow': '0 1px 3px rgba(15,23,42,0.12)',
-        'transition': 'all 0.3s ease',
     }
 
-    # 边缘条基础样式 — vizion-lab
+    # 边缘条基础样式
     edge_bar_base_style = {
         'position': 'fixed',
         'top': '90px',
         'width': '30px',
         'height': 'calc(100vh - 90px)',
-        'backgroundColor': SIDEBAR_BG,
         'zIndex': '999',
         'transition': 'left 0.3s ease',
-        'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
         'display': 'flex',
         'alignItems': 'center',
         'justifyContent': 'center',

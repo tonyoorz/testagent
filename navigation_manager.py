@@ -44,15 +44,9 @@ class NavigationManager:
                     'top': '20px',
                     'left': '290px',
                     'zIndex': '1001',
-                    'backgroundColor': _PRIMARY,
-                    'color': 'white',
-                    'border': 'none',
                     'padding': '12px',
-                    'borderRadius': '8px',
                     'cursor': 'pointer',
                     'fontSize': '16px',
-                    'boxShadow': '0 1px 3px rgba(15,23,42,0.12)',
-                    'transition': 'all 0.3s ease',
                 }
             ),
 
@@ -61,18 +55,7 @@ class NavigationManager:
                 html.Button(
                     [html.I(className="fas fa-chevron-right", style={'fontSize': '12px', 'color': _SIDEBAR_FG})],
                     id='nav-edge-toggle-btn',
-                    style={
-                        'position': 'absolute',
-                        'top': '50%',
-                        'left': '50%',
-                        'transform': 'translate(-50%, -50%)',
-                        'backgroundColor': 'transparent',
-                        'border': 'none',
-                        'cursor': 'pointer',
-                        'padding': '8px',
-                        'borderRadius': '50%',
-                        'transition': 'background-color 0.3s ease',
-                    }
+                    className='edge-bar-btn',
                 )
             ],
             id='nav-edge-bar',
@@ -82,10 +65,8 @@ class NavigationManager:
                 'left': '-30px',
                 'width': '30px',
                 'height': 'calc(100vh - 90px)',
-                'backgroundColor': _SIDEBAR_BG,
                 'zIndex': '999',
                 'transition': 'left 0.3s ease',
-                'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
                 'display': 'flex',
                 'alignItems': 'center',
                 'justifyContent': 'center',
@@ -95,44 +76,22 @@ class NavigationManager:
             html.Div([
                 # 导航栏头部
                 html.Div([
-                    html.H3("Navigation", style={
-                        'color': '#fff',
-                        'margin': '0',
-                        'padding': '20px',
-                        'borderBottom': f'1px solid {_SIDEBAR_BORDER}',
-                        'fontSize': '14px',
-                        'fontWeight': '700',
-                        'letterSpacing': '0.04em',
-                        'textTransform': 'uppercase',
-                        'fontFamily': "'DM Sans', system-ui, sans-serif",
-                    }),
-                    html.Button(
-                        [html.I(className="fas fa-times", style={'fontSize': '16px'})],
-                        id='nav-close-btn',
-                        style={
-                            'position': 'absolute',
-                            'top': '15px',
-                            'right': '15px',
-                            'backgroundColor': 'transparent',
-                            'color': _SIDEBAR_FG,
-                            'border': 'none',
-                            'cursor': 'pointer',
-                            'padding': '5px',
-                            'borderRadius': '4px',
-                            'transition': 'color 0.2s ease',
-                        }
-                    )
-                ], style={'position': 'relative'}),
+                    html.Span("DTSV", className='sidebar-logo-icon'),
+                    html.Div([
+                        html.H3("DTSV", style={'margin': '0', 'fontSize': '16px', 'padding': '0', 'border': 'none'}),
+                        html.Span("数据分析平台", style={'fontSize': '11px', 'color': _SIDEBAR_FG, 'fontWeight': '400'}),
+                    ], style={'display': 'flex', 'flexDirection': 'column'}),
+                ], className='sidebar-logo-area'),
+                html.Button(
+                    [html.I(className="fas fa-times", style={'fontSize': '16px'})],
+                    id='nav-close-btn',
+                    className='sidebar-close-btn',
+                ),
 
                 # 导航项目
                 html.Div([
                     html.Div([
-                        html.I(className=item['icon'], style={
-                            'marginRight': '12px',
-                            'width': '20px',
-                            'textAlign': 'center',
-                            'fontSize': '14px',
-                        }),
+                        html.I(className=item['icon'] + ' nav-item-icon'),
                         html.Span(item['label'])
                     ],
                     id=f"nav-{item['id']}",
@@ -160,10 +119,8 @@ class NavigationManager:
                 'left': '0px',
                 'width': '280px',
                 'height': 'calc(100vh - 90px)',
-                'backgroundColor': _SIDEBAR_BG,
                 'zIndex': '1000',
                 'transition': 'left 0.3s ease',
-                'boxShadow': '2px 0 8px rgba(0,0,0,0.25)',
                 'overflowY': 'auto',
             }),
 
@@ -176,10 +133,8 @@ class NavigationManager:
                     'left': '0',
                     'width': '100%',
                     'height': '100%',
-                    'backgroundColor': 'rgba(15,23,42,0.4)',
                     'zIndex': '999',
                     'display': 'none',
-                    'backdropFilter': 'blur(2px)',
                 }
             ),
 
