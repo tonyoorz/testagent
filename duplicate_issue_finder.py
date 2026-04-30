@@ -61,24 +61,60 @@ except ImportError:
     SENTENCE_TRANSFORMER_AVAILABLE = False
 
 _st_model_instance = None
+_finetuned_model_path: Optional[str] = None
 
 
 def _get_st_model() -> Any:
-    """Lazy-load the sentence-transformer model (singleton)."""
-    global _st_model_instance
+    """Lazy-load the sentence-transformer model (singleton).
+
+    If a fine-tuned model exists (models/latest_model.txt), prefer it over
+    the default model. Automatically reloads when the path changes.
+    """
+    global _st_model_instance, _finetuned_model_path, _DEFAULT_EMBEDDING_MODEL
+
+    # Check for fine-tuned model
+    latest_file = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "models", "latest_model.txt"
+    )
+    finetuned_path: Optional[str] = None
+    if os.path.exists(latest_file):
+        try:
+            path = open(latest_file).read().strip()
+            if path and os.path.isdir(path):
+                finetuned_path = path
+        except Exception:
+            pass
+
+    # Reload if path changed
+    if finetuned_path != _finetuned_model_path:
+        _finetuned_model_path = finetuned_path
+        _st_model_instance = None  # force reload
+
     if _st_model_instance is not None:
         return _st_model_instance
     if not SENTENCE_TRANSFORMER_AVAILABLE:
         return None
+
+    model_to_load = finetuned_path or _DEFAULT_EMBEDDING_MODEL
     try:
         os.makedirs(_EMBEDDING_CACHE_DIR, exist_ok=True)
         _st_model_instance = SentenceTransformer(
-            _DEFAULT_EMBEDDING_MODEL, cache_folder=_EMBEDDING_CACHE_DIR
+            model_to_load, cache_folder=_EMBEDDING_CACHE_DIR
         )
-        logger.info("Loaded embedding model: %s", _DEFAULT_EMBEDDING_MODEL)
+        logger.info("Loaded embedding model: %s", model_to_load)
         return _st_model_instance
     except Exception as exc:
-        logger.warning("Failed to load embedding model %s: %s", _DEFAULT_EMBEDDING_MODEL, exc)
+        logger.warning("Failed to load embedding model %s: %s", model_to_load, exc)
+        # Fallback to default if fine-tuned failed
+        if finetuned_path:
+            try:
+                _st_model_instance = SentenceTransformer(
+                    _DEFAULT_EMBEDDING_MODEL, cache_folder=_EMBEDDING_CACHE_DIR
+                )
+                logger.info("Fallback to default model: %s", _DEFAULT_EMBEDDING_MODEL)
+                return _st_model_instance
+            except Exception:
+                pass
         return None
 
 

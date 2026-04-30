@@ -1,17 +1,18 @@
 """
 Progressive ReRanker for duplicate-issue search.
 
-Two-phase design:
+Three-phase design:
   Phase 1 — ClickBoost: statistical boost from historical click/feedback rates (always active)
-  Phase 2 — FeatureReRanker: LogisticRegression with cross-validation guard (triggers at 50+ explicit labels)
+  Phase 2 — FeatureReRanker: LR fallback when no fine-tuned embedding exists
+  Phase 3 — EmbeddingReRanker: fine-tuned embedding model (priority when available)
 
-The old ContrastiveAdapter has been removed — its value is covered by the LR
-feature model, and true embedding fine-tuning (via train_embedding.py) is the
-right upgrade path at scale.
+When a fine-tuned embedding model exists (models/latest_model.txt), it takes
+priority over the LR reranker. ClickBoost is always applied on top.
 """
 
 import logging
 import math
+import os
 import pickle
 import re
 from dataclasses import replace
@@ -20,6 +21,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from feedback_store import FeedbackStore
+
+_EMBEDDING_MODELS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "models"
+)
+_LATEST_MODEL_FILE = os.path.join(_EMBEDDING_MODELS_DIR, "latest_model.txt")
 
 try:
     from sklearn.linear_model import LogisticRegression
@@ -263,7 +269,100 @@ class FeatureReRanker:
 
 
 # ---------------------------------------------------------------------------
-# Progressive ReRanker (unified two-phase)
+# Phase 3: Embedding ReRanker (fine-tuned embedding model)
+# ---------------------------------------------------------------------------
+
+class EmbeddingReRanker:
+    """Re-rank candidates using a fine-tuned embedding model."""
+
+    def __init__(self):
+        self._model = None
+        self._model_path: Optional[str] = None
+
+    @staticmethod
+    def get_latest_model_path() -> Optional[str]:
+        """Return the path stored in models/latest_model.txt, or None."""
+        if not os.path.exists(_LATEST_MODEL_FILE):
+            return None
+        try:
+            with open(_LATEST_MODEL_FILE, "r") as f:
+                path = f.read().strip()
+            if path and os.path.isdir(path):
+                return path
+        except Exception:
+            pass
+        return None
+
+    @property
+    def ready(self) -> bool:
+        return self._model is not None
+
+    def _ensure_loaded(self) -> bool:
+        """Load or reload the fine-tuned model if available."""
+        latest = self.get_latest_model_path()
+        if latest is None:
+            return False
+        # Already loaded the same path
+        if self._model is not None and self._model_path == latest:
+            return True
+        try:
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(latest)
+            self._model_path = latest
+            logger.info("Loaded fine-tuned embedding model: %s", latest)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to load fine-tuned model %s: %s", latest, exc)
+            return False
+
+    def score_candidates(
+        self, query_text: str, candidates: Sequence[Any], index: Any = None,
+    ) -> Dict[str, float]:
+        """Re-compute similarities with the fine-tuned model."""
+        if not self._ensure_loaded():
+            return {}
+
+        # Build ticket text map from index meta
+        docs_by_ticket: Dict[str, str] = {}
+        if index is not None:
+            for meta in getattr(index, "_meta", []):
+                tid = meta.get("ticket_id")
+                if tid:
+                    doc = "\n".join(
+                        str(meta.get(k) or "")
+                        for k in ("name", "description", "project", "pu", "ecu", "lead_model")
+                    )
+                    docs_by_ticket[tid] = doc
+
+        if not docs_by_ticket:
+            return {}
+
+        # Collect unique ticket texts
+        ticket_ids: List[str] = []
+        texts: List[str] = []
+        for c in candidates:
+            tid = getattr(c, "ticket_id", None)
+            if tid and tid in docs_by_ticket:
+                ticket_ids.append(tid)
+                texts.append(docs_by_ticket[tid])
+
+        if not texts:
+            return {}
+
+        # Encode query + docs
+        qvec = self._model.encode(
+            [query_text], normalize_embeddings=True, show_progress_bar=False,
+        ).astype(np.float32)
+        dvecs = self._model.encode(
+            texts, normalize_embeddings=True, show_progress_bar=False,
+        ).astype(np.float32)
+
+        sims = (dvecs @ qvec.T).reshape(-1)
+        return {ticket_ids[i]: float(sims[i]) for i in range(len(ticket_ids))}
+
+
+# ---------------------------------------------------------------------------
+# Progressive ReRanker (unified three-phase)
 # ---------------------------------------------------------------------------
 
 class ProgressiveReRanker:
@@ -271,10 +370,12 @@ class ProgressiveReRanker:
         self.feedback_store = feedback_store or FeedbackStore()
         self.click_boost = ClickBoostReRanker(self.feedback_store)
         self.feature_reranker = FeatureReRanker(self.feedback_store)
+        self.embedding_reranker = EmbeddingReRanker()
         self.safety_guard = ModelSafetyGuard()
         self.model_phase = "click_boost"
         self.feedback_count = 0
         self._last_trained_feedback_count = 0
+        self._last_model_path: Optional[str] = None
 
     @property
     def ready(self) -> bool:
@@ -283,7 +384,13 @@ class ProgressiveReRanker:
     def refresh(self, index: Any = None) -> None:
         self.feedback_count = self.feedback_store.count_feedback()
 
-        # Check LR readiness via the scheduler's quality checks
+        # Priority 1: fine-tuned embedding model
+        latest_path = EmbeddingReRanker.get_latest_model_path()
+        if latest_path is not None:
+            self.model_phase = "embedding"
+            return
+
+        # Priority 2: LR feature reranker
         readiness = self.feedback_store.scheduler.check_lr_readiness()
         target_phase = "feature" if readiness["ready"] else "click_boost"
         self.model_phase = "click_boost"
@@ -324,8 +431,25 @@ class ProgressiveReRanker:
     ) -> List[Any]:
         self.refresh(index=index)
         click_boost_scores = self.click_boost.score_candidates(candidates)
+
+        # Determine scoring strategy based on phase
+        embedding_scores: Dict[str, float] = {}
         feature_scores: Dict[str, float] = {}
-        if self.model_phase == "feature" and index is not None:
+
+        if self.model_phase == "embedding" and index is not None:
+            embedding_scores = self.embedding_reranker.score_candidates(
+                query_text, candidates, index=index
+            )
+            # If embedding model failed to load, fall back
+            if not embedding_scores:
+                if self.feature_reranker.ready:
+                    self.model_phase = "feature"
+                    feature_scores = self.feature_reranker.score_candidates(
+                        query_text, candidates, index=index
+                    )
+                else:
+                    self.model_phase = "click_boost"
+        elif self.model_phase == "feature" and index is not None:
             feature_scores = self.feature_reranker.score_candidates(
                 query_text, candidates, index=index
             )
@@ -336,7 +460,10 @@ class ProgressiveReRanker:
             base_score = _safe_float(getattr(candidate, "similarity", 0.0), 0.0)
             boosted_score = max(0.0, min(1.0, base_score + click_boost_scores.get(ticket_id, 0.0)))
             final_score = boosted_score
-            if ticket_id in feature_scores:
+            if ticket_id in embedding_scores:
+                # Embedding score + ClickBoost blend
+                final_score = (0.75 * embedding_scores[ticket_id]) + (0.25 * boosted_score)
+            elif ticket_id in feature_scores:
                 final_score = (0.6 * feature_scores[ticket_id]) + (0.4 * boosted_score)
             reranked.append((final_score, _clone_candidate(candidate, final_score)))
 
@@ -386,6 +513,7 @@ def _token_overlap(query_text: str, candidate_text: str) -> float:
 
 __all__ = [
     "ClickBoostReRanker",
+    "EmbeddingReRanker",
     "FeatureReRanker",
     "ModelSafetyGuard",
     "ProgressiveReRanker",
