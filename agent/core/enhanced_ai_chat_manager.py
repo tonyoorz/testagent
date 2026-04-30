@@ -2208,195 +2208,141 @@ class EnhancedAIChatManager:
         chat_model_options = self._get_chat_model_options()
         default_chat_model = self._get_default_chat_model()
 
-        # 构建界面
+        # 构建界面 — ChatGPT/Claude 风格
         interface = html.Div([
-            # 对话历史区域
-            html.Div(
-                id=f'{chat_id_prefix}-history',
-                children=[
-                    html.Div([
-                        html.I(className="fas fa-robot", style={'marginRight': '8px', 'color': '#3498db'}),
-                        html.Span(
-                            f"您好！我是{self.assistant_name}。"
-                            f"{'当前为 Skill（工具链）模式。' if default_mode == 'agent' else '当前为 Agent（数据库直读）模式。'}"
-                        )
-                    ], style={
-                        'padding': '8px 10px',
-                        'backgroundColor': '#f8f9fa',
-                        'borderRadius': '8px',
-                        'margin': '4px 0',
-                        'border': '1px solid #e9ecef',
-                        'fontSize': '13px'
-                    })
-                ],
-                style={
-                    'flex': '1 1 auto',
-                    'minHeight': '0',
-                    'overflowY': 'auto',
-                    'border': '1px solid #ddd',
-                    'padding': '10px',
-                    'borderRadius': '8px',
-                    'backgroundColor': '#fafafa'
-                }
-            ),
-
-            # 对话模式和重复提票控制（放在对话框和发送区之间）
+            # ── 消息滚动区 ──
             html.Div([
-                html.Div([
-                    dcc.RadioItems(
-                        id=f'{chat_id_prefix}-chat-mode',
-                        options=[
-                            {'label': ' 纯聊天', 'value': 'pure'},
-                            {'label': ' RAG', 'value': 'rag'},
-                            {'label': ' Confluence', 'value': 'confluence'},
-                            {'label': ' Agent', 'value': 'summary'},
-                            {'label': ' Skill', 'value': 'agent'},
-                        ],
-                        value=default_mode,
-                        labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontSize': '12px'}
-                    ),
-                    html.Span(
-                        "纯=不读本地 | RAG=Dify Chatflow | Confluence=知识空间检索 | Agent=数据库直读 | Skill=工具链",
-                        style={'fontSize': '11px', 'color': '#6b7280', 'marginLeft': '6px'}
-                    )
-                ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap', 'gap': '4px'}),
-                html.Div([
-                    dcc.Checklist(
-                        id=f'{chat_id_prefix}-known-issues',
-                        options=[{'label': ' 已知问题', 'value': 'known'}],
-                        value=[],
-                        style={'display': 'inline-block', 'fontSize': '12px'}
-                    ),
-                    html.Span(
-                        "检测重复提票",
-                        style={'fontSize': '11px', 'color': '#6b7280', 'marginLeft': '5px'}
-                    )
-                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '8px'}),
-                html.Div([
-                    html.Span("Model", style={'fontSize': '11px', 'color': '#4b5563', 'fontWeight': '600'}),
-                    dcc.Dropdown(
-                        id=f'{chat_id_prefix}-model-select',
-                        options=[{'label': m, 'value': m} for m in chat_model_options],
-                        value=default_chat_model,
-                        clearable=False,
-                        searchable=False,
-                        style={'width': '230px', 'fontSize': '12px'}
-                    )
-                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px', 'marginLeft': 'auto'})
-            ], style={
-                'display': 'flex',
-                'alignItems': 'center',
-                'justifyContent': 'space-between',
-                'padding': '6px 8px',
-                'backgroundColor': '#f8f9fa',
-                'border': '1px solid #e5e7eb',
-                'borderRadius': '8px',
-                'gap': '8px',
-                'flexWrap': 'wrap'
-            }),
-
-            # 状态显示
-            html.Div(
-                id=f'{chat_id_prefix}-status',
-                children=[],
-                style={
-                    'textAlign': 'center',
-                    'marginTop': '6px',
-                    'marginBottom': '6px',
-                    'fontSize': '12px',
-                    'color': '#666',
-                    'minHeight': '16px'
-                }
-            ),
-
-            # 输入区域
-            html.Div([
-                dcc.Input(
-                    id=f'{chat_id_prefix}-input',
-                    type='text',
-                    placeholder='请输入您的问题...',
-                    style={
-                        'flex': '1',
-                        'padding': '9px 10px',
-                        'marginRight': '8px',
-                        'borderRadius': '8px',
-                        'border': '1px solid #d1d5db',
-                        'fontSize': '13px'
-                    },
-                    value='',
-                    persistence=False
-                ),
-                html.Button(
-                    [html.I(className="fas fa-paper-plane", style={'marginRight': '5px'}), '发送'],
-                    id=f'{chat_id_prefix}-send-button',
-                    n_clicks=0,
-                    style={
-                        'padding': '9px 14px',
-                        'backgroundColor': '#3498db',
-                        'color': 'white',
-                        'border': 'none',
-                        'borderRadius': '8px',
-                        'cursor': 'pointer',
-                        'fontSize': '13px',
-                        'fontWeight': 'bold',
-                        'whiteSpace': 'nowrap'
-                    }
-                ),
-                html.Button(
-                    [html.I(className="fas fa-stop-circle", style={'marginRight': '5px'}), '停止'],
-                    id=f'{chat_id_prefix}-stop-button',
-                    n_clicks=0,
-                    disabled=True,
-                    style={
-                        'padding': '9px 14px',
-                        'backgroundColor': '#e74c3c',
-                        'color': 'white',
-                        'border': 'none',
-                        'borderRadius': '8px',
-                        'cursor': 'pointer',
-                        'fontSize': '13px',
-                        'fontWeight': 'bold',
-                        'marginLeft': '6px',
-                        'whiteSpace': 'nowrap',
-                        'opacity': '0.4'
-                    }
-                )
-            ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '6px', 'gap': '0'}),
-
-            # 预设问题
-            html.Div([
-                html.P("快速提问：", style={'fontSize': '12px', 'margin': '6px 0 3px 0', 'color': '#666'}),
+                # 对话历史（callback 动态填充，也承载欢迎屏逻辑）
                 html.Div(
-                    preset_buttons,
-                    style={
-                        'display': 'flex',
-                        'gap': '6px',
-                        'flexWrap': 'wrap',
-                        'justifyContent': 'center'
-                    }
-                )
-            ], style={'marginTop': '8px'}),
+                    id=f'{chat_id_prefix}-history',
+                    children=[
+                        # 默认欢迎屏（callback 会替换整个 children）
+                        html.Div([
+                            html.Div('🤖', style={'fontSize': '48px', 'textAlign': 'center', 'marginBottom': '12px'}),
+                            html.H2(
+                                f'你好，我是{self.assistant_name}',
+                                style={'textAlign': 'center', 'color': '#1a1a2e', 'fontWeight': '700', 'marginBottom': '8px', 'fontSize': '24px', 'border': 'none', 'padding': '0'}
+                            ),
+                            html.P(
+                                '我可以帮你分析缺陷数据、查询测试状态、生成报告等',
+                                style={'textAlign': 'center', 'color': '#6b7280', 'fontSize': '14px', 'marginBottom': '24px'}
+                            ),
+                            # 预设问题 2 列网格
+                            html.Div(
+                                preset_buttons,
+                                className='chat-preset-grid'
+                            )
+                        ], className='chat-welcome')
+                    ],
+                    className='chat-messages'
+                ),
+            ], style={'flex': '1 1 auto', 'minHeight': '0', 'overflowY': 'auto', 'display': 'flex', 'flexDirection': 'column'}),
 
-            # 控制面板
+            # ── 底部固定输入区 ──
             html.Div([
-                html.Div([
-                    html.Label([
-                        dcc.Checklist(
-                            id=f'{chat_id_prefix}-show-reasoning',
-                            options=[{'label': ' 显示执行细节', 'value': 'show'}],
-                            value=['show'],
-                            style={'fontSize': '12px'}
-                        )
-                    ])
-                ], style={'flex': '1'}),
+                # 状态显示（保留 ID）
+                html.Div(
+                    id=f'{chat_id_prefix}-status',
+                    children=[],
+                    style={'textAlign': 'center', 'fontSize': '12px', 'color': '#999', 'minHeight': '0', 'padding': '2px 0'}
+                ),
 
+                # 控制：模式 + 已知问题 + 模型
                 html.Div([
+                    html.Div([
+                        dcc.RadioItems(
+                            id=f'{chat_id_prefix}-chat-mode',
+                            options=[
+                                {'label': ' 纯聊天', 'value': 'pure'},
+                                {'label': ' RAG', 'value': 'rag'},
+                                {'label': ' Confluence', 'value': 'confluence'},
+                                {'label': ' Agent', 'value': 'summary'},
+                                {'label': ' Skill', 'value': 'agent'},
+                            ],
+                            value=default_mode,
+                            labelStyle={'display': 'inline-block', 'marginRight': '8px', 'fontSize': '12px'}
+                        ),
+                        html.Span(
+                            "纯=不读本地 | RAG=Dify Chatflow | Confluence=知识空间检索 | Agent=数据库直读 | Skill=工具链",
+                            style={'fontSize': '10px', 'color': '#9ca3af', 'marginLeft': '4px'}
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap', 'gap': '4px'}),
+                    html.Div([
+                        dcc.Checklist(
+                            id=f'{chat_id_prefix}-known-issues',
+                            options=[{'label': ' 已知问题', 'value': 'known'}],
+                            value=[],
+                            style={'display': 'inline-block', 'fontSize': '12px'}
+                        ),
+                        html.Span(
+                            "检测重复提票",
+                            style={'fontSize': '10px', 'color': '#9ca3af', 'marginLeft': '4px'}
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'gap': '4px'}),
+                    html.Div([
+                        html.Span("Model", style={'fontSize': '11px', 'color': '#6b7280', 'fontWeight': '600'}),
+                        dcc.Dropdown(
+                            id=f'{chat_id_prefix}-model-select',
+                            options=[{'label': m, 'value': m} for m in chat_model_options],
+                            value=default_chat_model,
+                            clearable=False,
+                            searchable=False,
+                            style={'width': '180px', 'fontSize': '12px'}
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px', 'marginLeft': 'auto'})
+                ], className='chat-controls'),
+
+                # 输入行
+                html.Div([
+                    dcc.Input(
+                        id=f'{chat_id_prefix}-input',
+                        type='text',
+                        placeholder='请输入您的问题...',
+                        className='chat-input-field',
+                        value='',
+                        persistence=False
+                    ),
                     html.Button(
-                        [html.I(className="fas fa-trash", style={'marginRight': '5px'}), '清空'],
-                        id=f'{chat_id_prefix}-clear-button',
+                        html.I(className="fas fa-paper-plane"),
+                        id=f'{chat_id_prefix}-send-button',
                         n_clicks=0,
-                        style={
-                            'padding': '4px 10px',
+                        className='chat-send-btn'
+                    ),
+                    html.Button(
+                        html.I(className="fas fa-stop"),
+                        id=f'{chat_id_prefix}-stop-button',
+                        n_clicks=0,
+                        disabled=True,
+                        className='chat-stop-btn'
+                    )
+                ], className='chat-input-row'),
+            ], className='chat-input-area'),
+
+            # 隐藏的控制面板（保留所有 ID，callback 依赖它们）
+            html.Div([
+                # 预设问题按钮（隐藏但保留 ID）
+                html.Div(preset_buttons, style={'display': 'none'}),
+
+                # 控制面板
+                html.Div([
+                    html.Div([
+                        html.Label([
+                            dcc.Checklist(
+                                id=f'{chat_id_prefix}-show-reasoning',
+                                options=[{'label': ' 显示执行细节', 'value': 'show'}],
+                                value=['show'],
+                                style={'fontSize': '12px'}
+                            )
+                        ])
+                    ], style={'flex': '1'}),
+
+                    html.Div([
+                        html.Button(
+                            [html.I(className="fas fa-trash", style={'marginRight': '5px'}), '清空'],
+                            id=f'{chat_id_prefix}-clear-button',
+                            n_clicks=0,
+                            style={
+                                'padding': '4px 10px',
                             'backgroundColor': '#dc3545',
                             'color': 'white',
                             'border': 'none',
@@ -2406,24 +2352,16 @@ class EnhancedAIChatManager:
                         }
                     )
                 ], style={'textAlign': 'right'})
-            ], style={
-                'display': 'flex',
-                'alignItems': 'center',
-                'marginTop': '6px',
-                'padding': '6px 8px',
-                'backgroundColor': '#f8f9fa',
-                'borderRadius': '4px'
-            })
-        ], style={
-            'width': '100%',
-            'height': '100%',
-            'minHeight': '0',
-            'display': 'flex',
-            'flexDirection': 'column',
-            'gap': '6px',
-            'padding': '12px',
-            'boxSizing': 'border-box'
-        })
+                ], style={
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'marginTop': '6px',
+                    'padding': '6px 8px',
+                    'backgroundColor': '#f8f9fa',
+                    'borderRadius': '4px'
+                })
+            ], style={'display': 'none'})  # 隐藏控制面板区
+        ], className='chat-root')
 
         return interface
 

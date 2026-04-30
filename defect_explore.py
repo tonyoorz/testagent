@@ -2637,17 +2637,17 @@ app.layout = html.Div([
         ], style={
             'position': 'relative',
             'backgroundColor': 'white',
-            'borderRadius': '0',
+            'borderRadius': '16px',
             'width': '95vw',
             'height': '92vh',
             'minWidth': '0',
             'minHeight': '0',
             'maxWidth': '95vw',
             'maxHeight': '92vh',
-            'boxShadow': '0 4px 20px rgba(0,0,0,0.3)',
-            'overflow': 'auto',
+            'boxShadow': '0 8px 40px rgba(0,0,0,0.25)',
+            'overflow': 'hidden',
             'resize': 'none',
-            'zIndex': '2'  # 确保内容在遮罩层之上
+            'zIndex': '2'
         })
     ], style={
         'display': 'none',
@@ -2657,10 +2657,10 @@ app.layout = html.Div([
         'top': '0',
         'width': '100%',
         'height': '100%',
-        'backgroundColor': 'rgba(0,0,0,0.6)',
+        'backgroundColor': 'rgba(0,0,0,0.5)',
         'justifyContent': 'center',
         'alignItems': 'center',
-        'backdropFilter': 'blur(3px)'
+        'backdropFilter': 'blur(6px)'
     })
 ] + (
     ai_chat_manager.create_enhanced_chat_stores(chat_id_prefix='defect-explore-chat') +
@@ -3442,10 +3442,7 @@ def render_content(tab):
                 style={
                     'height': '100%',
                     'minHeight': '0',
-                    'backgroundColor': 'white',
-                    'border': '1px solid #e5e7eb',
-                    'borderRadius': '12px',
-                    'boxShadow': '0 2px 10px rgba(0,0,0,0.08)',
+                    'backgroundColor': 'transparent',
                     'overflow': 'hidden',
                     'display': 'flex',
                     'flexDirection': 'column'
