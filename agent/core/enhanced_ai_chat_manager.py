@@ -1,4 +1,4 @@
-﻿"""
+"""
 增强版 AI Chat Manager - 集成智能 Agent 系统
 
 在原有 AI Chat Manager 的基础上，添加以下增强功能：
@@ -64,6 +64,13 @@ from agent.core.streaming_protocol import append_event as append_protocol_event,
 from agent.evaluation.agent_critic import contains_strong_confident_language
 from duplicate_issue_finder import extract_hints, get_or_build_index
 from feedback_store import FeedbackStore
+from agent.multimodal.dash_components import (
+    create_multimodal_upload_component,
+    register_multimodal_callbacks,
+    extract_image_bytes_from_store,
+    extract_audio_bytes_from_store,
+)
+from agent.multimodal.duplicate_search_multimodal import MultimodalDuplicateSearcher
 from octane_db import default_db_path
 
 
@@ -2292,6 +2299,9 @@ class EnhancedAIChatManager:
                     ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px', 'marginLeft': 'auto'})
                 ], className='chat-controls'),
 
+                # 多模态上传区域（图片/语音）
+                create_multimodal_upload_component(chat_id_prefix=chat_id_prefix),
+
                 # 输入行
                 html.Div([
                     dcc.Input(
@@ -4239,7 +4249,9 @@ class EnhancedAIChatManager:
 
         def start_duplicate_check_streaming(task_id: str, question: str, current_data: Any,
                             conversation_history: List[Dict[str, Any]],
-                            selected_model: Optional[str] = None):
+                            selected_model: Optional[str] = None,
+                            multimodal_images: Optional[List[bytes]] = None,
+                            multimodal_audio: Optional[bytes] = None):
             df: pd.DataFrame = pd.DataFrame()
             if isinstance(current_data, pd.DataFrame) and not current_data.empty:
                 df = current_data
@@ -4256,8 +4268,76 @@ class EnhancedAIChatManager:
                     logger.warning(f"加载缺陷数据失败: {e}")
                     df = pd.DataFrame()
 
+            # 多模态处理：如果有图片/语音，先用多模态搜索器
+            _mm_searcher = None
+            _mm_result = None
+            has_multimodal = bool(multimodal_images) or bool(multimodal_audio)
+            if has_multimodal:
+                try:
+                    _mm_searcher = MultimodalDuplicateSearcher()
+                    _mm_result = _mm_searcher.search(
+                        text=question if question.strip() else None,
+                        images=multimodal_images,
+                        audio=multimodal_audio,
+                        df=df if not df.empty else None,
+                        cache_key=f"duplicate:{self.dashboard_type}",
+                    )
+                    logger.info(f"多模态搜索结果: {_mm_result.get('summary', {})}")
+                except Exception as _mm_err:
+                    logger.warning(f"多模态搜索失败，降级到纯文字: {_mm_err}")
+                    has_multimodal = False
+
             effective_query = build_duplicate_followup_query(question, conversation_history)
             followup_rounds = count_duplicate_followup_rounds(question, conversation_history)
+
+            # ── 多模态批量结果直接返回 ──
+            if has_multimodal and _mm_result and _mm_result.get('success'):
+                _mm_summary = _mm_result.get('summary', {})
+                _mm_results = _mm_result.get('results', [])
+                lines: List[str] = []
+                lines.append("📷 多模态分析结果")
+                lines.append("")
+                lines.append(f"从输入中提取了 {_mm_summary.get('total', 0)} 个 ticket：")
+                lines.append(f"- 疑似重复：{_mm_summary.get('duplicates', 0)} 个")
+                lines.append(f"- 可能是新问题：{_mm_summary.get('new_issues', 0)} 个")
+                lines.append("")
+                if _mm_summary.get('transcribed_text'):
+                    lines.append("🎤 语音转写：" + str(_mm_summary.get("transcribed_text", "")))
+                    lines.append("")
+                for _ri, _r in enumerate(_mm_results, 1):
+                    _is_dup = _r.get('is_likely_duplicate', False)
+                    _tag = '🔄 疑似重复' if _is_dup else '✅ 可能是新问题'
+                    _q = str(_r.get("query", "?"))[:80]
+                    lines.append(f"--- Ticket {_ri}：{_q} ---")
+                    _ts = _r.get("top_score", 0)
+                    lines.append(f"状态：{_tag}（最高相似度 {_ts:.1f}/10）")
+                    _cands = _r.get('candidates', [])[:3]
+                    if _cands:
+                        lines.append("最相似的已知问题：")
+                        for _c in _cands:
+                            _tid = f'#{_c.get("ticket_id")}' if _c.get("ticket_id") else '#(未知)'
+                            _sc = _c.get("score_1_10", 0)
+                            _nm = _c.get("name", "")
+                            lines.append(f'  {_sc}分：{_tid} - {_nm}')
+                    lines.append("")
+                _formatted = "\n".join(lines)
+                chunk_size = 80
+                for end in range(0, len(_formatted), chunk_size):
+                    partial = _formatted[: end + chunk_size]
+                    with streaming_lock:
+                        if task_id in streaming_data:
+                            streaming_data[task_id]['status'] = 'processing'
+                            streaming_data[task_id]['response'] = partial
+                            streaming_data[task_id]['progress'] = 'SiSi正在生成多模态分析报告...'
+                            streaming_data[task_id]['last_update'] = time.time()
+                    time.sleep(0.02)
+                with streaming_lock:
+                    if task_id in streaming_data:
+                        streaming_data[task_id]['status'] = 'completed'
+                        streaming_data[task_id]['progress'] = '完成'
+                        streaming_data[task_id]['last_update'] = time.time()
+                return
+
             hints = extract_hints(effective_query)
             index = get_or_build_index(cache_key=f"duplicate:{self.dashboard_type}", df=df)
             try:
@@ -4413,6 +4493,12 @@ class EnhancedAIChatManager:
                 max_tokens=DEFAULT_MAX_TOKENS
             )
 
+        # 注册多模态回调（图片上传 + 录音）
+        try:
+            register_multimodal_callbacks(app, chat_id_prefix=chat_id_prefix)
+        except Exception as _mm_cb_err:
+            logger.debug(f"多模态回调注册跳过: {_mm_cb_err}")
+
         @app.callback(
             [Output(f'{chat_id_prefix}-history', 'children'),
              Output(f'{chat_id_prefix}-input', 'value'),
@@ -4436,22 +4522,26 @@ class EnhancedAIChatManager:
              State(f'{chat_id_prefix}-known-issues', 'value'),
              State(f'{chat_id_prefix}-agent-results', 'data'),
              State(f'{chat_id_prefix}-conversation-state', 'data'),
-             State(f'{chat_id_prefix}-model-select', 'value')]
+             State(f'{chat_id_prefix}-model-select', 'value'),
+             State(f'{chat_id_prefix}-image-store', 'data'),
+             State(f'{chat_id_prefix}-audio-store', 'data')]
         )
         def handle_enhanced_chat(*args):
             send_clicks = args[0]
             input_submit = args[1]
             clear_clicks = args[2]
             preset_clicks = args[3:-9]
-            input_value = args[-9]
-            chat_messages = _trim_chat_messages(args[-8] or [])
-            streaming_state = args[-7] or {'active': False, 'task_id': None}
-            filtered_data = args[-6]
-            chat_mode = (args[-5] or "summary")
-            known_issues_checked = args[-4] or []
-            prior_agent_results = dict(args[-3] or {})
-            conversation_state = args[-2] or self._create_initial_conversation_state()
-            selected_model = str(args[-1] or "").strip() or self._get_default_chat_model()
+            input_value = args[-11]
+            chat_messages = _trim_chat_messages(args[-10] or [])
+            streaming_state = args[-9] or {'active': False, 'task_id': None}
+            filtered_data = args[-8]
+            chat_mode = (args[-7] or "summary")
+            known_issues_checked = args[-6] or []
+            prior_agent_results = dict(args[-5] or {})
+            conversation_state = args[-4] or self._create_initial_conversation_state()
+            selected_model = str(args[-3] or "").strip() or self._get_default_chat_model()
+            multimodal_images_store = args[-2] or []
+            multimodal_audio_store = args[-1]
 
             ctx = callback_context
             if not ctx.triggered:
@@ -4642,7 +4732,10 @@ class EnhancedAIChatManager:
                 with streaming_lock:
                     if task_id in streaming_data:
                         streaming_data[task_id]['progress'] = 'SiSi正在检索已知问题...'
-                start_duplicate_check_streaming(task_id, user_message, current_data, chat_messages, selected_model=selected_model)
+                start_duplicate_check_streaming(task_id, user_message, current_data, chat_messages,
+                                                 selected_model=selected_model,
+                                                 multimodal_images=extract_image_bytes_from_store(multimodal_images_store),
+                                                 multimodal_audio=extract_audio_bytes_from_store(multimodal_audio_store))
             elif route_decision.handler == HarnessRouteHandler.DIFY_WORKFLOW:
                 start_dify_streaming(task_id, user_message, current_data)
             elif route_decision.handler == HarnessRouteHandler.CONFLUENCE:
