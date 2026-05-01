@@ -157,89 +157,74 @@ def register_feedback_monitor_callbacks(app):
             else:
                 model_table = html.P("暂无模型快照", style={'color': '#94a3b8'})
 
-            # ── Search session stats ──
-            try:
-                from search_session_tracker import SearchSessionTracker, TrainingDataMiner
-                tracker = SearchSessionTracker()
-                miner = TrainingDataMiner(tracker)
-                coverage = tracker.feedback_coverage()
-                mined = miner.mine()
-                stats = mined.get('stats', {})
+            # TODO: search_session_tracker module not yet implemented
+            total_searches = '-'
+            sessions_with_label = '-'
+            sessions_with_click = '-'
+            label_rate = 0
+            mined_pairs = 0
+            mined_triplets = 0
+            ready = False
+            readiness = 0
 
-                total_searches = coverage['total_sessions']
-                sessions_with_label = coverage['sessions_with_label']
-                sessions_with_click = coverage['sessions_with_click']
-                label_rate = coverage['label_rate']
-                mined_pairs = stats.get('pairs', 0)
-                mined_triplets = stats.get('triplets', 0)
-                ready = stats.get('ready', False)
+            readiness_color = '#22c55e' if readiness >= 80 else '#f59e0b' if readiness >= 40 else '#ef4444'
 
-                # Training readiness: score 0-100%
-                readiness = 0
-                if total_searches > 0:
-                    readiness = min(100, int(label_rate * 40 + min(1, mined_pairs / 50) * 30 + min(1, total_searches / 20) * 30))
+            stat_card = {
+                'display': 'inline-block', 'width': '18%', 'margin': '0 1%',
+                'padding': '16px', 'borderRadius': '10px',
+                'backgroundColor': '#f8fafc', 'border': '1px solid #e2e8f0',
+                'textAlign': 'center', 'verticalAlign': 'top',
+            }
 
-                readiness_color = '#22c55e' if readiness >= 80 else '#f59e0b' if readiness >= 40 else '#ef4444'
-
-                stat_card = {
-                    'display': 'inline-block', 'width': '18%', 'margin': '0 1%',
-                    'padding': '16px', 'borderRadius': '10px',
-                    'backgroundColor': '#f8fafc', 'border': '1px solid #e2e8f0',
-                    'textAlign': 'center', 'verticalAlign': 'top',
-                }
-
-                search_stats = html.Div([
-                    # Stat cards row
+            search_stats = html.Div([
+                # Stat cards row
+                html.Div([
                     html.Div([
-                        html.Div([
-                            html.H3(str(total_searches), style={'color': '#2563eb', 'margin': '0', 'fontSize': '26px'}),
-                            html.P("总搜索次数", style={'color': '#64748b', 'margin': '4px 0 0'})
-                        ], style=stat_card),
-                        html.Div([
-                            html.H3(str(sessions_with_label), style={'color': '#8b5cf6', 'margin': '0', 'fontSize': '26px'}),
-                            html.P("已标注会话", style={'color': '#64748b', 'margin': '4px 0 0'})
-                        ], style=stat_card),
-                        html.Div([
-                            html.H3(str(sessions_with_click), style={'color': '#06b6d4', 'margin': '0', 'fontSize': '26px'}),
-                            html.P("点击会话", style={'color': '#64748b', 'margin': '4px 0 0'})
-                        ], style=stat_card),
-                        html.Div([
-                            html.H3(f"{mined_pairs}/{mined_triplets}", style={'color': '#f59e0b', 'margin': '0', 'fontSize': '26px'}),
-                            html.P("挖掘 pairs/triplets", style={'color': '#64748b', 'margin': '4px 0 0'})
-                        ], style=stat_card),
-                        html.Div([
-                            html.H3(f"{readiness}%", style={'color': readiness_color, 'margin': '0', 'fontSize': '26px'}),
-                            html.P("训练准备度", style={'color': '#64748b', 'margin': '4px 0 0'})
-                        ], style=stat_card),
-                    ]),
-
-                    # Readiness bar
+                        html.H3(str(total_searches), style={'color': '#2563eb', 'margin': '0', 'fontSize': '26px'}),
+                        html.P("总搜索次数", style={'color': '#64748b', 'margin': '4px 0 0'})
+                    ], style=stat_card),
                     html.Div([
-                        html.Div(
-                            f"标注率 {label_rate:.0%} · 挖掘训练对 {mined_pairs} · {'✅ 可训练' if ready else '⏳ 数据积累中'}",
-                            style={'fontSize': '13px', 'color': '#64748b', 'marginBottom': '6px'}
-                        ),
-                        html.Div([
-                            html.Div(style={
-                                'width': f'{readiness}%', 'height': '8px',
-                                'borderRadius': '4px', 'backgroundColor': readiness_color,
-                                'transition': 'width 0.5s',
-                            })
-                        ], style={
-                            'width': '100%', 'height': '8px', 'borderRadius': '4px',
-                            'backgroundColor': '#e2e8f0',
+                        html.H3(str(sessions_with_label), style={'color': '#8b5cf6', 'margin': '0', 'fontSize': '26px'}),
+                        html.P("已标注会话", style={'color': '#64748b', 'margin': '4px 0 0'})
+                    ], style=stat_card),
+                    html.Div([
+                        html.H3(str(sessions_with_click), style={'color': '#06b6d4', 'margin': '0', 'fontSize': '26px'}),
+                        html.P("点击会话", style={'color': '#64748b', 'margin': '4px 0 0'})
+                    ], style=stat_card),
+                    html.Div([
+                        html.H3(f"{mined_pairs}/{mined_triplets}", style={'color': '#f59e0b', 'margin': '0', 'fontSize': '26px'}),
+                        html.P("挖掘 pairs/triplets", style={'color': '#64748b', 'margin': '4px 0 0'})
+                    ], style=stat_card),
+                    html.Div([
+                        html.H3(f"{readiness}%", style={'color': readiness_color, 'margin': '0', 'fontSize': '26px'}),
+                        html.P("训练准备度", style={'color': '#64748b', 'margin': '4px 0 0'})
+                    ], style=stat_card),
+                ]),
+
+                # Readiness bar
+                html.Div([
+                    html.Div(
+                        f"标注率 {label_rate:.0%} · 挖掘训练对 {mined_pairs} · {'✅ 可训练' if ready else '⏳ 数据积累中'}",
+                        style={'fontSize': '13px', 'color': '#64748b', 'marginBottom': '6px'}
+                    ),
+                    html.Div([
+                        html.Div(style={
+                            'width': f'{readiness}%', 'height': '8px',
+                            'borderRadius': '4px', 'backgroundColor': readiness_color,
+                            'transition': 'width 0.5s',
                         })
-                    ], style={'marginTop': '12px'}),
+                    ], style={
+                        'width': '100%', 'height': '8px', 'borderRadius': '4px',
+                        'backgroundColor': '#e2e8f0',
+                    })
+                ], style={'marginTop': '12px'}),
 
-                    # Recent searches table
-                    html.Div([
-                        html.H5("最近搜索会话", style={'color': '#34495e', 'marginTop': '20px', 'marginBottom': '10px'}),
-                        _build_recent_searches_table(tracker),
-                    ]),
-                ])
-            except Exception as exc:
-                logger.warning(f"Search session stats unavailable: {exc}")
-                search_stats = html.P("搜索会话统计暂不可用", style={'color': '#94a3b8'})
+                # Recent searches table
+                html.Div([
+                    html.H5("最近搜索会话", style={'color': '#34495e', 'marginTop': '20px', 'marginBottom': '10px'}),
+                    html.P("暂无数据（session tracker 未实现）", style={'color': '#94a3b8'}),
+                ]),
+            ])
 
             return cards, phase_bar, table, model_table, search_stats
 

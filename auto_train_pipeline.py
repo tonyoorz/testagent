@@ -66,27 +66,24 @@ class AutoTrainPipeline:
 
     def prepare_data(self, output_dir: str) -> Dict[str, Any]:
         """Mine training data from feedback & search sessions, export JSONL."""
-        from search_session_tracker import TrainingDataMiner
+        # TODO: search_session_tracker module not yet implemented
+        # Currently training data comes from FeedbackStore directly
+        from feedback_store import FeedbackStore
 
         os.makedirs(output_dir, exist_ok=True)
-        miner = TrainingDataMiner()
-        mined = miner.mine()
+        store = FeedbackStore()
+        examples = store.get_training_examples()
 
-        pairs = mined.get("pairs", [])
-        triplets = mined.get("triplets", [])
-        stats = mined.get("stats", {})
+        if not examples:
+            return {"pairs": 0, "triplets": 0, "ready": False}
 
-        # Load ticket texts for embedding export
-        ticket_texts = miner._load_ticket_texts()
-
-        # Export pairs (positive only — for MNRL anchor+positive)
         pair_records = []
-        for p in pairs:
-            if p["label"] == 1 and p["ticket_id"] in ticket_texts:
+        for e in examples:
+            if e.get("signal") == "positive" and e.get("query_text") and e.get("ticket_id"):
                 pair_records.append({
-                    "anchor": p["query"],
-                    "positive": ticket_texts[p["ticket_id"]],
-                    "weight": p["weight"],
+                    "anchor": e["query_text"],
+                    "positive": e["ticket_id"],
+                    "weight": 1.0,
                 })
 
         pair_path = os.path.join(output_dir, "train_pairs.jsonl")
@@ -94,43 +91,9 @@ class AutoTrainPipeline:
             for rec in pair_records:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-        # Export triplets
-        triplet_records = []
-        for t in triplets:
-            pos_text = ticket_texts.get(t["positive_id"])
-            neg_text = ticket_texts.get(t["negative_id"])
-            if pos_text and neg_text:
-                triplet_records.append({
-                    "anchor": t["query"],
-                    "positive": pos_text,
-                    "negative": neg_text,
-                    "weight": t["weight"],
-                })
+        stats = {"pairs": len(pair_records), "triplets": 0, "ready": len(pair_records) >= 50}
+        return stats
 
-        triplet_path = os.path.join(output_dir, "train_triplets.jsonl")
-        with open(triplet_path, "w", encoding="utf-8") as f:
-            for rec in triplet_records:
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-        data_stats = {
-            "total_pairs": len(pairs),
-            "positive_pairs": sum(1 for p in pairs if p["label"] == 1),
-            "negative_pairs": sum(1 for p in pairs if p["label"] == 0),
-            "exported_pairs": len(pair_records),
-            "exported_triplets": len(triplet_records),
-            "sessions": stats.get("sessions", 0),
-            "ready": stats.get("ready", False),
-        }
-
-        print("\n=== Data Preparation Summary ===")
-        print(f"  Sessions:          {data_stats['sessions']}")
-        print(f"  Total pairs:       {data_stats['total_pairs']}")
-        print(f"  Positive pairs:    {data_stats['positive_pairs']}")
-        print(f"  Negative pairs:    {data_stats['negative_pairs']}")
-        print(f"  Exported pairs:    {data_stats['exported_pairs']}")
-        print(f"  Exported triplets: {data_stats['exported_triplets']}")
-
-        return data_stats
 
     # ── Quality check ──────────────────────────────────────────────
 

@@ -4389,19 +4389,8 @@ class EnhancedAIChatManager:
                 dashboard_type=self.dashboard_type,
                 candidates=candidates,
             )
-            # Track search session for training-data mining
-            _search_session_id = None
-            try:
-                from search_session_tracker import get_session_tracker
-                _session_tracker = get_session_tracker()
-                _search_session_id = _session_tracker.begin_session(
-                    query_text=effective_query,
-                    candidates=candidates,
-                    user_id=_get_current_user_id(),
-                    model_phase=_dup_model_phase,
-                )
-            except Exception as _e:
-                logger.debug(f"Session tracking skipped: {_e}")
+            # TODO: search_session_tracker module not yet implemented
+            # Will be restored when session-level behavior tracking is needed
             with streaming_lock:
                 if task_id in streaming_data:
                     streaming_data[task_id]['is_duplicate_search'] = True
@@ -5020,20 +5009,8 @@ class EnhancedAIChatManager:
                     source=source,
                 )
 
-                # Also record in search session tracker for mining
-                try:
-                    from search_session_tracker import get_session_tracker
-                    _session_tracker = get_session_tracker()
-                    # Find the latest session for this query
-                    _latest_sid = _session_tracker._conn().execute(
-                        "SELECT session_id FROM search_sessions "
-                        "WHERE query_hash=? ORDER BY created_at DESC LIMIT 1",
-                        (_session_tracker.query_hash(query_text),)
-                    ).fetchone()
-                    if _latest_sid:
-                        _session_tracker.record_explicit(_latest_sid[0], ticket_id, signal)
-                except Exception as _se:
-                    logger.debug(f"Session tracking for feedback skipped: {_se}")
+                # TODO: search_session_tracker module not yet implemented
+                # Will be added when session-level behavior tracking is needed
                 if result.get('accepted'):
                     count = result.get('feedback_count', 0)
                     phase = result.get('model_phase', 'baseline')
