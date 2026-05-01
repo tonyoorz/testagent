@@ -406,6 +406,7 @@ def _build_document(row: pd.Series, fields: Sequence[str]) -> str:
 
 
 def _to_score_1_10(similarity: float) -> int:
+    """P0-2: Piecewise mapping [0,1] -> [1,10] for better score distribution."""
     try:
         sim = float(similarity)
     except Exception:
@@ -414,7 +415,14 @@ def _to_score_1_10(similarity: float) -> int:
         sim = 0.0
     if sim > 1:
         sim = 1.0
-    return max(1, min(10, int(round(sim * 9 + 1))))
+    breakpoints = [(0.35, 1), (0.50, 3), (0.65, 5), (0.75, 7), (0.85, 8), (0.92, 9), (1.00, 10)]
+    for i in range(len(breakpoints) - 1):
+        lo_sim, lo_score = breakpoints[i]
+        hi_sim, hi_score = breakpoints[i + 1]
+        if lo_sim <= sim <= hi_sim:
+            ratio = (sim - lo_sim) / (hi_sim - lo_sim)
+            return max(1, min(10, int(round(lo_score + ratio * (hi_score - lo_score)))))
+    return 1
 
 
 def _phase_is_excluded(status_phase: Any, excluded_prefixes: Sequence[str]) -> bool:
@@ -601,12 +609,15 @@ class DuplicateIssueIndex:
         ranked: List[Tuple[int, float]] = []
         for idx, raw_sim in enumerate(sims):
             meta = self._meta[idx]
+            score = float(raw_sim)
+            # P0-1: Soft hint penalty instead of hard filter
             if hints:
+                score = _apply_hint_boost(score, meta, hints)
                 if hints.project and not _hint_matches(meta.get("project"), hints.project, _normalize_project):
-                    continue
+                    score *= 0.6  # 40% penalty
                 if hints.pu and not _hint_matches(meta.get("pu"), hints.pu, _normalize_pu):
-                    continue
-            ranked.append((idx, _apply_hint_boost(float(raw_sim), meta, hints)))
+                    score *= 0.55  # 45% penalty
+            ranked.append((idx, score))
 
         ranked.sort(key=lambda x: float(x[1]), reverse=True)
         return self._ranked_to_candidates(ranked, top_k=top_k)
@@ -672,6 +683,48 @@ class DuplicateIssueIndex:
         candidates, _ = self.search_with_metadata(query, hints=hints, top_k=top_k)
         return candidates
 
+    def batch_search(
+        self,
+        queries: List[str],
+        hints_list: Optional[List[Optional[DuplicateSearchHints]]] = None,
+        top_k: int = 10,
+    ) -> List[List[DuplicateCandidate]]:
+        """P1-6: Batch search - encode all queries at once for efficiency."""
+        if not queries:
+            return []
+        if not self.ready:
+            return [self.search(q, hints=hints_list[i] if hints_list else None, top_k=top_k)
+                    for i, q in enumerate(queries)]
+
+        st_model = _get_st_model()
+        if self._use_embeddings and st_model is not None and self._embedding_matrix is not None:
+            qvecs = st_model.encode(
+                queries, batch_size=64, normalize_embeddings=True, show_progress_bar=False,
+            ).astype(np.float32)
+            all_sims = (qvecs @ self._embedding_matrix.T)
+
+            results = []
+            for qi in range(len(queries)):
+                sims = all_sims[qi]
+                hints = hints_list[qi] if hints_list and qi < len(hints_list) else None
+                ranked = []
+                for idx in range(len(sims)):
+                    meta = self._meta[idx]
+                    score = float(sims[idx])
+                    if hints:
+                        score = _apply_hint_boost(score, meta, hints)
+                        if hints.project and not _hint_matches(meta.get("project"), hints.project, _normalize_project):
+                            score *= 0.6
+                        if hints.pu and not _hint_matches(meta.get("pu"), hints.pu, _normalize_pu):
+                            score *= 0.55
+                    ranked.append((idx, score))
+                ranked.sort(key=lambda x: x[1], reverse=True)
+                results.append(self._ranked_to_candidates(ranked, top_k=top_k))
+            return results
+        else:
+            return [self.search(q, hints=hints_list[i] if hints_list else None, top_k=top_k)
+                    for i, q in enumerate(queries)]
+
     def _embedding_search(self, query_text: str) -> np.ndarray:
         """Encode query and compute cosine similarity against the embedding matrix."""
         st_model = _get_st_model()
@@ -695,17 +748,18 @@ class DuplicateIssueIndex:
                 f"{meta.get('ecu','')}\n"
                 f"{meta.get('lead_model','')}"
             ).lower()
-            if hints:
-                if hints.project and not _hint_matches(meta.get("project"), hints.project, _normalize_project):
-                    continue
-                if hints.pu and not _hint_matches(meta.get("pu"), hints.pu, _normalize_pu):
-                    continue
-            score = 0
+            base_score = 0
             for token in re.findall(r"[a-z0-9_./-]{3,}", query_l):
                 if token in hay:
-                    score += 1
-            sim = 0.0 if not score else min(1.0, score / 8.0)
-            scored.append((i, _apply_hint_boost(sim, meta, hints)))
+                    base_score += 1
+            sim = 0.0 if not base_score else min(1.0, base_score / 8.0)
+            score = _apply_hint_boost(sim, meta, hints)
+            if hints:
+                if hints.project and not _hint_matches(meta.get("project"), hints.project, _normalize_project):
+                    score *= 0.6
+                if hints.pu and not _hint_matches(meta.get("pu"), hints.pu, _normalize_pu):
+                    score *= 0.55
+            scored.append((i, score))
 
         scored.sort(key=lambda x: x[1], reverse=True)
         candidates: List[DuplicateCandidate] = []
@@ -729,13 +783,34 @@ class DuplicateIssueIndex:
 _INDEX_CACHE: Dict[str, DuplicateIssueIndex] = {}
 
 
+def _compute_df_fingerprint(df: pd.DataFrame) -> str:
+    """P1-7: Content fingerprint to detect data changes even when row count stays the same."""
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return "empty"
+    parts = [f"shape:{df.shape[0]}x{df.shape[1]}"]
+    cols_str = "|".join(str(c) for c in df.columns)
+    parts.append(f"cols:{hashlib.md5(cols_str.encode()).hexdigest()[:12]}")
+    for col in ["id", "defect_id", "name", "status_phase"]:
+        if col in df.columns:
+            sample = "|".join(str(v) for v in df[col].head(50).tolist())
+            parts.append(f"{col}:{hashlib.md5(sample.encode()).hexdigest()[:8]}")
+    return hashlib.md5("|".join(parts).encode()).hexdigest()
+
+
 def get_or_build_index(cache_key: str, df: pd.DataFrame, excluded_phase_prefixes: Sequence[str] = DEFAULT_EXCLUDED_PHASE_PREFIXES) -> DuplicateIssueIndex:
     idx = _INDEX_CACHE.get(cache_key)
     if idx is None:
         idx = DuplicateIssueIndex(excluded_phase_prefixes=excluded_phase_prefixes)
         _INDEX_CACHE[cache_key] = idx
 
-    if idx._row_count != (len(df) if isinstance(df, pd.DataFrame) else 0) or not idx.ready:
+    # P1-7: Use content fingerprint instead of just row count
+    new_fingerprint = _compute_df_fingerprint(df)
+    needs_rebuild = (
+        not idx.ready
+        or getattr(idx, "_data_fingerprint", None) != new_fingerprint
+    )
+    if needs_rebuild:
+        idx._data_fingerprint = new_fingerprint
         idx.build_from_df(df if isinstance(df, pd.DataFrame) else pd.DataFrame())
     return idx
 

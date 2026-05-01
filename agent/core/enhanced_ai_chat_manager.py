@@ -226,8 +226,41 @@ def _analyze_duplicate_followup_chain(
 
     original = prior_user_messages[0]
     supplements = prior_user_messages[1:] + [current_question]
-    effective_query = f"{original}\n补充信息：{'；'.join(supplements)}"
+
+    # P0-3: Try LLM summarization for better followup query
+    # Falls back to simple concatenation if LLM unavailable
+    effective_query = _summarize_followup_with_llm(original, supplements)
+    if not effective_query:
+        effective_query = f"{original}\n补充信息：{'；'.join(supplements)}"
     return (effective_query, len(prior_user_messages))
+
+
+def _summarize_followup_with_llm(original: str, supplements: List[str]) -> Optional[str]:
+    """P0-3: Use LLM to condense multi-round followup into one precise query.
+
+    Returns None if LLM is unavailable, so caller falls back to simple concatenation.
+    """
+    if not supplements:
+        return original
+    try:
+        chatbot = DeepSeekStreamingChat()
+        if not getattr(chatbot, 'client', None):
+            return None
+        context = f"原始描述：{original}"
+        for i, s in enumerate(supplements, 1):
+            context += f"\n补充{i}：{s}"
+        prompt = (
+            "请将以下多轮缺陷描述合并为一个简洁精准的查询语句（一句话，不超过100字）。"
+            "只输出合并后的语句，不要解释。\n\n" + context
+        )
+        messages = [{"role": "user", "content": prompt}]
+        result = str(chatbot.chat_completion(messages, temperature=0.1, max_tokens=200) or "").strip()
+        if result and len(result) <= 200:
+            return result
+        return None
+    except Exception as e:
+        logger.debug(f"Followup LLM 摘要失败，使用拼接模式: {e}")
+        return None
 
 
 def build_duplicate_followup_query(
@@ -4464,7 +4497,7 @@ class EnhancedAIChatManager:
 
             candidate_block = "\n".join(candidate_lines) if candidate_lines else "(无候选)"
 
-            system_prompt = f"""你是缺陷提票前置审查助手。你的任务是：根据用户的自然语言问题描述，在“候选缺陷列表”中找出最相似的已知问题，并给出是否建议提票的结论。\n\n规则：\n1) 只能基于提供的候选列表，不要编造不存在的ticket。\n2) 相似度评分使用 1-10（10=几乎同一个问题）。你可以参考候选里给定的 score_1_10，但如果你认为不合理可以小幅调整；最终输出仍需按 10→1 排序。\n3) 如果最高相似度 >= 8：结论默认“不建议提票”，建议合并到最相似票或补充复现信息后追踪。\n4) 如果最高相似度 <= 6：结论默认“可以提票”，并给出建议标题与必填信息清单。\n\n输出格式（必须使用以下结构）：\n【结论】\n- 建议：不建议提票 / 可以提票 / 需要补充信息后再判断\n- 依据：一句话说明\n\n【相似已知问题（按相似度降序）】\n- 10分：#id - 标题（project/pu，phase）\\n  匹配点：...\n- 9分：...\n\n【下一步】\n- 如果不建议提票：建议合并到哪一票，以及需要补充哪些信息。\n- 如果可以提票：建议标题、复现步骤、期望/实际、环境、日志/截图等。\n\n候选缺陷列表（JSON Lines）：\n{candidate_block}\n"""
+            system_prompt = f"""你是缺陷提票前置审查助手。你的任务是：根据用户的自然语言问题描述，在“候选缺陷列表”中找出最相似的已知问题，并给出是否建议提票的结论。\n\n规则：\n1) 只能基于提供的候选列表，不要编造不存在的ticket。\n2) 相似度评分使用 1-10（10=几乎同一个问题）。你可以参考候选里给定的 score_1_10，但如果你认为不合理可以小幅调整；最终输出仍需按 10→1 排序。\n3) 如果最高相似度 >= 8：结论默认“不建议提票”，建议合并到最相似票或补充复现信息后追踪。\n4) 如果最高相似度 <= 6：结论默认“可以提票”，并给出建议标题与必填信息清单。\n\n输出格式（必须使用以下结构）：\n【结论】\n- 建议：不建议提票 / 可以提票 / 需要补充信息后再判断\n- 依据：一句话说明\n\n【相似已知问题（按相似度降序）】\n- 10分：#id - 标题（project/pu，phase）\\n  匹配点：...\\n  差异点：...（P1-4：说明与用户问题的不同之处）\n- 9分：...\n\n【下一步】\n- 如果不建议提票：建议合并到哪一票，以及需要补充哪些信息。\n- 如果可以提票：建议标题、复现步骤、期望/实际、环境、日志/截图等。\n\n候选缺陷列表（JSON Lines）：\n{candidate_block}\n"""
 
             messages = [{"role": "system", "content": system_prompt}]
 
