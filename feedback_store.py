@@ -66,16 +66,16 @@ class TrainingScheduler:
     """
 
     # ── LR Feature Reranker ──
-    LR_MIN_EXPLICIT = 50        # at least 50 explicit labels (✅ or ❌)
-    LR_MIN_POSITIVE = 20        # at least 20 ✅
-    LR_MIN_NEGATIVE = 15        # at least 15 ❌
-    LR_MIN_QUERIES = 15         # at least 15 distinct queries
+    LR_MIN_EXPLICIT = 300       # at least 300 explicit labels (✅ or ❌)
+    LR_MIN_POSITIVE = 120       # at least 120 ✅
+    LR_MIN_NEGATIVE = 90        # at least 90 ❌
+    LR_MIN_QUERIES = 80         # at least 80 distinct queries
     LR_CV_AUC_THRESHOLD = 0.6   # cross-validation AUC floor
 
     # ── Embedding Fine-tune ──
-    EMBED_MIN_EXPLICIT = 300
-    EMBED_MIN_PAIRS = 100
-    EMBED_MIN_QUERIES = 40
+    EMBED_MIN_EXPLICIT = 500
+    EMBED_MIN_PAIRS = 200
+    EMBED_MIN_QUERIES = 100
 
     RETRAIN_INTERVAL = 20
 
