@@ -13,6 +13,7 @@ from tqdm import tqdm # Added for history
 import sys
 import re
 import subprocess
+from html import unescape
 from requests.adapters import HTTPAdapter
 
 try:
@@ -62,9 +63,10 @@ EP_MANUALRUN = "manual_runs"
 EP_USER = "workspace_users"
 EP_HISTORY = "history_logs"
 EP_WORK_ITEMS = "work_items"
+EP_COMMENTS = "comments"
 
 DEFAULT_F_DEFECT_MAIN = (
-    "id", "name", "creation_time", "last_modified", "parent_child_udf", "team",
+    "id", "name", "description", "creation_time", "last_modified", "parent_child_udf", "team",
     "vin_udf", "user_tags", "tqr_udf", "product_areas", "aida_businesskey_udf",
     "software_version_udf", "ecu_no_of_changes_udf", "first_use_sop_of_function_udf",
     "tolerated_count_udf", "blocking_reason_udf", "reprel_changes_udf",
@@ -101,6 +103,24 @@ def _shorten_for_log(text, max_len=240):
     if len(t) <= max_len:
         return t
     return f"{t[:max_len]}...<len={len(t)}>"
+
+
+def _html_to_text(value):
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        value = str(value)
+    v = value.strip()
+    if not v:
+        return ""
+    v = re.sub(r"<\s*br\s*/?\s*>", "\n", v, flags=re.IGNORECASE)
+    v = re.sub(r"</\s*(p|div|li|tr|h[1-6])\s*>", "\n", v, flags=re.IGNORECASE)
+    v = re.sub(r"<[^>]+>", "", v)
+    v = unescape(v)
+    v = v.replace("\r\n", "\n").replace("\r", "\n")
+    v = re.sub(r"\n{3,}", "\n\n", v)
+    v = re.sub(r"[ \t]+", " ", v)
+    return v.strip()
 
 
 def run_post_download_data_processor_sync(repo_root_path: str, db_path: str = None, timeout_seconds: int = 0) -> bool:
@@ -338,6 +358,60 @@ def fetch_octane_data_parallel(session, endpoint, fields, query, limit_per_page=
 
     logging.info(f"并发下载完成，总数据量: {len(all_data)} 条")
     return all_data
+
+
+def fetch_comments_for_defects(session, defect_ids, batch_size=50, max_workers=4, api_url=API_BASE_URL):
+    """Fetch full comment payloads for a list of defect ids.
+
+    Uses the query-based comments endpoint:
+        GET /comments?query="(owner_work_item={id IN 'id1','id2',...})"
+    which is significantly faster than fetching each defect's comment refs
+    then loading every single comment individually.
+    """
+    COMMENT_FIELDS = "id,author{full_name},text,creation_time,last_modified,owner_work_item{id,subtype}"
+
+    normalized_ids = [str(defect_id).strip() for defect_id in (defect_ids or []) if str(defect_id).strip()]
+    if not normalized_ids:
+        return []
+
+    def fetch_batch(batch_ids):
+        """Query comments for a batch of defect IDs in one API call."""
+        id_expr = ",".join(f"'{did}'" for did in batch_ids)
+        query = f'"(owner_work_item={{id IN {id_expr}}})"'
+        batch_comments = []
+        try:
+            results = fetch_octane_data(
+                session, EP_COMMENTS, COMMENT_FIELDS, query,
+                limit_per_page=1000, order_by="-creation_time",
+                api_url=api_url, log_query=False, suppress_info=True,
+            )
+            for item in results:
+                if not isinstance(item, dict):
+                    continue
+                # 从 owner_work_item 提取 defect_id，兼容 DB upsert 逻辑
+                owner = item.get("owner_work_item") or {}
+                if isinstance(owner, dict):
+                    item["defect_id"] = str(owner.get("id", ""))
+                batch_comments.append(item)
+        except Exception as exc:
+            logging.warning("批量查询 comments 失败 (batch size=%s): %s", len(batch_ids), exc)
+        return batch_comments
+
+    all_comments = []
+    batches = [normalized_ids[i:i + batch_size] for i in range(0, len(normalized_ids), batch_size)]
+    logging.info("开始下载 comments，共 %s 个 defect，分 %s 批...", len(normalized_ids), len(batches))
+    with tqdm(total=len(batches), desc="下载comments", unit="batch") as pbar:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, max_workers)) as executor:
+            future_to_batch = {executor.submit(fetch_batch, batch): batch for batch in batches}
+            for future in concurrent.futures.as_completed(future_to_batch):
+                try:
+                    all_comments.extend(future.result() or [])
+                except Exception as exc:
+                    logging.warning("批量获取 comments 失败: %s", exc)
+                finally:
+                    pbar.update(1)
+    logging.info("comments 下载完成，共 %s 条", len(all_comments))
+    return all_comments
 
 def _normalize_master_id(value):
     if value is None:
@@ -931,6 +1005,7 @@ def main():
     default_years = f"{datetime.now().year-1},{datetime.now().year}"
     defect_group.add_argument("--defect-years", default=default_years, help="Defects 年份列表 (e.g., '2024,2025')")
     defect_group.add_argument("--fetch-master", action='store_true', help="同时下载 Master Defect 数据 (用于enrichment)")
+    defect_group.add_argument("--fetch-comments", action='store_true', help="同时下载 Defect Comments，并写入数据库或文件")
 
     mr_group = parser.add_argument_group('Manual Run Data Download')
     mr_group.add_argument("--skip-mr", action='store_true', help="跳过下载 Manual Runs")
@@ -1105,6 +1180,45 @@ def main():
                 downloaded_main_data = True
                 # 与项目现有命名规范兼容: 2025_defect.json (移除 team 后缀，与 downloader7 保持一致)
                 fn_defect = f"{year_str_defect}_defect"
+
+                # --- Fetch and merge comments BEFORE upsert so they land in octane_defects.comments ---
+                if args.fetch_comments:
+                    defect_ids = [str(item.get('id')).strip() for item in defect_data_list if item.get('id')]
+                    if defect_ids:
+                        logging.info("  下载 %s 年 defects comments，共 %s 个 defect...", year_str_defect, len(defect_ids))
+                        comments = fetch_comments_for_defects(
+                            session_active,
+                            defect_ids,
+                            batch_size=50,
+                            max_workers=max(1, min(args.max_concurrent_requests, 6)),
+                        )
+                        if comments:
+                            logging.info("  获取到 %s 条 comments，合并进 defect 数据...", len(comments))
+                            comments_by_defect: dict = {}
+                            for c in comments:
+                                owner = c.get('owner_work_item') or {}
+                                did = str(owner.get('id', '') if isinstance(owner, dict) else c.get('defect_id', ''))
+                                if not did:
+                                    continue
+                                author_raw = c.get('author')
+                                author_name = (
+                                    author_raw.get('full_name') or author_raw.get('name')
+                                    if isinstance(author_raw, dict) else (author_raw or '')
+                                )
+                                comments_by_defect.setdefault(did, []).append({
+                                    'id': str(c.get('id', '')),
+                                    'author': author_name,
+                                    'text': _html_to_text(c.get('text', '')),
+                                    'creation_time': c.get('creation_time', ''),
+                                    'last_modified': c.get('last_modified', ''),
+                                })
+                            for defect in defect_data_list:
+                                did = str(defect.get('id', ''))
+                                if did in comments_by_defect:
+                                    defect['comments'] = comments_by_defect[did]
+                        else:
+                            logging.info("  未获取到 comments 数据")
+
                 if store_targets:
                     for store_name, store_obj in store_targets:
                         try:
@@ -1123,7 +1237,7 @@ def main():
                                         defects=defect_data_list,
                                         year=int(year_str_defect),
                                     )
-                                    logging.info(f"  [{store_name}] 已保存优化表: {count} 条 defects")
+                                    logging.info(f"  [{store_name}] 已保存优化表: {count} 条 defects (含 comments)")
                                 except Exception as e_opt:
                                     logging.error(f"  [{store_name}] 保存优化表失败: {e_opt}")
                         except Exception as e_db_write:

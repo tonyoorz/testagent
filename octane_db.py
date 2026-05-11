@@ -1,6 +1,8 @@
 import json
 import os
+import re
 import sqlite3
+from html import unescape
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
@@ -209,11 +211,21 @@ class OctaneSQLiteStore:
         """Create optimized tables for direct defect/manual_run storage"""
         cur = self._conn.cursor()
 
+        def ensure_column(table_name: str, column_name: str, column_sql: str) -> None:
+            existing = {
+                str(row[1])
+                for row in cur.execute(f"PRAGMA table_info({table_name})").fetchall()
+                if len(row) > 1
+            }
+            if column_name not in existing:
+                cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
+
         # Defects table - flat structure for efficient querying
         cur.execute("""
             CREATE TABLE IF NOT EXISTS octane_defects (
                 defect_id TEXT PRIMARY KEY,
                 name TEXT,
+                description TEXT,
                 creation_time TEXT,
                 last_modified TEXT,
                 team TEXT,
@@ -260,6 +272,7 @@ class OctaneSQLiteStore:
                 fetched_at TEXT NOT NULL
             )
         """)
+        ensure_column("octane_defects", "description", "description TEXT")
 
         # Manual runs table
         cur.execute("""
@@ -338,6 +351,12 @@ class OctaneSQLiteStore:
                 PRIMARY KEY (test_id, scope_team, scope_release, source, relation_type, related_id)
             )
         """)
+
+        # Add comments column to octane_defects if migrating from older schema
+        try:
+            cur.execute("ALTER TABLE octane_defects ADD COLUMN comments TEXT")
+        except Exception:
+            pass  # column already exists
 
         # Indexes for performance
         cur.execute("CREATE INDEX IF NOT EXISTS idx_defects_year ON octane_defects(year)")
@@ -506,6 +525,28 @@ class OctaneSQLiteStore:
                     return default
             return result
 
+        def html_to_text(value):
+            """Convert HTML/Rich Text content to plain text for DB columns."""
+            if value is None:
+                return None
+            if not isinstance(value, str):
+                value = str(value)
+            v = value.strip()
+            if not v:
+                return None
+
+            # Common line-breaking tags first, then strip all remaining tags.
+            v = re.sub(r"<\s*br\s*/?\s*>", "\n", v, flags=re.IGNORECASE)
+            v = re.sub(r"</\s*(p|div|li|tr|h[1-6])\s*>", "\n", v, flags=re.IGNORECASE)
+            v = re.sub(r"<[^>]+>", "", v)
+            v = unescape(v)
+
+            # Normalize whitespace while keeping readable line breaks.
+            v = v.replace("\r\n", "\n").replace("\r", "\n")
+            v = re.sub(r"\n{3,}", "\n\n", v)
+            v = re.sub(r"[ \t]+", " ", v)
+            return v.strip() or None
+
         def extract_full_name(field_value):
             """Extract full_name from a nested dict field"""
             if isinstance(field_value, dict):
@@ -537,12 +578,16 @@ class OctaneSQLiteStore:
                 return v if v else None
             return str(value)
 
-        def extract_tags(user_tags_list):
-            """Extract tag names from user_tags list"""
-            if not user_tags_list or not isinstance(user_tags_list, list):
+        def extract_tags(user_tags_data):
+            """Extract tag names from user_tags list or dict payload"""
+            if not user_tags_data:
+                return None
+            if isinstance(user_tags_data, dict):
+                user_tags_data = user_tags_data.get('data', [])
+            if not isinstance(user_tags_data, list):
                 return None
             names = []
-            for tag in user_tags_list:
+            for tag in user_tags_data:
                 if isinstance(tag, dict):
                     name = tag.get('name')
                     if name:
@@ -645,6 +690,7 @@ class OctaneSQLiteStore:
 
                 # Basic fields
                 name = defect.get('name')
+                description = html_to_text(defect.get('description'))
                 creation_time = defect.get('creation_time')
                 last_modified = defect.get('last_modified')
 
@@ -720,8 +766,28 @@ class OctaneSQLiteStore:
                 # Raw JSON
                 raw_json = json.dumps(defect, ensure_ascii=False)
 
+                # Comments: already merged into defect dict by downloader as compact list
+                comments_raw = defect.get('comments')
+                if isinstance(comments_raw, list):
+                    compact_comments = []
+                    for c in comments_raw:
+                        if not isinstance(c, dict):
+                            continue
+                        compact_comments.append({
+                            'id': str(c.get('id', '')),
+                            'author': c.get('author', ''),
+                            'text': html_to_text(c.get('text')) or '',
+                            'creation_time': c.get('creation_time', ''),
+                            'last_modified': c.get('last_modified', ''),
+                        })
+                    comments_col = json.dumps(compact_comments, ensure_ascii=False) if compact_comments else None
+                elif isinstance(comments_raw, str):
+                    comments_col = comments_raw
+                else:
+                    comments_col = None
+
                 batch.append((
-                    defect_id, name, creation_time, last_modified,
+                    defect_id, name, description, creation_time, last_modified,
                     team, problem_finder_team, program, author,
                     aida_businesskey, aida_english, top_aida,
                     product_areas, user_tags,
@@ -735,7 +801,7 @@ class OctaneSQLiteStore:
                     solution_responsible, solution_cluster, reporting_class,
                     function_responsible, involved_i_step,
                     first_use_sop_of_function, tolerated_count, reprel_changes,
-                    raw_json, year, fetched_at_val
+                    raw_json, year, fetched_at_val, comments_col
                 ))
 
             except Exception as e:
@@ -748,7 +814,7 @@ class OctaneSQLiteStore:
             try:
                 self._conn.executemany("""
                     INSERT OR REPLACE INTO octane_defects (
-                        defect_id, name, creation_time, last_modified,
+                        defect_id, name, description, creation_time, last_modified,
                         team, problem_finder_team, program, author,
                         aida_businesskey, aida_english, top_aida,
                         product_areas, user_tags,
@@ -762,8 +828,8 @@ class OctaneSQLiteStore:
                         solution_responsible, solution_cluster, reporting_class,
                         function_responsible, involved_i_step,
                         first_use_sop_of_function, tolerated_count, reprel_changes,
-                        raw_json, year, fetched_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        raw_json, year, fetched_at, comments
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, batch)
                 self._conn.commit()
                 count = len(batch)
@@ -774,7 +840,7 @@ class OctaneSQLiteStore:
                     try:
                         self._conn.execute("""
                             INSERT OR REPLACE INTO octane_defects (
-                                defect_id, name, creation_time, last_modified,
+                                defect_id, name, description, creation_time, last_modified,
                                 team, problem_finder_team, program, author,
                                 aida_businesskey, aida_english, top_aida,
                                 product_areas, user_tags,
@@ -788,8 +854,8 @@ class OctaneSQLiteStore:
                                 solution_responsible, solution_cluster, reporting_class,
                                 function_responsible, involved_i_step,
                                 first_use_sop_of_function, tolerated_count, reprel_changes,
-                                raw_json, year, fetched_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                raw_json, year, fetched_at, comments
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, record)
                         count += 1
                     except Exception as e2:

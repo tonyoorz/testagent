@@ -1,7 +1,8 @@
-import re
 import hashlib
 import glob
+import json
 import os
+import re
 import sqlite3
 import time
 import logging
@@ -19,6 +20,14 @@ try:
 except Exception:  # pragma: no cover
     TfidfVectorizer = None
     sklearn_cosine_similarity = None
+
+try:
+    import chromadb
+
+    CHROMADB_AVAILABLE = True
+except Exception:  # pragma: no cover
+    chromadb = None
+    CHROMADB_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Sentence-transformer embedding (preferred, semantic understanding)
@@ -50,6 +59,10 @@ def _discover_local_embedding_model() -> Optional[str]:
 _DEFAULT_EMBEDDING_MODEL = os.getenv(
     "DUPLICATE_EMBEDDING_MODEL",
     _discover_local_embedding_model() or _DEFAULT_EMBEDDING_MODEL_ID,
+)
+_DEFAULT_VECTOR_BACKEND = os.getenv("DUPLICATE_VECTOR_BACKEND", "sqlite").strip().lower() or "sqlite"
+_CHROMA_PERSIST_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "cache", "duplicate_chroma"
 )
 
 try:
@@ -164,6 +177,7 @@ class _EmbeddingCache:
 
 
 _embedding_cache_instance: Optional[_EmbeddingCache] = None
+_chroma_client_instance: Any = None
 
 
 def _get_embedding_cache() -> _EmbeddingCache:
@@ -173,8 +187,37 @@ def _get_embedding_cache() -> _EmbeddingCache:
     return _embedding_cache_instance
 
 
+def _get_chroma_client() -> Any:
+    global _chroma_client_instance
+    if _chroma_client_instance is not None:
+        return _chroma_client_instance
+    if not CHROMADB_AVAILABLE:
+        return None
+    try:
+        os.makedirs(_CHROMA_PERSIST_DIR, exist_ok=True)
+        _chroma_client_instance = chromadb.PersistentClient(path=_CHROMA_PERSIST_DIR)
+        return _chroma_client_instance
+    except Exception as exc:
+        logger.warning("Failed to initialize ChromaDB client: %s", exc)
+        return None
+
+
 DEFAULT_EXCLUDED_PHASE_PREFIXES = ("00-", "06-", "09-")
-DEFAULT_TEXT_FIELDS = ("name", "description", "project", "pu", "ecu", "top_aida", "fv", "team", "fvp", "lead_model")
+DEFAULT_TEXT_FIELDS = (
+    "name",
+    "description",
+    "error_description",
+    "error_occurrence",
+    "comments",
+    "project",
+    "pu",
+    "ecu",
+    "top_aida",
+    "fv",
+    "team",
+    "fvp",
+    "lead_model",
+)
 
 
 @dataclass(frozen=True)
@@ -357,12 +400,137 @@ def _normalize_text(value: Any) -> str:
     return s.strip()
 
 
+_COMMENT_MAX_CHARS = 280
+_COMMENT_TOTAL_BUDGET = 600
+_COMMENT_SIGNAL_TERMS = (
+    "root cause",
+    "trace",
+    "timeout",
+    "failed",
+    "failure",
+    "error",
+    "exception",
+    "reproduce",
+    "steps",
+    "stack",
+    "log",
+    "logs",
+    "gateway",
+    "retry",
+    "wake",
+    "boot",
+    "handshake",
+    "canoe",
+    "kl15",
+)
+_COMMENT_LOW_SIGNAL_TERMS = (
+    "thanks",
+    "thank you",
+    "will check",
+    "check again",
+    "tomorrow",
+    "noted",
+    "ok",
+    "okay",
+)
+
+
+def _truncate_text(text: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    truncated = text[: max_chars - 1].rsplit(" ", 1)[0].strip()
+    if not truncated:
+        truncated = text[: max_chars - 1].strip()
+    return truncated + "…"
+
+
+def _comment_signal_score(text: str) -> int:
+    lowered = text.lower()
+    score = 0
+
+    if len(text) >= 40:
+        score += 1
+    if len(text) >= 120:
+        score += 1
+
+    score += sum(2 for term in _COMMENT_SIGNAL_TERMS if term in lowered)
+    score -= sum(2 for term in _COMMENT_LOW_SIGNAL_TERMS if term in lowered)
+
+    tokens = re.findall(r"\b[a-z0-9][a-z0-9._\-/]*\b", lowered)
+    if tokens:
+        unique_ratio = len(set(tokens)) / len(tokens)
+        if len(tokens) >= 12 and unique_ratio < 0.45:
+            score -= 2
+
+    return score
+
+
+def _select_comment_entries(entries: Sequence[str]) -> List[str]:
+    scored = [(_comment_signal_score(text), idx, text) for idx, text in enumerate(entries)]
+    positive = [item for item in scored if item[0] > 0]
+    ranked = positive if positive else scored
+    ranked.sort(key=lambda item: (item[0], len(item[2])), reverse=True)
+
+    selected: List[str] = []
+    remaining = _COMMENT_TOTAL_BUDGET
+    for _, _, text in ranked:
+        if remaining < 32:
+            break
+        normalized = _truncate_text(text, min(_COMMENT_MAX_CHARS, remaining))
+        if not normalized:
+            continue
+        selected.append(normalized)
+        remaining -= len(normalized) + 1
+    return selected
+
+
+def _normalize_comments_text(value: Any) -> str:
+    if value is None:
+        return ""
+
+    parsed = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ""
+        if text[:1] in ("[", "{"):
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                return _normalize_text(value)
+        else:
+            return _normalize_text(value)
+
+    entries: List[str] = []
+    if isinstance(parsed, dict):
+        parsed = [parsed]
+    if isinstance(parsed, list):
+        for item in parsed:
+            if isinstance(item, dict):
+                comment_text = _normalize_text(item.get("text"))
+                if comment_text:
+                    entries.append(comment_text)
+            else:
+                comment_text = _normalize_text(item)
+                if comment_text:
+                    entries.append(comment_text)
+    return "\n".join(_select_comment_entries(entries)).strip()
+
+
+def _normalize_document_field(field: str, value: Any) -> str:
+    if field == "comments":
+        return _normalize_comments_text(value)
+    return _normalize_text(value)
+
+
 def _build_document(row: pd.Series, fields: Sequence[str]) -> str:
     parts: List[str] = []
     for f in fields:
         if f not in row:
             continue
-        v = _normalize_text(row.get(f))
+        v = _normalize_document_field(f, row.get(f))
         if not v:
             continue
         parts.append(v)
@@ -400,20 +568,69 @@ def _safe_snippet(text: Any, max_len: int = 240) -> str:
     return s[: max_len - 1] + "…"
 
 
+def _safe_collection_name(value: str) -> str:
+    name = re.sub(r"[^a-zA-Z0-9_-]", "_", value or "duplicate_index").strip("_")
+    if len(name) < 3:
+        name = (name + "___")[:3]
+    return name[:63]
+
+
+def _build_chroma_where(hints: Optional[DuplicateSearchHints]) -> Optional[Dict[str, Any]]:
+    if hints is None:
+        return None
+    clauses: List[Dict[str, Any]] = []
+    if hints.project:
+        clauses.append({"project_norm": _normalize_project(hints.project)})
+    if hints.pu:
+        clauses.append({"pu_norm": _normalize_pu(hints.pu)})
+    if hints.ecu:
+        clauses.append({"ecu_norm": _normalize_ecu(hints.ecu)})
+    if hints.lead_model:
+        clauses.append({"lead_model_norm": _normalize_lead_model(hints.lead_model)})
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
+def _get_chroma_max_batch_size(client: Any) -> Optional[int]:
+    if client is None:
+        return None
+    getter = getattr(client, "get_max_batch_size", None)
+    if callable(getter):
+        try:
+            value = int(getter())
+            return value if value > 0 else None
+        except Exception:
+            return None
+    value = getattr(client, "max_batch_size", None)
+    try:
+        value = int(value)
+    except Exception:
+        return None
+    return value if value > 0 else None
+
+
 class DuplicateIssueIndex:
     def __init__(
         self,
         excluded_phase_prefixes: Sequence[str] = DEFAULT_EXCLUDED_PHASE_PREFIXES,
         text_fields: Sequence[str] = DEFAULT_TEXT_FIELDS,
+        vector_backend: str = _DEFAULT_VECTOR_BACKEND,
     ):
         self.excluded_phase_prefixes = tuple(excluded_phase_prefixes)
         self.text_fields = tuple(text_fields)
+        self.vector_backend = str(vector_backend or "sqlite").strip().lower() or "sqlite"
         # TF-IDF backend (fallback)
         self._vectorizer = None
         self._matrix = None
         # Embedding backend (preferred)
         self._embedding_matrix: Optional[np.ndarray] = None
         self._use_embeddings = False
+        self._use_chroma = False
+        self._chroma_collection = None
+        self._meta_index_by_ticket_id: Dict[str, int] = {}
         # Shared
         self._meta: List[Dict[str, Any]] = []
         self._documents: List[str] = []
@@ -422,6 +639,8 @@ class DuplicateIssueIndex:
 
     @property
     def ready(self) -> bool:
+        if self._use_chroma and self._chroma_collection is not None and self._meta:
+            return True
         if self._use_embeddings and self._embedding_matrix is not None and self._meta:
             return True
         return bool(self._vectorizer is not None and self._matrix is not None and self._meta)
@@ -432,6 +651,9 @@ class DuplicateIssueIndex:
             self._matrix = None
             self._embedding_matrix = None
             self._use_embeddings = False
+            self._use_chroma = False
+            self._chroma_collection = None
+            self._meta_index_by_ticket_id = {}
             self._meta = []
             self._documents = []
             self._built_at = time.time()
@@ -465,6 +687,11 @@ class DuplicateIssueIndex:
                     "description": _normalize_text(row.get("description")) or "",
                 }
             )
+        self._meta_index_by_ticket_id = {
+            str(meta.get("ticket_id")): idx
+            for idx, meta in enumerate(self._meta)
+            if meta.get("ticket_id")
+        }
 
         # --- Try sentence-transformer embeddings first ---
         st_model = _get_st_model()
@@ -544,6 +771,71 @@ class DuplicateIssueIndex:
         vecs = [cached[tid][1] for tid in ticket_ids]
         self._embedding_matrix = np.vstack(vecs).astype(np.float32)
         self._use_embeddings = True
+        self._use_chroma = False
+        self._chroma_collection = None
+
+        if self.vector_backend == "chroma":
+            if self._build_chroma_index(ticket_ids, documents, self._embedding_matrix):
+                self._use_chroma = True
+
+    def _build_chroma_index(
+        self,
+        ticket_ids: Sequence[str],
+        documents: Sequence[str],
+        embedding_matrix: np.ndarray,
+    ) -> bool:
+        client = _get_chroma_client()
+        if client is None:
+            return False
+        try:
+            signature = hashlib.md5(
+                "|".join(ticket_ids).encode("utf-8", errors="replace")
+            ).hexdigest()[:16]
+            collection_name = _safe_collection_name(
+                f"duplicate_{self.vector_backend}_{_DEFAULT_EMBEDDING_MODEL}_{signature}"
+            )
+            collection = client.get_or_create_collection(
+                name=collection_name,
+                metadata={"hnsw:space": "cosine"},
+            )
+            metadatas: List[Dict[str, Any]] = []
+            for meta in self._meta:
+                chroma_meta = {
+                    key: value
+                    for key, value in meta.items()
+                    if value is not None and value != ""
+                }
+                project_norm = _normalize_project(meta.get("project"))
+                pu_norm = _normalize_pu(meta.get("pu"))
+                ecu_norm = _normalize_ecu(meta.get("ecu"))
+                lead_model_norm = _normalize_lead_model(meta.get("lead_model"))
+                if project_norm:
+                    chroma_meta["project_norm"] = project_norm
+                if pu_norm:
+                    chroma_meta["pu_norm"] = pu_norm
+                if ecu_norm:
+                    chroma_meta["ecu_norm"] = ecu_norm
+                if lead_model_norm:
+                    chroma_meta["lead_model_norm"] = lead_model_norm
+                metadatas.append(chroma_meta)
+            all_ids = list(ticket_ids)
+            all_embeddings = embedding_matrix.astype(np.float32).tolist()
+            all_documents = list(documents)
+            batch_size = _get_chroma_max_batch_size(client) or len(all_ids)
+            for start in range(0, len(all_ids), batch_size):
+                end = start + batch_size
+                collection.upsert(
+                    ids=all_ids[start:end],
+                    embeddings=all_embeddings[start:end],
+                    documents=all_documents[start:end],
+                    metadatas=metadatas[start:end],
+                )
+            self._chroma_collection = collection
+            return True
+        except Exception as exc:
+            logger.warning("Failed to build ChromaDB index, falling back to numpy matrix: %s", exc)
+            self._chroma_collection = None
+            return False
 
     def _coarse_search(self, query: str, hints: Optional[DuplicateSearchHints], top_k: int) -> List[DuplicateCandidate]:
         q = _normalize_text(query)
@@ -553,6 +845,8 @@ class DuplicateIssueIndex:
             return self._keyword_fallback(q, hints=hints, top_k=top_k)
 
         try:
+            if self._use_chroma and self._chroma_collection is not None:
+                return self._chroma_search(q, hints=hints, top_k=top_k)
             if self._use_embeddings and self._embedding_matrix is not None:
                 sims = self._embedding_search(q)
             else:
@@ -573,6 +867,41 @@ class DuplicateIssueIndex:
             ranked.append((idx, _apply_hint_boost(float(raw_sim), meta, hints)))
 
         ranked.sort(key=lambda x: float(x[1]), reverse=True)
+        return self._ranked_to_candidates(ranked, top_k=top_k)
+
+    def _chroma_search(self, query: str, hints: Optional[DuplicateSearchHints], top_k: int) -> List[DuplicateCandidate]:
+        st_model = _get_st_model()
+        if st_model is None or self._chroma_collection is None:
+            raise RuntimeError("Chroma search backend not available")
+        qvec = st_model.encode(
+            [query], normalize_embeddings=True, show_progress_bar=False,
+        ).astype(np.float32)
+        result_count = min(len(self._meta), max(max(1, int(top_k)) * 8, 50))
+        result = self._chroma_collection.query(
+            query_embeddings=qvec.tolist(),
+            n_results=result_count,
+            include=["distances"],
+            where=_build_chroma_where(hints),
+        )
+        ids = ((result or {}).get("ids") or [[]])[0]
+        distances = ((result or {}).get("distances") or [[]])[0]
+
+        ranked: List[Tuple[int, float]] = []
+        for pos, ticket_id in enumerate(ids):
+            idx = self._meta_index_by_ticket_id.get(_normalize_text(ticket_id))
+            if idx is None:
+                continue
+            meta = self._meta[idx]
+            if hints:
+                if hints.project and not _hint_matches(meta.get("project"), hints.project, _normalize_project):
+                    continue
+                if hints.pu and not _hint_matches(meta.get("pu"), hints.pu, _normalize_pu):
+                    continue
+            distance = distances[pos] if pos < len(distances) else None
+            raw_sim = 1.0 if distance is None else max(0.0, min(1.0, 1.0 - float(distance)))
+            ranked.append((idx, _apply_hint_boost(raw_sim, meta, hints)))
+
+        ranked.sort(key=lambda item: float(item[1]), reverse=True)
         return self._ranked_to_candidates(ranked, top_k=top_k)
 
     def _ranked_to_candidates(self, ranked: Sequence[Tuple[int, float]], top_k: int) -> List[DuplicateCandidate]:
@@ -697,6 +1026,15 @@ def get_or_build_index(cache_key: str, df: pd.DataFrame, excluded_phase_prefixes
     idx = _INDEX_CACHE.get(cache_key)
     if idx is None:
         idx = DuplicateIssueIndex(excluded_phase_prefixes=excluded_phase_prefixes)
+        _INDEX_CACHE[cache_key] = idx
+
+    expected_excluded = tuple(excluded_phase_prefixes)
+    if idx.excluded_phase_prefixes != expected_excluded:
+        idx = DuplicateIssueIndex(
+            excluded_phase_prefixes=expected_excluded,
+            text_fields=idx.text_fields,
+            vector_backend=idx.vector_backend,
+        )
         _INDEX_CACHE[cache_key] = idx
 
     if idx._row_count != (len(df) if isinstance(df, pd.DataFrame) else 0) or not idx.ready:
