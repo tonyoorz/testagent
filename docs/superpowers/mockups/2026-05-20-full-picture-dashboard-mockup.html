@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Full Picture Dashboard Mockup</title>
+  <style>
+    :root {
+      --bg: #edf2f7;
+      --panel: #ffffff;
+      --line: #d9e0ea;
+      --ink: #132238;
+      --muted: #5c6b80;
+      --brand: #10305c;
+      --brand-2: #1d5dbf;
+      --good: #14905f;
+      --bad: #c45151;
+      --soft-good: #e8f8f1;
+      --soft-bad: #fdeceb;
+      --chip: #f5f8fc;
+      --qgate: #16a34a;
+      --integration: #2563eb;
+      --coc: #d97706;
+      --other: #64748b;
+      --shadow: 0 18px 40px rgba(15, 34, 66, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #f6f9fc 0%, var(--bg) 100%);
+      color: var(--ink);
+    }
+    .wrap {
+      max-width: 1560px;
+      margin: 0 auto;
+      padding: 28px 18px 40px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #0d2750 0%, #15448a 55%, #2967c7 100%);
+      color: #fff;
+      border-radius: 22px;
+      padding: 26px 28px;
+      box-shadow: 0 20px 45px rgba(11, 33, 72, 0.18);
+    }
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 16px;
+    }
+    .hero h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.1;
+    }
+    .hero p {
+      margin: 8px 0 0;
+      max-width: 860px;
+      color: rgba(255,255,255,0.88);
+      font-size: 14px;
+    }
+    .state-pill {
+      background: rgba(255,255,255,0.16);
+      border: 1px solid rgba(255,255,255,0.22);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .filter-card {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 14px;
+      padding: 12px;
+      min-height: 92px;
+    }
+    .filter-card .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 10px;
+    }
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 12px;
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: #fff;
+    }
+    .chip.active {
+      background: #fff;
+      color: var(--brand);
+      font-weight: 700;
+    }
+    .surface {
+      margin-top: 18px;
+      display: grid;
+      gap: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .panel h2 {
+      margin: 0;
+      font-size: 21px;
+      color: var(--brand);
+    }
+    .panel .sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .top-grid {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 18px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .metric {
+      border-radius: 16px;
+      padding: 16px;
+      border: 1px solid var(--line);
+    }
+    .metric.good { background: var(--soft-good); }
+    .metric.bad { background: var(--soft-bad); }
+    .metric .k { font-size: 12px; color: var(--muted); }
+    .metric .v { margin-top: 8px; font-size: 34px; font-weight: 700; }
+    .metric .pct { margin-top: 10px; font-size: 14px; color: var(--brand); font-weight: 600; }
+    .bar-compare {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .bar-box {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+    .bar-box h3 {
+      margin: 0 0 14px;
+      font-size: 15px;
+      color: var(--brand);
+    }
+    .axis-row {
+      display: grid;
+      grid-template-columns: 150px 1fr 64px;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .axis-row:last-child { margin-bottom: 0; }
+    .axis-row .name {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .track {
+      height: 18px;
+      background: #e8edf4;
+      border-radius: 999px;
+      overflow: hidden;
+      position: relative;
+    }
+    .fill {
+      height: 100%;
+      border-radius: 999px;
+    }
+    .fill.good { background: linear-gradient(90deg, #43c78b, var(--good)); }
+    .fill.bad { background: linear-gradient(90deg, #ee8a8a, var(--bad)); }
+    .legend {
+      display: flex;
+      gap: 14px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .issues-grid {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 0.95fr 1.05fr;
+      gap: 18px;
+    }
+    .table-box {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: #fff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid #ebf0f6;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f6f9fd;
+      color: var(--brand);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    tr:last-child td { border-bottom: none; }
+    .topissue-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #eff4fb;
+      color: var(--brand-2);
+      font-weight: 600;
+      font-size: 11px;
+    }
+    .group-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: #fff;
+      font-weight: 600;
+      font-size: 11px;
+    }
+    .group-qgate { background: var(--qgate); }
+    .group-integration { background: var(--integration); }
+    .group-coc { background: var(--coc); }
+    .group-other { background: var(--other); }
+    @media (max-width: 1200px) {
+      .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .top-grid, .issues-grid, .bar-compare { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>Full Picture Dashboard</h1>
+          <p>Default scope loads 2026 defect data first. All KPIs and percentages use the current filter result as denominator, then compare resolved-forward tickets against directly rejected tickets in one management view.</p>
+        </div>
+        <div class="state-pill">Default Scope: 2026 defect, filters open</div>
+      </div>
+      <div class="filters">
+        <div class="filter-card">
+          <div class="label">Project</div>
+          <div class="chip-row"><span class="chip active">All</span><span class="chip">NBX</span><span class="chip">NA6</span></div>
+        </div>
+        <div class="filter-card">
+          <div class="label">Assigned ECU</div>
+          <div class="chip-row"><span class="chip active">All</span><span class="chip">HU</span><span class="chip">CID</span></div>
+        </div>
+        <div class="filter-card">
+          <div class="label">Problem Finder Team</div>
+          <div class="chip-row"><span class="chip active">DTSV_China</span><span class="chip">FIT_LAENDER_CHINA</span><span class="chip">W72-FIT</span></div>
+        </div>
+        <div class="filter-card">
+          <div class="label">AIDA / Phase / Group</div>
+          <div class="chip-row"><span class="chip active">All</span><span class="chip">Q-Gate</span><span class="chip">Integration</span><span class="chip">CoC</span></div>
+        </div>
+        <div class="filter-card">
+          <div class="label">Solution Cluster / PU / Market / Lead Model</div>
+          <div class="chip-row"><span class="chip active">All</span><span class="chip">CN</span><span class="chip">G68</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="surface">
+      <section class="panel">
+        <h2>Octane Ticket Tracking</h2>
+        <div class="sub">Left: portfolio-level positive vs negative outcome rate. Right: the same logic expanded by defect finder team.</div>
+        <div class="top-grid">
+          <div>
+            <div class="metrics">
+              <div class="metric good">
+                <div class="k">08 -> 06 Resolved Forward</div>
+                <div class="v">41.8%</div>
+                <div class="pct">Numerator: tickets completed forward into concluded</div>
+              </div>
+              <div class="metric bad">
+                <div class="k">01 -> 09 Rejected Directly</div>
+                <div class="v">12.4%</div>
+                <div class="pct">Numerator: tickets closed without resolution</div>
+              </div>
+            </div>
+            <div class="legend">
+              <span><span class="dot" style="background:#14905f"></span>Positive repaired path</span>
+              <span><span class="dot" style="background:#c45151"></span>Negative rejected path</span>
+            </div>
+          </div>
+          <div class="bar-compare">
+            <div class="bar-box">
+              <h3>Resolved Forward by Team</h3>
+              <div class="axis-row"><div class="name">DTSV_China</div><div class="track"><div class="fill good" style="width:58%"></div></div><div>58%</div></div>
+              <div class="axis-row"><div class="name">FIT_LAENDER_CHINA</div><div class="track"><div class="fill good" style="width:44%"></div></div><div>44%</div></div>
+              <div class="axis-row"><div class="name">[AT]W72-FIT</div><div class="track"><div class="fill good" style="width:39%"></div></div><div>39%</div></div>
+            </div>
+            <div class="bar-box">
+              <h3>Rejected Directly by Team</h3>
+              <div class="axis-row"><div class="name">DTSV_China</div><div class="track"><div class="fill bad" style="width:11%"></div></div><div>11%</div></div>
+              <div class="axis-row"><div class="name">FIT_LAENDER_CHINA</div><div class="track"><div class="fill bad" style="width:16%"></div></div><div>16%</div></div>
+              <div class="axis-row"><div class="name">[AT]W72-FIT</div><div class="track"><div class="fill bad" style="width:21%"></div></div><div>21%</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Ticket Detail</h2>
+        <div class="sub">Single drilldown table only. Filters refresh the table directly, and chart selections narrow the visible ticket set further.</div>
+        <div class="table-box" style="margin-top:16px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Octane ID</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Group</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>2111935</td>
+                <td>Black screen displays for a long time after switch from main profile to guest</td>
+                <td>06-Concluded</td>
+                <td><span class="group-badge group-integration">Integration</span></td>
+              </tr>
+              <tr>
+                <td>2113449</td>
+                <td>G48_2507_IDC23 Stability CID black screen after press Button on BZM</td>
+                <td>09-Concluded without action</td>
+                <td><span class="group-badge group-coc">CoC</span></td>
+              </tr>
+              <tr>
+                <td>2455327</td>
+                <td>QGate verification returned issue back to analysis</td>
+                <td>07-In Pre-Verification</td>
+                <td><span class="group-badge group-qgate">Q-Gate</span></td>
+              </tr>
+              <tr>
+                <td>2489185</td>
+                <td>Verification issue returned from Q-Gate after filter selection update</td>
+                <td>03-In Analysis</td>
+                <td><span class="group-badge group-qgate">Q-Gate</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

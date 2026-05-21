@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import json
 import math
+import os
 import re
+import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -18,6 +22,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import qgate  # noqa: E402
+from qgate_summary_store import load_summary_data  # noqa: E402
+
+
+class QGateDashboardDataError(ValueError):
+  """Raised when QGate source data cannot produce a dashboard payload."""
 
 
 def parse_args() -> argparse.Namespace:
@@ -130,12 +139,88 @@ def build_detail_from_issues(issues_df: pd.DataFrame) -> pd.DataFrame:
     return detail_df.sort_values(["Team", "Group", "Avg_Days"], ascending=[True, True, False]).reset_index(drop=True)
 
 
-def build_year_lookup_and_coverage(defect_dir: str, teams: list[str], issues_df: pd.DataFrame) -> tuple[dict[tuple[str, str], str], pd.DataFrame]:
-    team_by_slug = {qgate.slugify_team_name(team): team for team in teams}
-    ticket_year_rows: list[dict] = []
-    defect_path = Path(defect_dir)
+def build_coverage_from_scope(scope_df: pd.DataFrame) -> pd.DataFrame:
+    columns = ["Team", "Year", "Defects", "History_OK", "History_Missing_or_Error"]
+    if scope_df.empty:
+      return pd.DataFrame(columns=columns)
 
-    if defect_path.is_dir():
+    coverage_df = scope_df[["Team", "Year", "Ticket_ID", "History_Parse_OK"]].copy()
+    coverage_df["Defects"] = 1
+    coverage_df["History_OK"] = pd.to_numeric(coverage_df["History_Parse_OK"], errors="coerce").fillna(0).astype(int)
+    coverage_df = (
+      coverage_df.groupby(["Team", "Year"], dropna=False)[["Defects", "History_OK"]]
+      .sum()
+      .reset_index()
+    )
+    coverage_df["History_Missing_or_Error"] = (coverage_df["Defects"] - coverage_df["History_OK"]).clip(lower=0).astype(int)
+    coverage_df = coverage_df[columns]
+    return coverage_df.sort_values(["Year", "Defects", "Team"], ascending=[True, False, True]).reset_index(drop=True)
+
+
+def build_meta_from_coverage(coverage_df: pd.DataFrame) -> pd.DataFrame:
+    columns = ["Team", "Defects", "History_OK", "History_Missing_or_Error"]
+    if coverage_df.empty:
+      return pd.DataFrame(columns=columns)
+
+    meta_df = (
+      coverage_df.groupby(["Team"], dropna=False)[["Defects", "History_OK", "History_Missing_or_Error"]]
+      .sum()
+      .reset_index()
+    )
+    meta_df = meta_df[columns]
+    return meta_df.sort_values(["Defects", "Team"], ascending=[False, True]).reset_index(drop=True)
+
+
+def build_year_lookup_and_coverage(defect_dir: str, teams: list[str], issues_df: pd.DataFrame) -> tuple[dict[tuple[str, str], str], pd.DataFrame]:
+    ticket_year_rows: list[dict] = []
+    source_mode = os.environ.get("OCTANE_DATA_SOURCE", "db_only").strip().lower()
+    db_path = os.environ.get("QGATE_DB_PATH") or os.path.join("qgate", "qgate_data.db")
+
+    if db_path and os.path.exists(db_path):
+        placeholders = ",".join(["?"] * len(teams))
+        query = f"""
+            SELECT raw_json, year, team, problem_finder_team
+            FROM octane_defects
+            WHERE team IN ({placeholders}) OR problem_finder_team IN ({placeholders})
+        """
+        try:
+            conn = sqlite3.connect(db_path)
+            try:
+                rows = conn.execute(query, [*teams, *teams]).fetchall()
+            finally:
+                conn.close()
+            for raw_json, year_value, team_value, problem_finder_team in rows:
+                try:
+                    payload = json.loads(raw_json) if raw_json else None
+                except Exception:
+                    payload = None
+                if not isinstance(payload, dict):
+                    continue
+                ticket_id = str(payload.get("id") or "").strip()
+                if not ticket_id:
+                    continue
+                matched_team = None
+                for candidate in (team_value, problem_finder_team):
+                    candidate_value = str(candidate or "").strip()
+                    if candidate_value in teams:
+                        matched_team = candidate_value
+                        break
+                if not matched_team:
+                    continue
+                year_text = str(year_value or "").strip()
+                if not year_text:
+                    creation_time = str(payload.get("creation_time") or "").strip()
+                    year_match = re.search(r"(\d{4})", creation_time)
+                    year_text = year_match.group(1) if year_match else ""
+                if not year_text:
+                    continue
+                ticket_year_rows.append({"Team": matched_team, "Ticket_ID": ticket_id, "Year": year_text})
+        except sqlite3.Error:
+            pass
+
+    defect_path = Path(defect_dir)
+    team_by_slug = {qgate.slugify_team_name(team): team for team in teams}
+    if source_mode != "db_only" and defect_path.is_dir():
         for path in defect_path.glob("*_defect.json"):
             match = re.match(r"^(\d{4})_(.+)_defect\.json$", path.name)
             if not match:
@@ -257,7 +342,14 @@ def build_insights(meta_df: pd.DataFrame, issues_df: pd.DataFrame, transition_df
     return insights[:4]
 
 
-def build_payload(meta_df: pd.DataFrame, coverage_df: pd.DataFrame, issues_df: pd.DataFrame, overview: dict, insights: list[str], min_transition_count: int) -> dict:
+def build_payload(
+  meta_df: pd.DataFrame,
+  coverage_df: pd.DataFrame,
+  issues_df: pd.DataFrame,
+  overview: dict,
+  insights: list[str],
+  generated_from: dict,
+) -> dict:
     groups = sorted({str(x) for x in issues_df.get("Group", pd.Series(dtype="object")).dropna().tolist()})
     changed_by = sorted({str(x) for x in issues_df.get("Changed_By", pd.Series(dtype="object")).dropna().tolist() if str(x).strip()})
     fif_values = sorted({str(x) for x in issues_df.get("FiF", pd.Series(dtype="object")).dropna().tolist() if str(x).strip() and str(x) != "(All)"})
@@ -287,17 +379,12 @@ def build_payload(meta_df: pd.DataFrame, coverage_df: pd.DataFrame, issues_df: p
       )
 
     payload = {
-        "generated_from": {
-            "defect_dir": args.defect_dir,
-            "history_dir": args.history_dir,
-            "teams": [team.strip() for team in args.teams.split(",") if team.strip()],
-            "min_transition_count": min_transition_count,
-        },
+        "generated_from": generated_from,
         "overview": overview,
         "insights": insights,
         "options": {
             "teams": meta_df["Team"].dropna().astype(str).tolist() if not meta_df.empty else [],
-          "years": years,
+            "years": years,
             "groups": groups,
             "changedBy": changed_by,
             "fif": fif_values,
@@ -309,6 +396,285 @@ def build_payload(meta_df: pd.DataFrame, coverage_df: pd.DataFrame, issues_df: p
         "issues": sanitize_dataset(issues_df, issue_columns),
     }
     return payload
+
+
+def _dataset_to_rows(dataset: dict, columns: list[str]) -> list[dict[str, Any]]:
+    dataset_columns = dataset.get("columns") or []
+    dataset_rows = dataset.get("rows") or []
+    column_indexes = {column: dataset_columns.index(column) for column in columns if column in dataset_columns}
+
+    rows: list[dict[str, Any]] = []
+    for row in dataset_rows:
+        rows.append({column: row[index] for column, index in column_indexes.items()})
+    return rows
+
+
+def _rows_to_dataset(rows: list[dict[str, Any]], columns: list[str]) -> dict[str, Any]:
+    return {"columns": columns, "rows": [[row.get(column) for column in columns] for row in rows]}
+
+
+def _filter_issue_rows(
+    issue_rows: list[dict[str, Any]],
+    *,
+    teams: tuple[str, ...],
+    years: tuple[str, ...],
+    groups: tuple[str, ...],
+    changed_by: tuple[str, ...],
+    fif: tuple[str, ...],
+    timespan_min: float,
+    timespan_max: float | None,
+) -> list[dict[str, Any]]:
+    filtered = [row for row in issue_rows if not teams or str(row.get("Team") or "") in teams]
+    if years:
+        filtered = [row for row in filtered if str(row.get("Year") or "") in years]
+    if groups:
+        filtered = [row for row in filtered if str(row.get("Group") or "") in groups]
+    if changed_by:
+        filtered = [row for row in filtered if str(row.get("Changed_By") or "") in changed_by]
+    if fif:
+        filtered = [row for row in filtered if str(row.get("FiF") or "") in fif]
+
+    filtered_rows: list[dict[str, Any]] = []
+    for row in filtered:
+        raw_timespan = row.get("Ticket_Timespan_Days")
+        try:
+            if raw_timespan in (None, ""):
+                raise ValueError()
+            timespan_days = float(raw_timespan)
+        except (TypeError, ValueError):
+            timespan_days = None
+        if timespan_days is None and (timespan_min > 0 or timespan_max is not None):
+            continue
+        if timespan_days is None:
+            filtered_rows.append(row)
+            continue
+        if timespan_days < timespan_min:
+            continue
+        if timespan_max is not None and timespan_days > timespan_max:
+            continue
+        filtered_rows.append(row)
+    return filtered_rows
+
+
+def _derive_coverage_rows(issue_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], set[str]] = {}
+    for row in issue_rows:
+        team = str(row.get("Team") or "")
+        year = str(row.get("Year") or "")
+        ticket_id = str(row.get("Ticket_ID") or "")
+        if not team or not ticket_id:
+            continue
+        grouped.setdefault((team, year), set()).add(ticket_id)
+
+    coverage_rows = []
+    for (team, year), ticket_ids in sorted(grouped.items(), key=lambda item: (item[0][1], item[0][0])):
+        count = len(ticket_ids)
+        coverage_rows.append(
+        {
+          "Team": team,
+          "Year": year,
+          "Defects": count,
+          "History_OK": count,
+          "History_Missing_or_Error": 0,
+        }
+        )
+    return coverage_rows
+
+
+def _derive_meta_rows(coverage_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, int]] = {}
+    for row in coverage_rows:
+        team = str(row.get("Team") or "")
+        if not team:
+            continue
+        team_totals = grouped.setdefault(team, {"Defects": 0, "History_OK": 0, "History_Missing_or_Error": 0})
+        team_totals["Defects"] += int(row.get("Defects") or 0)
+        team_totals["History_OK"] += int(row.get("History_OK") or 0)
+        team_totals["History_Missing_or_Error"] += int(row.get("History_Missing_or_Error") or 0)
+
+    return [
+      {
+        "Team": team,
+        "Defects": totals["Defects"],
+        "History_OK": totals["History_OK"],
+        "History_Missing_or_Error": totals["History_Missing_or_Error"],
+      }
+      for team, totals in sorted(grouped.items())
+    ]
+
+
+def filter_dashboard_payload(
+    payload: dict,
+    *,
+    teams: tuple[str, ...] = (),
+    years: tuple[str, ...] = (),
+    groups: tuple[str, ...] = (),
+    changed_by: tuple[str, ...] = (),
+    fif: tuple[str, ...] = (),
+    timespan_min: float = 0.0,
+    timespan_max: float | None = None,
+    min_transition_count: int = 200,
+) -> dict:
+    issue_columns = [
+      "Year",
+      "Team",
+      "Ticket_ID",
+      "Phase_Transition",
+      "Group",
+      "Duration_Hours",
+      "Changed_By",
+      "FiF",
+      "Ticket_Timespan_Days",
+    ]
+    meta_columns = ["Team", "Defects", "History_OK", "History_Missing_or_Error"]
+    coverage_columns = ["Team", "Year", "Defects", "History_OK", "History_Missing_or_Error"]
+    ticket_columns = ["Ticket_ID", "Ticket_URL", "Ticket_Name", "Tester"]
+
+    payload_copy = deepcopy(payload)
+    issue_rows = _dataset_to_rows(payload_copy.get("issues", {}), issue_columns)
+    filtered_issue_rows = _filter_issue_rows(
+      issue_rows,
+      teams=teams,
+      years=years,
+      groups=groups,
+      changed_by=changed_by,
+      fif=fif,
+      timespan_min=timespan_min,
+      timespan_max=timespan_max,
+    )
+
+    ticket_lookup = {
+      str(row.get("Ticket_ID") or ""): row
+      for row in _dataset_to_rows(payload_copy.get("tickets", {}), ticket_columns)
+    }
+    enriched_issue_rows: list[dict[str, Any]] = []
+    for row in filtered_issue_rows:
+      ticket_id = str(row.get("Ticket_ID") or "")
+      ticket_row = ticket_lookup.get(ticket_id, {})
+      enriched_row = dict(row)
+      enriched_row["Ticket_URL"] = ticket_row.get("Ticket_URL", "")
+      enriched_row["Ticket_Name"] = ticket_row.get("Ticket_Name", ticket_id)
+      enriched_row["Tester"] = ticket_row.get("Tester", "")
+      try:
+        enriched_row["Duration_Days"] = round(float(enriched_row.get("Duration_Hours") or 0) / 24, 2)
+      except (TypeError, ValueError):
+        enriched_row["Duration_Days"] = 0.0
+      enriched_issue_rows.append(enriched_row)
+    filtered_issue_rows = enriched_issue_rows
+
+    base_coverage_rows = _dataset_to_rows(payload_copy.get("coverage", {}), coverage_columns)
+    coverage_rows = [
+      row
+      for row in base_coverage_rows
+      if (not teams or str(row.get("Team") or "") in teams)
+      and (not years or str(row.get("Year") or "") in years)
+    ]
+    meta_rows = _derive_meta_rows(coverage_rows)
+
+    filtered_ticket_rows = []
+    seen_ticket_ids: set[str] = set()
+    for row in filtered_issue_rows:
+      ticket_id = str(row.get("Ticket_ID") or "")
+      if not ticket_id or ticket_id in seen_ticket_ids:
+        continue
+      seen_ticket_ids.add(ticket_id)
+      filtered_ticket_rows.append(ticket_lookup.get(ticket_id, {"Ticket_ID": ticket_id, "Ticket_URL": "", "Ticket_Name": ticket_id, "Tester": ""}))
+
+    meta_df = pd.DataFrame(meta_rows, columns=meta_columns)
+    coverage_df = pd.DataFrame(coverage_rows, columns=coverage_columns)
+    issues_df = pd.DataFrame(filtered_issue_rows)
+    detail_df = build_detail_from_issues(issues_df)
+    _, summary_df = qgate.build_summary_frames(detail_df.copy(), min_transition_count)
+    filtered_detail_df = detail_df[detail_df["Count"] >= int(min_transition_count)].copy() if not detail_df.empty else detail_df
+    transition_df = qgate.aggregate_transition_summary(filtered_detail_df)
+    overview = build_overview(coverage_df, issues_df, summary_df, transition_df)
+    insights = build_insights(meta_df, issues_df, transition_df)
+
+    filtered_payload = build_payload(
+      meta_df=meta_df,
+      coverage_df=coverage_df,
+      issues_df=issues_df,
+      overview=overview,
+      insights=insights,
+      generated_from=payload_copy.get("generated_from", {}),
+    )
+    filtered_payload["tickets"] = _rows_to_dataset(filtered_ticket_rows, ticket_columns)
+    filtered_payload["issues"] = _rows_to_dataset(filtered_issue_rows, issue_columns)
+    filtered_payload["coverage"] = _rows_to_dataset(coverage_rows, coverage_columns)
+    filtered_payload["meta"] = _rows_to_dataset(meta_rows, meta_columns)
+    filtered_payload["options"] = deepcopy(payload_copy.get("options", {}))
+    return filtered_payload
+
+
+def build_dashboard_payload(
+    *,
+    defect_dir: str,
+    history_dir: str,
+    teams: list[str],
+    min_transition_count: int,
+    analysis_workers: int,
+    cache_dir: str | None,
+    use_cache: bool,
+    show_progress: bool,
+) -> dict:
+    scope_df = pd.DataFrame()
+    summary_db_path = os.environ.get("QGATE_DB_PATH")
+    if summary_db_path:
+      try:
+        scope_df, issues_df = load_summary_data(db_path=summary_db_path, teams=teams)
+      except ValueError as exc:
+        raise QGateDashboardDataError(str(exc)) from exc
+
+      if scope_df.empty or issues_df.empty:
+        raise QGateDashboardDataError("QGate summary data has not been built for the selected teams.")
+
+      coverage_df = build_coverage_from_scope(scope_df)
+      meta_df = build_meta_from_coverage(coverage_df)
+    else:
+      meta_df, _stats_df, issues_df = qgate.compute_all_teams_data(
+        defect_dir=defect_dir,
+        history_dir=history_dir,
+        teams=teams,
+        show_progress=show_progress,
+        analysis_workers=analysis_workers,
+        cache_dir=cache_dir,
+        use_cache=use_cache,
+      )
+
+      if issues_df.empty:
+        raise QGateDashboardDataError("No QGate issue rows were produced. Check defect/history inputs.")
+
+      year_lookup, coverage_df = build_year_lookup_and_coverage(defect_dir, teams, issues_df)
+      issues_df = issues_df.copy()
+      issues_df["Year"] = [
+        year_lookup.get((str(team), str(ticket_id)), "")
+        for team, ticket_id in zip(issues_df["Team"].tolist(), issues_df["Ticket_ID"].tolist())
+      ]
+
+    detail_df = build_detail_from_issues(issues_df)
+    _, summary_df = qgate.build_summary_frames(detail_df.copy(), min_transition_count)
+    filtered_detail_df = detail_df[detail_df["Count"] >= int(min_transition_count)].copy() if not detail_df.empty else detail_df
+    transition_df = qgate.aggregate_transition_summary(filtered_detail_df)
+
+    overview = build_overview(coverage_df, issues_df, summary_df, transition_df)
+    insights = build_insights(meta_df, issues_df, transition_df)
+    return build_payload(
+        meta_df=meta_df,
+        coverage_df=coverage_df,
+        issues_df=issues_df,
+        overview=overview,
+        insights=insights,
+        generated_from={
+            "defect_dir": defect_dir,
+            "history_dir": history_dir,
+            "teams": teams,
+            "min_transition_count": min_transition_count,
+            "analysis_workers": analysis_workers,
+            "cache_dir": cache_dir,
+            "use_cache": use_cache,
+            "show_progress": show_progress,
+        },
+    )
 
 
 def render_html(payload: dict) -> str:
@@ -1128,40 +1494,27 @@ def render_html(payload: dict) -> str:
     return template.replace("__PAYLOAD_JSON__", payload_json)
 
 
-def main() -> None:
+def main(parsed_args: argparse.Namespace | None = None) -> None:
+    args = parsed_args or parse_args()
     teams = [team.strip() for team in args.teams.split(",") if team.strip()]
     use_cache = not args.no_cache
     cache_dir = None if args.no_cache else args.cache_dir
 
-    meta_df, _stats_df, issues_df = qgate.compute_all_teams_data(
-        defect_dir=args.defect_dir,
-        history_dir=args.history_dir,
-        teams=teams,
-        show_progress=not args.no_progress,
-        analysis_workers=args.analysis_workers,
-        cache_dir=cache_dir,
-        use_cache=use_cache,
-    )
+    try:
+        payload = build_dashboard_payload(
+            defect_dir=args.defect_dir,
+            history_dir=args.history_dir,
+            teams=teams,
+            min_transition_count=args.min_transition_count,
+            analysis_workers=args.analysis_workers,
+            cache_dir=cache_dir,
+            use_cache=use_cache,
+            show_progress=not args.no_progress,
+        )
+    except QGateDashboardDataError as exc:
+        raise SystemExit(str(exc)) from exc
 
-    if issues_df.empty:
-        raise SystemExit("No QGate issue rows were produced. Check defect/history inputs.")
-
-    year_lookup, coverage_df = build_year_lookup_and_coverage(args.defect_dir, teams, issues_df)
-    if not issues_df.empty:
-      issues_df = issues_df.copy()
-      issues_df["Year"] = [
-        year_lookup.get((str(team), str(ticket_id)), "")
-        for team, ticket_id in zip(issues_df["Team"].tolist(), issues_df["Ticket_ID"].tolist())
-      ]
-
-    detail_df = build_detail_from_issues(issues_df)
-    _, summary_df = qgate.build_summary_frames(detail_df.copy(), args.min_transition_count)
-    filtered_detail_df = detail_df[detail_df["Count"] >= int(args.min_transition_count)].copy() if not detail_df.empty else detail_df
-    transition_df = qgate.aggregate_transition_summary(filtered_detail_df)
-
-    overview = build_overview(coverage_df, issues_df, summary_df, transition_df)
-    insights = build_insights(meta_df, issues_df, transition_df)
-    payload = build_payload(meta_df, coverage_df, issues_df, overview, insights, args.min_transition_count)
+    overview = payload["overview"]
 
     html = render_html(payload)
     output_path = Path(args.output)
@@ -1175,5 +1528,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    args = parse_args()
     main()

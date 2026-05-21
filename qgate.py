@@ -1,7 +1,9 @@
 import argparse
+from functools import lru_cache
 import json
 import os
 import re
+import sqlite3
 import time
 from typing import Optional
 
@@ -33,8 +35,8 @@ DEFAULT_TEAMS = [
     "Spotlight_FIT",
     "[AT]BBA_Basis-FIT",
     "[AT]FIT_LAENDER_CHINA",
-    "[AT]W71-FIT",
-    "[AT]W72-FIT",
+    "Plant-Dadong FIT",
+    "Plant-Tiexi FIT",
 ]
 
 CHINA_SPECIFIC_FIF = {
@@ -88,6 +90,85 @@ def slugify_team_name(team_name: str) -> str:
     return s or "UNKNOWN_TEAM"
 
 
+def _default_qgate_db_path() -> str:
+    return os.environ.get("QGATE_DB_PATH") or os.path.join("qgate", "qgate_data.db")
+
+
+def _current_qgate_source_mode() -> str:
+    return os.environ.get("OCTANE_DATA_SOURCE", "db_only").strip().lower()
+
+
+def _extract_tester_name(row: dict) -> str:
+    detected_by = row.get("detected_by")
+    if isinstance(detected_by, dict):
+        return str(detected_by.get("full_name") or "").strip()
+    return ""
+
+
+@lru_cache(maxsize=64)
+def _load_combined_defect_info_for_team(defect_dir: str, team: str, db_path: str) -> dict[str, dict[str, str]]:
+    info: dict[str, dict[str, str]] = {}
+    source_mode = _current_qgate_source_mode()
+
+    if db_path and os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT raw_json
+                    FROM octane_defects
+                    WHERE team = ? OR problem_finder_team = ?
+                    ORDER BY defect_id
+                    """,
+                    (team, team),
+                ).fetchall()
+            finally:
+                conn.close()
+
+            for row in rows:
+                try:
+                    payload = json.loads(row[0]) if row and row[0] else None
+                except Exception:
+                    payload = None
+                if not isinstance(payload, dict):
+                    continue
+                tid = str(payload.get("id") or "").strip()
+                if not tid:
+                    continue
+                info[tid] = {
+                    "name": str(payload.get("name") or "").strip(),
+                    "tester": _extract_tester_name(payload),
+                }
+        except sqlite3.Error:
+            pass
+
+    team_slug = slugify_team_name(team)
+    if source_mode != "db_only" and os.path.isdir(defect_dir):
+        for filename in os.listdir(defect_dir):
+            if not filename.endswith("_defect.json"):
+                continue
+            if f"_{team_slug}_defect.json" not in filename:
+                continue
+            path = os.path.join(defect_dir, filename)
+            try:
+                df = pd.read_json(path)
+            except ValueError:
+                continue
+            if df.empty or "id" not in df.columns:
+                continue
+            for _, row in df.iterrows():
+                tid = str(row.get("id") or "").strip()
+                if not tid or tid in info:
+                    continue
+                info[tid] = {
+                    "name": str(row.get("name") or "").strip(),
+                    "tester": _extract_tester_name(row),
+                }
+
+    return info
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="按 team 展示 phase transition 效率（基于 defect + history 数据）")
     parser.add_argument("--defect-dir", default="qgate/defect", help="defect 数据目录（默认: qgate/defect）")
@@ -107,54 +188,13 @@ def parse_args():
 
 
 def load_defect_ids_for_team(defect_dir: str, team: str):
-    team_slug = slugify_team_name(team)
-    ids = set()
-    if not os.path.isdir(defect_dir):
-        return ids
-    for filename in os.listdir(defect_dir):
-        if not filename.endswith("_defect.json"):
-            continue
-        if f"_{team_slug}_defect.json" not in filename:
-            continue
-        path = os.path.join(defect_dir, filename)
-        try:
-            df = pd.read_json(path)
-        except ValueError:
-            continue
-        if "id" not in df.columns:
-            continue
-        ids.update({str(x) for x in df["id"].dropna().tolist()})
-    return ids
+    db_path = _default_qgate_db_path()
+    return set(_load_combined_defect_info_for_team(defect_dir, team, db_path).keys())
 
 
 def load_defect_info_for_team(defect_dir: str, team: str):
-    team_slug = slugify_team_name(team)
-    info = {}
-    if not os.path.isdir(defect_dir):
-        return info
-    for filename in os.listdir(defect_dir):
-        if not filename.endswith("_defect.json"):
-            continue
-        if f"_{team_slug}_defect.json" not in filename:
-            continue
-        path = os.path.join(defect_dir, filename)
-        try:
-            df = pd.read_json(path)
-        except ValueError:
-            continue
-        if df.empty or "id" not in df.columns:
-            continue
-        for _, row in df.iterrows():
-            tid = str(row.get("id") or "").strip()
-            if not tid:
-                continue
-            name = str(row.get("name") or "").strip()
-            detected_by = row.get("detected_by")
-            tester = ""
-            if isinstance(detected_by, dict):
-                tester = str(detected_by.get("full_name") or "").strip()
-            info[tid] = {"name": name, "tester": tester}
-    return info
+    db_path = _default_qgate_db_path()
+    return dict(_load_combined_defect_info_for_team(defect_dir, team, db_path))
 
 
 def classify_group(phase_transition: str) -> str:
@@ -192,6 +232,18 @@ def build_team_statistics(team: str, ticket_ids, history_dir: str, show_progress
     workers = int(analysis_workers or 0)
     if workers <= 0:
         workers = min(24, max(4, (os.cpu_count() or 4) * 2))
+    if use_cache and ticket_ids:
+        try:
+            from data_processor import history_cache
+
+            preload_workers = max(1, min(8, workers))
+            history_cache.preload_histories(
+                sorted(str(ticket_id) for ticket_id in ticket_ids),
+                history_dir=history_dir,
+                max_workers=preload_workers,
+            )
+        except Exception:
+            pass
     bulk = lra.bulk_analyze_phases(
         list(ticket_ids),
         history_folder=history_dir,

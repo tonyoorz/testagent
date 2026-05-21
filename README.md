@@ -36,6 +36,30 @@ npm run dev
 # 访问 http://localhost:3000
 ```
 
+#### QGate KPI Experimental Frontend
+- **单屏管理工作台**: 将 QGate KPI 的 overview、deep dive 和 startup context 聚合在一个 Next.js 页面
+- **typed server fetch**: 页面首屏由 Next.js 服务端拉取 `qgate_api.py` 提供的结构化 payload
+- **前端即时筛选**: `years`、`teams`、`groups`、`changed by`、`FiF` 和 timespan 条件在浏览器内即时生效
+- **混合数据源路径**: defect scope 来自 `qgate/defect`，history 分析走当前 database-first 路径，并按配置回退到文件
+
+**启动方式**:
+```bash
+# 1. 启动 Python API
+python -m uvicorn qgate_api:app --host 127.0.0.1 --port 8002 --reload
+
+# 2. 启动 Next.js 前端
+cd apps/qgate-kpi
+Copy-Item .env.local.example .env.local
+npm install
+npm run dev
+# 访问 http://localhost:3001
+```
+
+**环境变量**:
+```bash
+NEXT_PUBLIC_QGATE_API_BASE=http://127.0.0.1:8002
+```
+
 #### Python AI Chat Manager
 - **统一聊天管理**: `ai_chat_manager.py` 提供跨模块 AI 能力
 - **多看板支持**: 缺陷分析、测试覆盖率、趋势分析、通用类型

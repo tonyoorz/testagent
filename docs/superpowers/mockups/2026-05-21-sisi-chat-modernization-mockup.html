@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SiSi Chat Modernization Mockup</title>
+  <style>
+    :root {
+      --bg: #f3f6fb;
+      --bg-2: #eef4fb;
+      --sidebar: #f8fbff;
+      --panel: #ffffff;
+      --panel-2: #f7faff;
+      --line: rgba(148, 163, 184, 0.20);
+      --line-strong: rgba(148, 163, 184, 0.34);
+      --text: #1e293b;
+      --muted: #64748b;
+      --muted-2: #94a3b8;
+      --brand: #2563eb;
+      --brand-2: #1d4ed8;
+      --shadow: 0 20px 40px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "DM Sans", "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 88% -10%, rgba(37, 99, 235, 0.10), transparent 32%),
+        radial-gradient(circle at -10% 16%, rgba(56, 189, 248, 0.08), transparent 28%),
+        linear-gradient(180deg, #f8fbff 0%, #f3f6fb 100%);
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 308px 1fr;
+    }
+
+    .sidebar {
+      background: linear-gradient(180deg, #fbfdff 0%, #f6faff 100%);
+      border-right: 1px solid var(--line);
+      padding: 14px 14px 12px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .brand-main {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--brand) 0%, #38bdf8 100%);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 14px;
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.20);
+    }
+
+    .brand-ghost {
+      width: 22px;
+      height: 22px;
+      border-radius: 8px;
+      border: 1px solid var(--line-strong);
+      opacity: 0.8;
+    }
+
+    .nav-list {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 18px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 11px 10px;
+      border-radius: 14px;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .nav-item.active,
+    .nav-item:hover {
+      background: rgba(37, 99, 235, 0.08);
+    }
+
+    .nav-icon {
+      width: 18px;
+      text-align: center;
+      color: var(--brand-2);
+    }
+
+    .section-label {
+      margin: 20px 6px 8px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .meta-list {
+      display: grid;
+      gap: 4px;
+    }
+
+    .meta-item {
+      padding: 8px 10px;
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .meta-item span {
+      color: var(--muted);
+    }
+
+    .spacer {
+      flex: 1;
+      min-height: 24px;
+    }
+
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .profile {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 4px;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 20px 26px;
+    }
+
+    .topbar {
+      height: 54px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--muted);
+    }
+
+    .model-name {
+      color: var(--text);
+      font-size: 17px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      padding-top: 4px;
+    }
+
+    .model-sub {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      padding-top: 2px;
+    }
+
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.72);
+      font-size: 15px;
+    }
+
+    .hero {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px 20px 10px;
+      transform: translateY(-28px);
+    }
+
+    .hero-mark {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+
+    .hero-logo {
+      width: 50px;
+      height: 50px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--brand) 0%, #38bdf8 100%);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+      font-weight: 800;
+      box-shadow: 0 14px 28px rgba(37, 99, 235, 0.18);
+    }
+
+    .hero-title {
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .advanced-strip {
+      width: min(860px, 100%);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 auto 10px;
+      padding: 0 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .advanced-left,
+    .advanced-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .mini-pill {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.84);
+      color: var(--muted);
+    }
+
+    .mini-pill.active {
+      background: #eff6ff;
+      color: var(--brand-2);
+      border-color: rgba(37, 99, 235, 0.18);
+    }
+
+    .composer-wrap {
+      width: min(860px, 100%);
+    }
+
+    .composer {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 18px 20px 12px;
+    }
+
+    .composer-input {
+      color: var(--muted-2);
+      font-size: 18px;
+      line-height: 1.4;
+      min-height: 44px;
+    }
+
+    .composer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+      gap: 16px;
+    }
+
+    .composer-left,
+    .composer-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      color: var(--muted);
+    }
+
+    .round {
+      width: 38px;
+      height: 38px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--text);
+      font-size: 16px;
+    }
+
+    .round.primary {
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+      color: #ffffff;
+      border-color: transparent;
+    }
+
+    .suggestions {
+      width: min(430px, 100%);
+      margin: 28px auto 0;
+      display: grid;
+      gap: 18px;
+      color: var(--text);
+    }
+
+    .suggested-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .suggestion-item {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .suggestion-item small {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    @media (max-width: 1024px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .main {
+        padding: 12px 14px 22px;
+      }
+
+      .hero {
+        transform: none;
+        justify-content: flex-start;
+        padding-top: 56px;
+      }
+
+      .hero-title {
+        font-size: 24px;
+      }
+
+      .composer-input {
+        font-size: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-main">
+          <div class="brand-mark">Si</div>
+          <div>SiSi Chat</div>
+        </div>
+        <div class="brand-ghost"></div>
+      </div>
+
+      <div class="nav-list">
+        <div class="nav-item active"><div class="nav-icon">✎</div><div>New Chat</div></div>
+        <div class="nav-item"><div class="nav-icon">⌕</div><div>Search</div></div>
+        <div class="nav-item"><div class="nav-icon">▣</div><div>Notes</div></div>
+        <div class="nav-item"><div class="nav-icon">⌘</div><div>Workspace</div></div>
+      </div>
+
+      <div class="section-label">Channels</div>
+      <div class="meta-list">
+        <div class="meta-item"># general</div>
+      </div>
+
+      <div class="section-label">Modes</div>
+      <div class="meta-list">
+        <div class="meta-item">Agent <span>database direct</span></div>
+        <div class="meta-item">Skill <span>toolchain</span></div>
+      </div>
+
+      <div class="section-label">Chats</div>
+      <div class="meta-list">
+        <div class="meta-item">Today</div>
+        <div class="meta-item">Duplicate defect triage</div>
+        <div class="meta-item">High risk summary</div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="profile">
+        <div class="avatar">TB</div>
+        <div>Tony Baek</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <div class="model-name">qwen3.5-397b-a17b</div>
+          <div class="model-sub">Set as default</div>
+        </div>
+        <div class="top-actions">
+          <div class="icon-btn">◌</div>
+          <div class="icon-btn">☷</div>
+          <div class="avatar">TB</div>
+        </div>
+      </div>
+
+      <div class="hero">
+        <div class="hero-mark">
+          <div class="hero-logo">Si</div>
+          <div class="hero-title">qwen3.5-397b-a17b</div>
+        </div>
+
+        <div class="advanced-strip">
+          <div class="advanced-left">
+            <div class="mini-pill active">Agent</div>
+            <div class="mini-pill">Skill</div>
+            <div class="mini-pill">RAG</div>
+            <div class="mini-pill">Confluence</div>
+          </div>
+          <div class="advanced-right">
+            <div class="mini-pill active">已知问题</div>
+            <div class="mini-pill">显示执行细节</div>
+          </div>
+        </div>
+
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="composer-input">How can I help you today?</div>
+            <div class="composer-bar">
+              <div class="composer-left">
+                <div>＋</div>
+                <div>⌘</div>
+              </div>
+              <div class="composer-right">
+                <div class="round">🎙</div>
+                <div class="round primary">➤</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="suggestions">
+          <div>
+            <div class="suggested-label">⚡ Suggested</div>
+            <div class="suggestion-item">Show me duplicate defect candidates<small>within the current filter scope</small></div>
+          </div>
+          <div>
+            <div class="suggestion-item">Help me study current high risk issues<small>summarize what needs attention first</small></div>
+          </div>
+          <div>
+            <div class="suggestion-item">Explain why the agent chose this route<small>show reasoning only when useful</small></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

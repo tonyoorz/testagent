@@ -43,6 +43,16 @@ def _calc_test_week(value: Any) -> Optional[str]:
         return None
 
 
+DEFAULT_LIGHT_HISTORY_FIELDS = frozenset({
+    "phase",
+    "severity",
+    "problem_severity",
+    "owner",
+    "status",
+    "status_phase",
+})
+
+
 def default_db_path(repo_root: Optional[str] = None) -> str:
     base = repo_root or os.path.dirname(os.path.abspath(__file__))
     rebuilt_path = os.path.join(base, "database", "local_data_rebuilt.db")
@@ -51,9 +61,63 @@ def default_db_path(repo_root: Optional[str] = None) -> str:
     return os.path.join(base, "database", "local_data.db")
 
 
+def ensure_qgate_summary_tables(conn: sqlite3.Connection) -> None:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS qgate_kpi_ticket_scope (
+            team TEXT NOT NULL,
+            ticket_id TEXT NOT NULL,
+            year TEXT,
+            ticket_name TEXT,
+            tester TEXT,
+            ticket_url TEXT,
+            has_history INTEGER NOT NULL,
+            history_parse_ok INTEGER NOT NULL,
+            source_history_hash TEXT,
+            refreshed_at TEXT NOT NULL,
+            PRIMARY KEY (team, ticket_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS qgate_kpi_issue_transitions (
+            team TEXT NOT NULL,
+            ticket_id TEXT NOT NULL,
+            year TEXT,
+            ticket_name TEXT,
+            tester TEXT,
+            ticket_url TEXT,
+            phase_transition TEXT NOT NULL,
+            group_name TEXT,
+            changed_by TEXT,
+            fif TEXT,
+            duration_hours REAL NOT NULL,
+            duration_days REAL NOT NULL,
+            ticket_timespan_days REAL,
+            start_time TEXT,
+            end_time TEXT,
+            source_history_hash TEXT NOT NULL,
+            source_team TEXT,
+            refreshed_at TEXT NOT NULL,
+            PRIMARY KEY (team, ticket_id, phase_transition, start_time, end_time)
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_qgate_scope_team_year ON qgate_kpi_ticket_scope(team, year)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_qgate_scope_parse_ok ON qgate_kpi_ticket_scope(history_parse_ok)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_qgate_transitions_team_year ON qgate_kpi_issue_transitions(team, year)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_qgate_transitions_group ON qgate_kpi_issue_transitions(group_name)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_qgate_transitions_changed_by ON qgate_kpi_issue_transitions(changed_by)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_qgate_transitions_fif ON qgate_kpi_issue_transitions(fif)")
+    conn.commit()
+
+
 class OctaneSQLiteStore:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, sync_history_events: bool = True):
         self.db_path = db_path
+        self.sync_history_events = bool(sync_history_events)
         os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
         self._conn = sqlite3.connect(db_path)
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -165,6 +229,14 @@ class OctaneSQLiteStore:
             """,
             (str(defect_id), team, total, payload_json, fetched_at_val),
         )
+        if self.sync_history_events and self._table_exists("octane_defect_history_events"):
+            self.replace_defect_history_events(
+                defect_id=str(defect_id),
+                team=team,
+                payload=payload,
+                fetched_at=fetched_at_val,
+                commit=False,
+            )
         if commit:
             self._conn.commit()
 
@@ -204,6 +276,130 @@ class OctaneSQLiteStore:
         if not row:
             return None
         return row[0], int(row[1] or 0)
+
+    def _table_exists(self, table_name: str) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (str(table_name),),
+        ).fetchone()
+        return bool(row)
+
+    def _normalize_history_value(self, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        if isinstance(value, (int, float, bool)):
+            return str(value)
+        try:
+            normalized = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            normalized = str(value)
+        normalized = normalized.strip()
+        return normalized or None
+
+    def _history_entries_from_payload(self, payload: Any) -> list:
+        if isinstance(payload, dict):
+            entries = payload.get("data")
+            if isinstance(entries, list):
+                return [item for item in entries if isinstance(item, dict)]
+            return []
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        return []
+
+    def replace_defect_history_events(
+        self,
+        *,
+        defect_id: str,
+        team: str,
+        payload: Any,
+        fetched_at: Optional[str] = None,
+        tracked_fields: Optional[set[str]] = None,
+        include_raw_json: bool = True,
+        commit: bool = True,
+    ) -> int:
+        fetched_at_val = fetched_at or _utc_now_iso()
+        defect_id_str = str(defect_id)
+        rows = []
+        normalized_tracked_fields = None
+        if tracked_fields:
+            normalized_tracked_fields = {
+                str(field).strip().lower()
+                for field in tracked_fields
+                if str(field).strip()
+            }
+
+        for entry_index, entry in enumerate(self._history_entries_from_payload(payload)):
+            change_set = entry.get("change_set")
+            if isinstance(change_set, dict):
+                changes = [change_set]
+            elif isinstance(change_set, list):
+                changes = [item for item in change_set if isinstance(item, dict)]
+            else:
+                changes = []
+
+            raw_event_json = json.dumps(entry, ensure_ascii=False) if include_raw_json else ""
+            event_timestamp = self._normalize_history_value(entry.get("timestamp"))
+            action = self._normalize_history_value(entry.get("action"))
+            user_name = self._normalize_history_value(entry.get("user_name"))
+
+            for change_index, change in enumerate(changes):
+                field_name = self._normalize_history_value(change.get("field_name"))
+                if normalized_tracked_fields is not None and (field_name or "").lower() not in normalized_tracked_fields:
+                    continue
+                old_value_text = self._normalize_history_value(change.get("old_value_text"))
+                new_value_text = self._normalize_history_value(
+                    change.get("value_text") if change.get("value_text") is not None else change.get("valueName")
+                )
+                rows.append(
+                    (
+                        defect_id_str,
+                        team,
+                        event_timestamp,
+                        entry_index,
+                        change_index,
+                        action,
+                        user_name,
+                        field_name,
+                        self._normalize_history_value(
+                            change.get("old_value") if change.get("old_value") is not None else change.get("old_value_text")
+                        ),
+                        self._normalize_history_value(
+                            change.get("value")
+                            if change.get("value") is not None
+                            else change.get("value_text")
+                            if change.get("value_text") is not None
+                            else change.get("valueName")
+                        ),
+                        old_value_text,
+                        new_value_text,
+                        raw_event_json,
+                        json.dumps(change, ensure_ascii=False) if include_raw_json else "",
+                        fetched_at_val,
+                    )
+                )
+
+        self._conn.execute(
+            "DELETE FROM octane_defect_history_events WHERE defect_id = ?",
+            (defect_id_str,),
+        )
+        if rows:
+            self._conn.executemany(
+                """
+                INSERT OR REPLACE INTO octane_defect_history_events (
+                    defect_id, team, event_timestamp, entry_index, change_index,
+                    action, user_name, field_name,
+                    old_value, new_value, old_value_text, new_value_text,
+                    raw_event_json, raw_change_json, fetched_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+        if commit:
+            self._conn.commit()
+        return len(rows)
 
     # ============ Optimized Schema Methods ============
 
@@ -352,6 +548,27 @@ class OctaneSQLiteStore:
             )
         """)
 
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS octane_defect_history_events (
+                defect_id TEXT NOT NULL,
+                team TEXT NOT NULL,
+                event_timestamp TEXT,
+                entry_index INTEGER NOT NULL,
+                change_index INTEGER NOT NULL,
+                action TEXT,
+                user_name TEXT,
+                field_name TEXT,
+                old_value TEXT,
+                new_value TEXT,
+                old_value_text TEXT,
+                new_value_text TEXT,
+                raw_event_json TEXT NOT NULL,
+                raw_change_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                PRIMARY KEY (defect_id, entry_index, change_index)
+            )
+        """)
+
         # Add comments column to octane_defects if migrating from older schema
         try:
             cur.execute("ALTER TABLE octane_defects ADD COLUMN comments TEXT")
@@ -368,6 +585,9 @@ class OctaneSQLiteStore:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_manual_runs_year ON octane_manual_runs(year)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_manual_runs_release ON octane_manual_runs(release)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_manual_runs_defect ON octane_manual_runs(defect_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_history_events_team ON octane_defect_history_events(team)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_history_events_defect ON octane_defect_history_events(defect_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_history_events_field_time ON octane_defect_history_events(field_name, event_timestamp)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_testcases_scope ON octane_testcases(scope_team, scope_release, source)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_testcase_relations_scope ON octane_testcase_relations(scope_team, scope_release, source, relation_type)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_testcase_relations_related ON octane_testcase_relations(relation_type, related_id)")

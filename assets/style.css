@@ -49,6 +49,10 @@ h1 {
     margin-bottom: 20px;
 }
 
+#main-title {
+    border-bottom: none;
+}
+
 /* 表格样式 */
 table {
     border-collapse: collapse;
@@ -217,25 +221,27 @@ li {
 
 #sidebar-nav .nav-item {
     border-radius: 10px;
-    transition: background-color 140ms ease, transform 140ms ease;
+    transition: background-color 140ms ease, color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
 }
 
 #sidebar-nav .nav-item:hover {
     transform: translateX(2px);
+    background-color: #f4f8ff !important;
+    color: #1d4ed8 !important;
 }
 
 .nav-toggle-btn:hover {
-    background-color: #218838 !important;
+    background-color: #f8fbff !important;
     transform: scale(1.05);
 }
 
 #nav-edge-bar:hover {
-    background-color: #34495e !important;
+    background-color: #f8fbff !important;
 }
 
 #nav-edge-toggle-btn:hover,
 #nav-edge-toggle-btn-2:hover {
-    background-color: rgba(255,255,255,0.2) !important;
+    background-color: rgba(37,99,235,0.08) !important;
 }
 
 .sidebar-nav::-webkit-scrollbar {
@@ -243,16 +249,16 @@ li {
 }
 
 .sidebar-nav::-webkit-scrollbar-track {
-    background: #34495e;
+    background: #eef4fb;
 }
 
 .sidebar-nav::-webkit-scrollbar-thumb {
-    background: #3498db;
+    background: #c4d7ee;
     border-radius: 3px;
 }
 
 .sidebar-nav::-webkit-scrollbar-thumb:hover {
-    background: #2980b9;
+    background: #94a3b8;
 }
 
 .main-content-wrapper,
@@ -262,6 +268,28 @@ li {
 
 #main-content-wrapper {
     max-width: 100%;
+}
+
+.main-content-wrapper.chat-page-layout,
+#main-content-wrapper.chat-page-layout {
+    position: fixed !important;
+    top: 90px !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    min-height: calc(100vh - 90px) !important;
+    height: calc(100vh - 90px) !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+.main-content-wrapper.chat-page-layout > #tabs-content,
+#main-content-wrapper.chat-page-layout > #tabs-content {
+    width: 100%;
+    height: 100%;
 }
 
 /* Unified filter panel */

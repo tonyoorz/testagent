@@ -67,140 +67,77 @@ from feedback_store import FeedbackStore
 from octane_db import default_db_path
 
 
-def _get_current_user_id() -> str:
-    """Read username from login_info.txt, fall back to 'anonymous'."""
-    try:
-        login_path = os.path.join(PROJECT_ROOT, 'login_info.txt')
-        if os.path.isfile(login_path):
-            with open(login_path, 'r', encoding='utf-8') as fh:
-                info = json.loads(fh.read())
-                return str(info.get('username') or 'anonymous').strip()
-    except Exception:
-        pass
-    return 'anonymous'
+logger = logging.getLogger(__name__)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Configure logging first before importing enhancement modules
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-_POSITIVE_CONFIRMATION_REPLIES = {
-    "继续", "继续执行", "确认", "确认执行", "是", "好的", "好", "ok", "yes", "y", "proceed", "continue",
-}
-_DUPLICATE_FOLLOWUP_MAX_LEN = 40
-_DUPLICATE_FOLLOWUP_PATTERNS = [
-    re.compile(pattern, re.IGNORECASE)
-    for pattern in [
-        r"需要补充",
-        r"补充信息",
-        r"补充.*现象",
-        r"补充.*复现",
-        r"请补充",
-        r"再判断",
-        r"provide more information",
-        r"need more information",
-        r"need more details",
-    ]
-]
-
-
-def _normalize_confirmation_reply(text: str) -> str:
-    return str(text or "").strip().lower().strip(" \t\r\n,，。.!！？、；;:：")
-
-
-def is_positive_confirmation_reply(text: str) -> bool:
-    normalized = _normalize_confirmation_reply(text)
-    return bool(normalized) and normalized in _POSITIVE_CONFIRMATION_REPLIES
-
-
-def should_resume_pending_agent_confirmation(user_message: str, agent_results: Optional[Dict[str, Any]]) -> bool:
-    if not is_positive_confirmation_reply(user_message):
-        return False
-    if not isinstance(agent_results, dict):
-        return False
-
-    context = agent_results.get("last_agent_context")
-    if not isinstance(context, dict):
-        return False
-
-    return bool(context.get("needs_confirmation") or context.get("confirmation_pending"))
-
-
-def _assistant_requests_duplicate_followup(message: str) -> bool:
-    text = str(message or "").strip()
-    if not text:
-        return False
-    return any(pattern.search(text) for pattern in _DUPLICATE_FOLLOWUP_PATTERNS)
+def _get_current_user_id() -> str:
+    for env_name in ('BMW_ID', 'USERNAME', 'USER'):
+        value = str(os.getenv(env_name) or '').strip()
+        if value:
+            return value
+    try:
+        return os.getlogin()
+    except Exception:
+        return 'User'
 
 
 def _analyze_duplicate_followup_chain(
-    question: str, conversation_history: Optional[List[Dict[str, Any]]]
-) -> tuple:
-    """Walk backward through conversation history to accumulate a multi-round
-    duplicate-detection follow-up chain.
-
-    Returns ``(effective_query, followup_round_count)``.
-    *followup_round_count* is 0 when the current message is a standalone query.
-    """
-    current_question = str(question or "").strip()
+    current_question: str,
+    conversation_history: Optional[List[Dict[str, Any]]],
+) -> tuple[str, int]:
+    current_question = str(current_question or "").strip()
     if not current_question:
         return ("", 0)
-    if len(current_question) > _DUPLICATE_FOLLOWUP_MAX_LEN:
+    if len(current_question) >= 50:
         return (current_question, 0)
 
-    messages = [msg for msg in (conversation_history or []) if isinstance(msg, dict)]
+    messages = [message for message in (conversation_history or []) if isinstance(message, dict)]
+    if not messages:
+        return (current_question, 0)
 
-    # Locate the current user message in history
-    current_index = None
+    def _is_reasoning_message(message: Dict[str, Any]) -> bool:
+        message_type = str(message.get("type") or "").strip().lower()
+        content = str(message.get("content") or "").strip()
+        return message_type == "reasoning" or content == "AI正在思考..."
+
+    def _is_followup_request(message: Dict[str, Any]) -> bool:
+        if str(message.get("role") or "").strip() != "assistant":
+            return False
+        if _is_reasoning_message(message):
+            return False
+        return "需要补充" in str(message.get("content") or "")
+
+    current_idx = -1
     for idx in range(len(messages) - 1, -1, -1):
-        msg = messages[idx]
-        if str(msg.get("role") or "").strip() != "user":
+        message = messages[idx]
+        if str(message.get("role") or "").strip() != "user":
             continue
-        if str(msg.get("content") or "").strip() == current_question:
-            current_index = idx
+        if str(message.get("content") or "").strip() == current_question:
+            current_idx = idx
             break
 
-    if current_index is None:
+    if current_idx <= 0:
         return (current_question, 0)
 
-    # Walk backward collecting all user messages that belong to the chain.
-    # Pattern: ...user → [reasoning*] → assistant("需要补充") → [reasoning*] → user → ...
     prior_user_messages: List[str] = []
-    scan_idx = current_index - 1
-
+    scan_idx = current_idx - 1
     while scan_idx >= 0:
-        # Step 1: find the nearest meaningful assistant message
-        found_followup_assistant = False
-        while scan_idx >= 0:
-            msg = messages[scan_idx]
-            role = str(msg.get("role") or "").strip()
-            if role != "assistant":
-                scan_idx -= 1
-                continue
-            content = str(msg.get("content") or "").strip()
-            # Skip empty / placeholder assistant messages
-            if not content or content == "AI正在思考...":
-                scan_idx -= 1
-                continue
-            # First real assistant content — does it ask for follow-up?
-            if _assistant_requests_duplicate_followup(content):
-                found_followup_assistant = True
-                scan_idx -= 1
-                break
-            else:
-                # Assistant gave a definitive answer → chain ends
-                break
+        while scan_idx >= 0 and _is_reasoning_message(messages[scan_idx]):
+            scan_idx -= 1
 
-        if not found_followup_assistant:
+        if scan_idx < 0 or not _is_followup_request(messages[scan_idx]):
             break
 
-        # Step 2: find the user message before this assistant
+        scan_idx -= 1
         found_user = False
         while scan_idx >= 0:
-            msg = messages[scan_idx]
-            role = str(msg.get("role") or "").strip()
+            message = messages[scan_idx]
+            role = str(message.get("role") or "").strip()
+            if role == "assistant" and not _is_reasoning_message(message):
+                break
             if role == "user":
-                user_content = str(msg.get("content") or "").strip()
+                user_content = str(message.get("content") or "").strip()
                 if user_content:
                     prior_user_messages.append(user_content)
                     found_user = True
@@ -214,28 +151,55 @@ def _analyze_duplicate_followup_chain(
     if not prior_user_messages:
         return (current_question, 0)
 
-    # prior_user_messages is in reverse chronological order → reverse to get [Q1, Q2, …]
     prior_user_messages.reverse()
-
     original = prior_user_messages[0]
     supplements = prior_user_messages[1:] + [current_question]
-    effective_query = f"{original}\n补充信息：{'；'.join(supplements)}"
-    return (effective_query, len(prior_user_messages))
+    return (f"{original}\n补充信息：{'；'.join(supplements)}", len(prior_user_messages))
 
 
 def build_duplicate_followup_query(
     question: str, conversation_history: Optional[List[Dict[str, Any]]]
 ) -> str:
-    """Reconstruct the effective search query by merging prior follow-up turns."""
     return _analyze_duplicate_followup_chain(question, conversation_history)[0]
 
 
 def count_duplicate_followup_rounds(
     question: str, conversation_history: Optional[List[Dict[str, Any]]]
 ) -> int:
-    """Count how many supplementary rounds preceded *question* in a duplicate
-    detection follow-up chain.  Returns 0 for standalone queries."""
     return _analyze_duplicate_followup_chain(question, conversation_history)[1]
+
+
+def should_resume_pending_agent_confirmation(
+    user_message: str,
+    agent_results: Optional[Dict[str, Any]],
+) -> bool:
+    context = dict((agent_results or {}).get("last_agent_context") or {})
+    if not context.get("needs_confirmation") or not context.get("confirmation_pending"):
+        return False
+
+    normalized = str(user_message or "").strip().lower()
+    if not normalized:
+        return False
+
+    affirmative_replies = {
+        "y",
+        "yes",
+        "ok",
+        "okay",
+        "continue",
+        "go ahead",
+        "继续",
+        "继续吧",
+        "继续分析",
+        "继续处理",
+        "好的",
+        "好",
+        "可以",
+        "确认",
+        "是",
+        "是的",
+    }
+    return normalized in affirmative_replies
 
 
 def _build_enhanced_duplicate_result_payload(
@@ -2140,273 +2104,402 @@ class EnhancedAIChatManager:
         - 工具调用结果显示
         - 数据可视化嵌入
         """
-        # 获取预设问题
         preset_questions = self.preset_questions.get(
             self.dashboard_type,
             self.preset_questions['general']
         )
 
-        # 创建预设按钮
         preset_buttons = []
         button_colors = [
-            {'bg': '#e3f2fd', 'color': '#1976d2', 'border': '#1976d2'},
-            {'bg': '#fce4ec', 'color': '#c2185b', 'border': '#c2185b'},
-            {'bg': '#fff3e0', 'color': '#f57c00', 'border': '#f57c00'},
-            {'bg': '#e8f5e8', 'color': '#388e3c', 'border': '#388e3c'},
-            {'bg': '#f3e5f5', 'color': '#7b1fa2', 'border': '#7b1fa2'},
-            {'bg': '#e0f2f1', 'color': '#00796b', 'border': '#00796b'},
-            {'bg': '#fff8e1', 'color': '#f57f17', 'border': '#f57f17'}  # Agent 专用
+            {'bg': '#ffffff', 'color': '#1e293b', 'border': '#dbe4ef'},
+            {'bg': '#f8fbff', 'color': '#1d4ed8', 'border': '#bfdbfe'},
+            {'bg': '#fff8eb', 'color': '#b45309', 'border': '#fcd34d'},
+            {'bg': '#edfdf3', 'color': '#15803d', 'border': '#86efac'},
+            {'bg': '#fdf4ff', 'color': '#7e22ce', 'border': '#e9d5ff'},
+            {'bg': '#f0fdfa', 'color': '#0f766e', 'border': '#99f6e4'},
+            {'bg': '#eff6ff', 'color': '#1d4ed8', 'border': '#93c5fd'}
         ]
 
         for i, (key, question) in enumerate(preset_questions.items()):
             color_scheme = button_colors[i % len(button_colors)]
             is_agent_button = 'agent' in key
-
-            button_id = f'{chat_id_prefix}-{key}-btn'
             preset_buttons.append(
                 html.Button(
                     question,
-                    id=button_id,
+                    id=f'{chat_id_prefix}-{key}-btn',
                     n_clicks=0,
                     className='chat-quick-btn',
                     style={
-                        'margin': '3px',
-                        'padding': '5px 10px',
-                        'fontSize': '11px',
+                        'margin': '0',
+                        'padding': '10px 14px',
+                        'fontSize': '12px',
                         'backgroundColor': color_scheme['bg'],
                         'color': color_scheme['color'],
                         'border': f"1px solid {color_scheme['border']}",
-                        'borderRadius': '13px',
+                        'borderRadius': '14px',
                         'cursor': 'pointer',
                         'transition': 'all 0.3s ease',
-                        'boxShadow': '0 2px 4px rgba(0,0,0,0.1)' if is_agent_button else 'none'
+                        'textAlign': 'left',
+                        'boxShadow': '0 6px 16px rgba(15, 23, 42, 0.06)' if is_agent_button else 'none'
                     }
                 )
             )
 
-        # UI 默认选中 Agent（数据库直读）模式，避免首次进入直接落到 Skill 工具链。
         default_mode = "summary"
         chat_model_options = self._get_chat_model_options()
         default_chat_model = self._get_default_chat_model()
+        welcome_message = (
+            f"您好！我是{self.assistant_name}。"
+            f"{'当前为 Skill（工具链）模式。' if default_mode == 'agent' else '当前为 Agent（数据库直读）模式。'}"
+        )
+        user_badge = _get_current_user_id()[:2].upper()
 
-        # 构建界面
-        interface = html.Div([
-            # 对话历史区域
-            html.Div(
-                id=f'{chat_id_prefix}-history',
-                children=[
+        return html.Div([
+            html.Div([
+                html.Div([
                     html.Div([
-                        html.I(className="fas fa-robot", style={'marginRight': '8px', 'color': '#3498db'}),
-                        html.Span(
-                            f"您好！我是{self.assistant_name}。"
-                            f"{'当前为 Skill（工具链）模式。' if default_mode == 'agent' else '当前为 Agent（数据库直读）模式。'}"
-                        )
-                    ], style={
-                        'padding': '8px 10px',
-                        'backgroundColor': '#f8f9fa',
+                        html.Div(self.assistant_name[:2], style={
+                            'width': '28px',
+                            'height': '28px',
+                            'borderRadius': '999px',
+                            'background': 'linear-gradient(135deg, #2563eb 0%, #38bdf8 100%)',
+                            'color': '#ffffff',
+                            'display': 'grid',
+                            'placeItems': 'center',
+                            'fontWeight': '800',
+                            'fontSize': '12px',
+                            'boxShadow': '0 8px 18px rgba(37, 99, 235, 0.20)'
+                        }),
+                        html.Span(self.assistant_name, style={
+                            'fontSize': '15px',
+                            'fontWeight': '700',
+                            'color': '#1e293b'
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'}),
+                    html.Div(style={
+                        'width': '22px',
+                        'height': '22px',
                         'borderRadius': '8px',
-                        'margin': '4px 0',
-                        'border': '1px solid #e9ecef',
-                        'fontSize': '13px'
+                        'border': '1px solid rgba(148, 163, 184, 0.34)'
                     })
-                ],
-                style={
-                    'flex': '1 1 auto',
-                    'minHeight': '0',
-                    'overflowY': 'auto',
-                    'border': '1px solid #ddd',
-                    'padding': '10px',
-                    'borderRadius': '8px',
-                    'backgroundColor': '#fafafa'
-                }
-            ),
-
-            # 对话模式和重复提票控制（放在对话框和发送区之间）
-            html.Div([
+                ], style={
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'justifyContent': 'space-between',
+                    'marginBottom': '16px'
+                }),
                 html.Div([
-                    dcc.RadioItems(
-                        id=f'{chat_id_prefix}-chat-mode',
-                        options=[
-                            {'label': ' 纯聊天', 'value': 'pure'},
-                            {'label': ' RAG', 'value': 'rag'},
-                            {'label': ' Confluence', 'value': 'confluence'},
-                            {'label': ' Agent', 'value': 'summary'},
-                            {'label': ' Skill', 'value': 'agent'},
-                        ],
-                        value=default_mode,
-                        labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontSize': '12px'}
-                    ),
-                    html.Span(
-                        "纯=不读本地 | RAG=Dify Chatflow | Confluence=知识空间检索 | Agent=数据库直读 | Skill=工具链",
-                        style={'fontSize': '11px', 'color': '#6b7280', 'marginLeft': '6px'}
-                    )
-                ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap', 'gap': '4px'}),
-                html.Div([
-                    dcc.Checklist(
-                        id=f'{chat_id_prefix}-known-issues',
-                        options=[{'label': ' 已知问题', 'value': 'known'}],
-                        value=[],
-                        style={'display': 'inline-block', 'fontSize': '12px'}
-                    ),
-                    html.Span(
-                        "检测重复提票",
-                        style={'fontSize': '11px', 'color': '#6b7280', 'marginLeft': '5px'}
-                    )
-                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '8px'}),
-                html.Div([
-                    html.Span("Model", style={'fontSize': '11px', 'color': '#4b5563', 'fontWeight': '600'}),
-                    dcc.Dropdown(
-                        id=f'{chat_id_prefix}-model-select',
-                        options=[{'label': m, 'value': m} for m in chat_model_options],
-                        value=default_chat_model,
-                        clearable=False,
-                        searchable=False,
-                        style={'width': '230px', 'fontSize': '12px'}
-                    )
-                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px', 'marginLeft': 'auto'})
-            ], style={
-                'display': 'flex',
-                'alignItems': 'center',
-                'justifyContent': 'space-between',
-                'padding': '6px 8px',
-                'backgroundColor': '#f8f9fa',
-                'border': '1px solid #e5e7eb',
-                'borderRadius': '8px',
-                'gap': '8px',
-                'flexWrap': 'wrap'
-            }),
-
-            # 状态显示
-            html.Div(
-                id=f'{chat_id_prefix}-status',
-                children=[],
-                style={
-                    'textAlign': 'center',
-                    'marginTop': '6px',
-                    'marginBottom': '6px',
-                    'fontSize': '12px',
-                    'color': '#666',
-                    'minHeight': '16px'
-                }
-            ),
-
-            # 输入区域
-            html.Div([
-                dcc.Input(
-                    id=f'{chat_id_prefix}-input',
-                    type='text',
-                    placeholder='请输入您的问题...',
-                    style={
-                        'flex': '1',
-                        'padding': '9px 10px',
-                        'marginRight': '8px',
-                        'borderRadius': '8px',
-                        'border': '1px solid #d1d5db',
-                        'fontSize': '13px'
-                    },
-                    value='',
-                    persistence=False
-                ),
-                html.Button(
-                    [html.I(className="fas fa-paper-plane", style={'marginRight': '5px'}), '发送'],
-                    id=f'{chat_id_prefix}-send-button',
-                    n_clicks=0,
-                    style={
-                        'padding': '9px 14px',
-                        'backgroundColor': '#3498db',
-                        'color': 'white',
-                        'border': 'none',
-                        'borderRadius': '8px',
-                        'cursor': 'pointer',
-                        'fontSize': '13px',
-                        'fontWeight': 'bold',
-                        'whiteSpace': 'nowrap'
-                    }
-                ),
-                html.Button(
-                    [html.I(className="fas fa-stop-circle", style={'marginRight': '5px'}), '停止'],
-                    id=f'{chat_id_prefix}-stop-button',
-                    n_clicks=0,
-                    disabled=True,
-                    style={
-                        'padding': '9px 14px',
-                        'backgroundColor': '#e74c3c',
-                        'color': 'white',
-                        'border': 'none',
-                        'borderRadius': '8px',
-                        'cursor': 'pointer',
-                        'fontSize': '13px',
-                        'fontWeight': 'bold',
-                        'marginLeft': '6px',
-                        'whiteSpace': 'nowrap',
-                        'opacity': '0.4'
-                    }
-                )
-            ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '6px', 'gap': '0'}),
-
-            # 预设问题
-            html.Div([
-                html.P("快速提问：", style={'fontSize': '12px', 'margin': '6px 0 3px 0', 'color': '#666'}),
-                html.Div(
-                    preset_buttons,
-                    style={
+                    html.Div([
+                        html.I(className="fas fa-pen", style={'width': '18px', 'textAlign': 'center', 'color': '#1d4ed8'}),
+                        html.Span('New Chat')
+                    ], style={
                         'display': 'flex',
-                        'gap': '6px',
-                        'flexWrap': 'wrap',
-                        'justifyContent': 'center'
-                    }
-                )
-            ], style={'marginTop': '8px'}),
-
-            # 控制面板
+                        'alignItems': 'center',
+                        'gap': '12px',
+                        'padding': '11px 10px',
+                        'borderRadius': '14px',
+                        'backgroundColor': 'rgba(37, 99, 235, 0.08)',
+                        'color': '#1e293b',
+                        'fontSize': '15px',
+                        'fontWeight': '600'
+                    }),
+                    html.Div([
+                        html.I(className="fas fa-search", style={'width': '18px', 'textAlign': 'center', 'color': '#1d4ed8'}),
+                        html.Span('Search')
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'gap': '12px',
+                        'padding': '11px 10px',
+                        'borderRadius': '14px',
+                        'color': '#1e293b',
+                        'fontSize': '15px',
+                        'fontWeight': '500'
+                    }),
+                    html.Div([
+                        html.I(className="fas fa-layer-group", style={'width': '18px', 'textAlign': 'center', 'color': '#1d4ed8'}),
+                        html.Span('Workspace')
+                    ], style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'gap': '12px',
+                        'padding': '11px 10px',
+                        'borderRadius': '14px',
+                        'color': '#1e293b',
+                        'fontSize': '15px',
+                        'fontWeight': '500'
+                    })
+                ], style={'display': 'grid', 'gap': '6px'}),
+                html.Div('Modes', style={
+                    'margin': '20px 6px 8px',
+                    'fontSize': '12px',
+                    'fontWeight': '700',
+                    'color': '#64748b'
+                }),
+                html.Div([
+                    html.Div('Agent  database direct', style={'padding': '8px 10px', 'borderRadius': '12px', 'color': '#1e293b', 'fontSize': '14px'}),
+                    html.Div('Skill  toolchain', style={'padding': '8px 10px', 'borderRadius': '12px', 'color': '#1e293b', 'fontSize': '14px'})
+                ], style={'display': 'grid', 'gap': '4px'}),
+                html.Div(style={'flex': '1'}),
+                html.Div([
+                    html.Div(user_badge, style={
+                        'width': '30px',
+                        'height': '30px',
+                        'borderRadius': '999px',
+                        'display': 'grid',
+                        'placeItems': 'center',
+                        'background': 'linear-gradient(135deg, #f59e0b 0%, #f97316 100%)',
+                        'color': '#ffffff',
+                        'fontSize': '13px',
+                        'fontWeight': '700'
+                    }),
+                    html.Span(_get_current_user_id(), style={'fontSize': '14px', 'fontWeight': '600', 'color': '#1e293b'})
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px', 'padding': '10px 4px'})
+            ], id=f'{chat_id_prefix}-rail', style={
+                'width': '300px',
+                'minWidth': '300px',
+                'background': 'linear-gradient(180deg, #fbfdff 0%, #f6faff 100%)',
+                'borderRight': '1px solid rgba(148, 163, 184, 0.20)',
+                'padding': '14px 14px 12px',
+                'display': 'flex',
+                'flexDirection': 'column',
+                'minHeight': '0',
+                'boxSizing': 'border-box'
+            }),
             html.Div([
                 html.Div([
-                    html.Label([
-                        dcc.Checklist(
-                            id=f'{chat_id_prefix}-show-reasoning',
-                            options=[{'label': ' 显示执行细节', 'value': 'show'}],
-                            value=['show'],
-                            style={'fontSize': '12px'}
-                        )
-                    ])
-                ], style={'flex': '1'}),
-
-                html.Div([
-                    html.Button(
-                        [html.I(className="fas fa-trash", style={'marginRight': '5px'}), '清空'],
-                        id=f'{chat_id_prefix}-clear-button',
-                        n_clicks=0,
+                    html.Div([
+                        html.Div(
+                            dcc.RadioItems(
+                                id=f'{chat_id_prefix}-chat-mode',
+                                options=[
+                                    {'label': '纯聊天', 'value': 'pure'},
+                                    {'label': 'RAG', 'value': 'rag'},
+                                    {'label': 'Confluence', 'value': 'confluence'},
+                                    {'label': 'Agent', 'value': 'summary'},
+                                    {'label': 'Skill', 'value': 'agent'},
+                                ],
+                                value=default_mode,
+                                labelStyle={
+                                    'display': 'inline-block',
+                                    'marginRight': '8px',
+                                    'padding': '6px 10px',
+                                    'borderRadius': '999px',
+                                    'border': '1px solid rgba(148, 163, 184, 0.20)',
+                                    'backgroundColor': 'rgba(255,255,255,0.84)',
+                                    'color': '#64748b',
+                                    'fontSize': '12px'
+                                },
+                                inputStyle={'marginRight': '4px'}
+                            ),
+                            style={'display': 'flex', 'flexWrap': 'wrap'}
+                        ),
+                        html.Div([
+                            dcc.Checklist(
+                                id=f'{chat_id_prefix}-known-issues',
+                                options=[{'label': '已知问题', 'value': 'known'}],
+                                value=[],
+                                style={'fontSize': '12px', 'color': '#64748b'},
+                                labelStyle={
+                                    'display': 'inline-block',
+                                    'padding': '6px 10px',
+                                    'borderRadius': '999px',
+                                    'border': '1px solid rgba(148, 163, 184, 0.20)',
+                                    'backgroundColor': 'rgba(255,255,255,0.84)'
+                                },
+                                inputStyle={'marginRight': '4px'}
+                            ),
+                            dcc.Checklist(
+                                id=f'{chat_id_prefix}-show-reasoning',
+                                options=[{'label': '显示执行细节', 'value': 'show'}],
+                                value=['show'],
+                                style={'fontSize': '12px', 'color': '#64748b'},
+                                labelStyle={
+                                    'display': 'inline-block',
+                                    'padding': '6px 10px',
+                                    'borderRadius': '999px',
+                                    'border': '1px solid rgba(148, 163, 184, 0.20)',
+                                    'backgroundColor': 'rgba(255,255,255,0.84)'
+                                },
+                                inputStyle={'marginRight': '4px'}
+                            )
+                        ], style={'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'flexWrap': 'wrap'})
+                    ], style={
+                        'width': '100%',
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'space-between',
+                        'gap': '12px',
+                        'margin': '0 0 6px',
+                        'padding': '0',
+                        'color': '#64748b',
+                        'fontSize': '12px',
+                        'flexWrap': 'wrap'
+                    }),
+                    html.Div(
+                        id=f'{chat_id_prefix}-history',
+                        children=[
+                            html.Div([
+                                html.I(className="fas fa-robot", style={'marginRight': '8px', 'color': '#2563eb'}),
+                                html.Span(welcome_message)
+                            ], style={
+                                'padding': '12px 14px',
+                                'backgroundColor': '#f8fbff',
+                                'borderRadius': '16px',
+                                'margin': '4px 0',
+                                'border': '1px solid #dbe4ef',
+                                'fontSize': '13px',
+                                'color': '#334155',
+                                'boxShadow': '0 8px 18px rgba(15, 23, 42, 0.04)'
+                            })
+                        ],
                         style={
-                            'padding': '4px 10px',
-                            'backgroundColor': '#dc3545',
-                            'color': 'white',
-                            'border': 'none',
-                            'borderRadius': '4px',
-                            'cursor': 'pointer',
-                            'fontSize': '11px'
+                            'width': '100%',
+                            'flex': '1 1 auto',
+                            'minHeight': '260px',
+                            'maxHeight': '100%',
+                            'overflowY': 'auto',
+                            'padding': '4px 0 10px',
+                            'backgroundColor': 'transparent',
+                            'border': 'none'
                         }
-                    )
-                ], style={'textAlign': 'right'})
+                    ),
+                    html.Div(id=f'{chat_id_prefix}-status', children=[], style={
+                        'width': '100%',
+                        'textAlign': 'center',
+                        'margin': '8px 0 10px',
+                        'fontSize': '12px',
+                        'color': '#64748b',
+                        'minHeight': '16px'
+                    }),
+                    html.Div([
+                        html.Div([
+                            dcc.Input(
+                                id=f'{chat_id_prefix}-input',
+                                type='text',
+                                placeholder='How can I help you today?',
+                                style={
+                                    'width': '100%',
+                                    'padding': '12px 0 8px',
+                                    'border': 'none',
+                                    'backgroundColor': 'transparent',
+                                    'fontSize': '18px',
+                                    'lineHeight': '1.4',
+                                    'color': '#475569'
+                                },
+                                value='',
+                                persistence=False
+                            ),
+                            html.Div([
+                                html.Div([
+                                    html.I(className="fas fa-plus"),
+                                    html.I(className="fas fa-terminal")
+                                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '14px', 'color': '#64748b'}),
+                                html.Div([
+                                    html.Div(html.I(className="fas fa-microphone"), style={
+                                        'width': '38px', 'height': '38px', 'borderRadius': '999px', 'display': 'grid', 'placeItems': 'center',
+                                        'border': '1px solid rgba(148, 163, 184, 0.20)', 'backgroundColor': '#ffffff', 'color': '#1e293b', 'fontSize': '16px'
+                                    }),
+                                    html.Button(html.I(className="fas fa-paper-plane"), id=f'{chat_id_prefix}-send-button', n_clicks=0, style={
+                                        'width': '38px', 'height': '38px', 'borderRadius': '999px', 'display': 'grid', 'placeItems': 'center',
+                                        'border': 'none', 'background': 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', 'color': '#ffffff',
+                                        'cursor': 'pointer', 'fontSize': '16px'
+                                    }),
+                                    html.Button(html.I(className="fas fa-stop-circle"), id=f'{chat_id_prefix}-stop-button', n_clicks=0, disabled=True, style={
+                                        'width': '38px', 'height': '38px', 'borderRadius': '999px', 'display': 'grid', 'placeItems': 'center',
+                                        'border': '1px solid rgba(239, 68, 68, 0.18)', 'backgroundColor': '#fff1f2', 'color': '#dc2626',
+                                        'cursor': 'pointer', 'fontSize': '16px', 'opacity': '0.45'
+                                    })
+                                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'})
+                            ], style={
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center',
+                                'marginTop': '10px',
+                                'gap': '16px'
+                            })
+                        ], id=f'{chat_id_prefix}-composer', style={
+                            'backgroundColor': 'rgba(255, 255, 255, 0.92)',
+                            'border': '1px solid rgba(148, 163, 184, 0.20)',
+                            'borderRadius': '24px',
+                            'boxShadow': '0 20px 40px rgba(15, 23, 42, 0.10)',
+                            'padding': '18px 20px 12px'
+                        })
+                    ], style={'width': '100%', 'margin': '0'}),
+                    html.Div([
+                        html.Div('Suggested', style={'color': '#64748b', 'fontSize': '12px', 'fontWeight': '700'}),
+                        html.Div([
+                            dcc.Dropdown(
+                                id=f'{chat_id_prefix}-model-select',
+                                options=[{'label': m, 'value': m} for m in chat_model_options],
+                                value=default_chat_model,
+                                clearable=False,
+                                searchable=False,
+                                style={'width': '220px', 'fontSize': '12px'}
+                            ),
+                            html.Button(
+                                [html.I(className="fas fa-trash", style={'marginRight': '6px'}), '清空'],
+                                id=f'{chat_id_prefix}-clear-button',
+                                n_clicks=0,
+                                style={
+                                    'padding': '8px 12px',
+                                    'backgroundColor': '#ffffff',
+                                    'color': '#dc2626',
+                                    'border': '1px solid rgba(239, 68, 68, 0.18)',
+                                    'borderRadius': '999px',
+                                    'cursor': 'pointer',
+                                    'fontSize': '12px',
+                                    'fontWeight': '600'
+                                }
+                            )
+                        ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px', 'flexWrap': 'wrap'})
+                    ], style={
+                        'width': '100%',
+                        'display': 'flex',
+                        'justifyContent': 'space-between',
+                        'alignItems': 'center',
+                        'gap': '12px',
+                        'margin': '24px 0 0',
+                        'padding': '0',
+                        'flexWrap': 'wrap'
+                    }),
+                    html.Div(preset_buttons, style={
+                        'width': '100%',
+                        'display': 'flex',
+                        'gap': '8px',
+                        'flexWrap': 'wrap',
+                        'justifyContent': 'flex-start',
+                        'margin': '12px 0 0',
+                        'color': '#1e293b'
+                    })
+                ], id=f'{chat_id_prefix}-stage', style={
+                    'flex': '1',
+                    'minHeight': '0',
+                    'display': 'flex',
+                    'flexDirection': 'column',
+                    'justifyContent': 'flex-start',
+                    'alignItems': 'stretch',
+                    'padding': '14px 28px 18px',
+                    'background': 'transparent'
+                })
             ], style={
+                'flex': '1 1 auto',
+                'minWidth': '0',
                 'display': 'flex',
-                'alignItems': 'center',
-                'marginTop': '6px',
-                'padding': '6px 8px',
-                'backgroundColor': '#f8f9fa',
-                'borderRadius': '4px'
+                'flexDirection': 'column',
+                'padding': '10px 0 26px',
+                'height': '100%',
+                'boxSizing': 'border-box'
             })
-        ], style={
+        ], id=f'{chat_id_prefix}-shell', style={
             'width': '100%',
             'height': '100%',
             'minHeight': '0',
             'display': 'flex',
-            'flexDirection': 'column',
-            'gap': '6px',
-            'padding': '12px',
-            'boxSizing': 'border-box'
+            'backgroundColor': 'transparent',
+            'background': 'transparent',
+            'overflow': 'hidden'
         })
-
-        return interface
 
     def _create_initial_conversation_state(self) -> Dict[str, Any]:
         if ENTITY_TRACKER_AVAILABLE and create_initial_conversation_state:

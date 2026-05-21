@@ -2,6 +2,11 @@ import os
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 # 默认关闭 reloader/hot reload，避免运行时文件写入触发服务重载
 DISABLE_RELOADER = os.environ.get("DISABLE_RELOADER", "1").lower() in ("1", "true", "yes")
 
@@ -2024,6 +2029,15 @@ import dash_bootstrap_components as dbc
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], assets_folder='assets', suppress_callback_exceptions=True)
 server = app.server  # 暴露给 Gunicorn 使用
 
+SIDEBAR_SURFACE = '#ffffff'
+SIDEBAR_SURFACE_ALT = '#f8fbff'
+SIDEBAR_SURFACE_ACTIVE = '#eaf2ff'
+SIDEBAR_BORDER = '#dbe4ef'
+SIDEBAR_TEXT = '#1e293b'
+SIDEBAR_TEXT_MUTED = '#475569'
+SIDEBAR_PRIMARY = '#2563eb'
+SIDEBAR_SHADOW = '0 14px 30px rgba(15, 23, 42, 0.08)'
+
 # 创建侧边导航栏组件
 def create_sidebar_nav():
     """创建可展开/隐藏的侧边导航栏"""
@@ -2048,14 +2062,14 @@ def create_sidebar_nav():
                 'top': '20px',
                 'left': '290px',  # 放在导航栏右侧
                 'zIndex': '1001',
-                'backgroundColor': '#28a745',
-                'color': 'white',
-                'border': 'none',
+                'backgroundColor': SIDEBAR_SURFACE,
+                'color': SIDEBAR_PRIMARY,
+                'border': f'1px solid {SIDEBAR_BORDER}',
                 'padding': '12px',
                 'borderRadius': '6px',
                 'cursor': 'pointer',
                 'fontSize': '16px',
-                'boxShadow': '0 2px 4px rgba(0,0,0,0.3)',
+                'boxShadow': '0 10px 24px rgba(15, 23, 42, 0.08)',
                 'transition': 'all 0.3s ease'
             }
         ),
@@ -2086,10 +2100,11 @@ def create_sidebar_nav():
             'left': '-30px',  # 默认隐藏
             'width': '30px',
             'height': 'calc(100vh - 90px)',
-            'backgroundColor': '#2c3e50',
+            'backgroundColor': SIDEBAR_SURFACE,
             'zIndex': '999',
             'transition': 'left 0.3s ease',
-            'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
+            'boxShadow': SIDEBAR_SHADOW,
+            'borderRight': f'1px solid {SIDEBAR_BORDER}',
             'display': 'flex',
             'alignItems': 'center',
             'justifyContent': 'center'
@@ -2100,10 +2115,10 @@ def create_sidebar_nav():
             # 导航栏头部
             html.Div([
                 html.H3("Navigation", style={
-                    'color': 'white',
+                    'color': SIDEBAR_TEXT,
                     'margin': '0',
                     'padding': '20px',
-                    'borderBottom': '1px solid #444',
+                    'borderBottom': f'1px solid {SIDEBAR_BORDER}',
                     'fontSize': '18px'
                 }),
                 html.Button(
@@ -2114,7 +2129,7 @@ def create_sidebar_nav():
                         'top': '15px',
                         'right': '15px',
                         'backgroundColor': 'transparent',
-                        'color': 'white',
+                        'color': SIDEBAR_TEXT_MUTED,
                         'border': 'none',
                         'cursor': 'pointer',
                         'padding': '5px',
@@ -2135,11 +2150,13 @@ def create_sidebar_nav():
                     'padding': '15px 20px',
                     'cursor': 'pointer',
                     'borderLeft': '4px solid transparent',
-                    'color': 'white',
+                    'color': SIDEBAR_TEXT_MUTED,
                     'transition': 'all 0.3s ease',
                     'display': 'flex',
                     'alignItems': 'center',
-                    'fontSize': '14px'
+                    'fontSize': '14px',
+                    'borderRadius': '0 14px 14px 0',
+                    'margin': '6px 10px 0 0'
                 }) for item in nav_items
             ])
         ], 
@@ -2151,11 +2168,12 @@ def create_sidebar_nav():
             'left': '0px',  # 默认显示
             'width': '280px',
             'height': 'calc(100vh - 90px)',  # 调整高度以适应标题栏
-            'backgroundColor': '#2c3e50',
+            'backgroundColor': SIDEBAR_SURFACE,
             'zIndex': '1000',
             'transition': 'left 0.3s ease',
-            'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
-            'overflowY': 'auto'
+            'boxShadow': SIDEBAR_SHADOW,
+            'overflowY': 'auto',
+            'borderRight': f'1px solid {SIDEBAR_BORDER}'
         }),
         
         # 遮罩层
@@ -2183,7 +2201,7 @@ def create_sidebar_nav():
                     'height': '50px',
                     'backgroundColor': 'transparent',
                     'border': 'none',
-                    'color': 'white',
+                    'color': SIDEBAR_PRIMARY,
                     'cursor': 'pointer',
                     'display': 'flex',
                     'alignItems': 'center',
@@ -2198,10 +2216,11 @@ def create_sidebar_nav():
             'left': '-30px',  # 默认隐藏
             'width': '30px',
             'height': 'calc(100vh - 90px)',
-            'backgroundColor': '#2c3e50',
+            'backgroundColor': SIDEBAR_SURFACE,
             'zIndex': '999',
             'transition': 'left 0.3s ease',
-            'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
+            'boxShadow': SIDEBAR_SHADOW,
+            'borderRight': f'1px solid {SIDEBAR_BORDER}',
             'display': 'flex',
             'alignItems': 'center',
             'justifyContent': 'center'
@@ -2237,7 +2256,6 @@ app.layout = html.Div([
         'width': '100%',
         'height': '90px',  # 固定标题栏高度
         'backgroundColor': 'white',
-        'borderBottom': '2px solid #e5e7eb',
         'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
         'zIndex': '1002'
     }),
@@ -2249,7 +2267,7 @@ app.layout = html.Div([
     html.Div([
         # 内容区域 - 使用回调动态加载内容
         html.Div(id='tabs-content'),
-    ], id='main-content-wrapper', style={
+    ], id='main-content-wrapper', className='main-content-wrapper', style={
         'marginLeft': '300px',  # 默认为导航栏留出空间
         'marginTop': '110px',  # 为固定标题栏留出空间
         'transition': 'margin-left 0.3s ease',
@@ -2732,6 +2750,7 @@ app.layout = html.Div([
     [Output('sidebar-nav', 'style'),
      Output('nav-overlay', 'style'),
      Output('main-content-wrapper', 'style'),
+    Output('main-content-wrapper', 'className'),
      Output('nav-open-state', 'data'),
      Output('nav-toggle-btn', 'style'),
      Output('nav-edge-bar', 'style'),
@@ -2747,12 +2766,13 @@ app.layout = html.Div([
      Input('nav-tab-testing-efficiency', 'n_clicks'),
      Input('nav-tab-test-coverage', 'n_clicks'),
      Input('nav-tab-test-status', 'n_clicks'),
-     Input('nav-tab-chat', 'n_clicks')],
+     Input('nav-tab-chat', 'n_clicks'),
+     Input('current-nav-item', 'data')],
     [State('nav-open-state', 'data')],
     prevent_initial_call=False  # 只在用户点击时触发
 )
 def toggle_sidebar(toggle_clicks, close_clicks, overlay_clicks, edge_toggle_clicks, edge_toggle_clicks_2,
-                  nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav5_clicks, nav6_clicks, nav7_clicks, is_open):
+                  nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav5_clicks, nav6_clicks, nav7_clicks, current_nav, is_open):
     from dash import callback_context
     
     # 确定触发的按钮
@@ -2767,11 +2787,22 @@ def toggle_sidebar(toggle_clicks, close_clicks, overlay_clicks, edge_toggle_clic
         'top': '90px',  # 从标题栏下方开始
         'width': '280px',
         'height': 'calc(100vh - 90px)',  # 调整高度
-        'backgroundColor': '#2c3e50',
+        'backgroundColor': SIDEBAR_SURFACE,
         'zIndex': '1000',
         'transition': 'left 0.3s ease',
-        'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
-        'overflowY': 'auto'
+        'boxShadow': SIDEBAR_SHADOW,
+        'overflowY': 'auto',
+        'borderRight': f'1px solid {SIDEBAR_BORDER}'
+    }
+
+    nav_mapping = {
+        'nav-tab-defect-status': 'tab-defect-status',
+        'nav-tab-project-analysis': 'tab-project-analysis',
+        'nav-tab-testing-team': 'tab-testing-team',
+        'nav-tab-testing-efficiency': 'tab-testing-efficiency',
+        'nav-tab-test-coverage': 'tab-test-coverage',
+        'nav-tab-test-status': 'tab-test-status',
+        'nav-tab-chat': 'tab-chat'
     }
     
     # 主内容区基础样式
@@ -2780,6 +2811,27 @@ def toggle_sidebar(toggle_clicks, close_clicks, overlay_clicks, edge_toggle_clic
         'transition': 'margin-left 0.3s ease',
         'minHeight': 'calc(100vh - 110px)',
         'padding': '20px'
+    }
+
+    main_content_base_class = 'main-content-wrapper'
+    chat_content_base_class = 'main-content-wrapper chat-page-layout'
+
+    chat_content_base_style = {
+        'position': 'fixed',
+        'top': '90px',
+        'right': '0',
+        'bottom': '0',
+        'width': 'auto',
+        'maxWidth': 'none',
+        'marginLeft': '0px',
+        'marginTop': '0',
+        'transition': 'margin-left 0.3s ease',
+        'minHeight': 'calc(100vh - 90px)',
+        'height': 'calc(100vh - 90px)',
+        'padding': '0',
+        'overflow': 'hidden',
+        'background': 'transparent',
+        'zIndex': '1001'
     }
     
     # 遮罩层基础样式
@@ -2798,14 +2850,14 @@ def toggle_sidebar(toggle_clicks, close_clicks, overlay_clicks, edge_toggle_clic
         'position': 'fixed',
         'top': '20px',
         'zIndex': '1001',
-        'backgroundColor': '#28a745',
-        'color': 'white',
-        'border': 'none',
+        'backgroundColor': SIDEBAR_SURFACE,
+        'color': SIDEBAR_PRIMARY,
+        'border': f'1px solid {SIDEBAR_BORDER}',
         'padding': '12px',
         'borderRadius': '6px',
         'cursor': 'pointer',
         'fontSize': '16px',
-        'boxShadow': '0 2px 4px rgba(0,0,0,0.3)',
+        'boxShadow': '0 10px 24px rgba(15, 23, 42, 0.08)',
         'transition': 'all 0.3s ease'
     }
     
@@ -2815,38 +2867,101 @@ def toggle_sidebar(toggle_clicks, close_clicks, overlay_clicks, edge_toggle_clic
         'top': '90px',
         'width': '30px',
         'height': 'calc(100vh - 90px)',
-        'backgroundColor': '#2c3e50',
+        'backgroundColor': SIDEBAR_SURFACE,
         'zIndex': '999',
         'transition': 'left 0.3s ease',
-        'boxShadow': '2px 0 5px rgba(0,0,0,0.3)',
+        'boxShadow': SIDEBAR_SHADOW,
+        'borderRight': f'1px solid {SIDEBAR_BORDER}',
         'display': 'flex',
         'alignItems': 'center',
         'justifyContent': 'center'
     }
+
+    chat_toggle_btn_style = {
+        **toggle_btn_base_style,
+        'left': '16px',
+        'top': '106px',
+        'backgroundColor': 'rgba(255, 255, 255, 0.92)',
+        'backdropFilter': 'blur(10px)'
+    }
+
+    hidden_edge_bar_style = {
+        **edge_bar_base_style,
+        'left': '-30px'
+    }
+
+    def build_standard_layout(nav_is_open):
+        if nav_is_open:
+            return (
+                {**nav_base_style, 'left': '0px'},
+                {**overlay_base_style, 'display': 'none'},
+                {**main_content_base_style, 'marginLeft': '300px'},
+                main_content_base_class,
+                {**toggle_btn_base_style, 'left': '290px'},
+                {**edge_bar_base_style, 'left': '-30px'}
+            )
+
+        return (
+            {**nav_base_style, 'left': '-280px'},
+            {**overlay_base_style, 'display': 'none'},
+            {**main_content_base_style, 'marginLeft': '40px'},
+            main_content_base_class,
+            {**toggle_btn_base_style, 'left': '50px'},
+            {**edge_bar_base_style, 'left': '0px'}
+        )
+
+    def build_chat_layout(drawer_open):
+        if drawer_open:
+            return (
+                {**nav_base_style, 'left': '0px'},
+                {**overlay_base_style, 'display': 'none'},
+                {**chat_content_base_style, 'left': '300px'},
+                chat_content_base_class,
+                {**toggle_btn_base_style, 'left': '290px'},
+                {**edge_bar_base_style, 'left': '-30px'}
+            )
+
+        return (
+            {**nav_base_style, 'left': '-280px'},
+            {**overlay_base_style, 'display': 'none'},
+            {**chat_content_base_style, 'left': '40px'},
+            chat_content_base_class,
+            {**toggle_btn_base_style, 'left': '50px'},
+            {**edge_bar_base_style, 'left': '0px'}
+        )
     
     # 切换导航栏显示/隐藏
     if trigger_id in ['nav-toggle-btn', 'nav-close-btn', 'nav-overlay', 'nav-edge-toggle-btn', 'nav-edge-toggle-btn-2']:
         # 点击切换按钮、关闭按钮、遮罩层或边缘按钮时切换显示状态
         is_open = not is_open
-        
-        if is_open:
-            nav_style = {**nav_base_style, 'left': '0px'}
-            overlay_style = {**overlay_base_style, 'display': 'none'}  # 默认显示时不需要遮罩
-            main_content_style = {**main_content_base_style, 'marginLeft': '300px'}
-            toggle_btn_style = {**toggle_btn_base_style, 'left': '290px'}  # 导航栏显示时按钮在右侧
-            edge_bar_style = {**edge_bar_base_style, 'left': '-30px'}  # 隐藏边缘条
+        active_nav = current_nav if current_nav in nav_mapping.values() else 'tab-defect-status'
+
+        if active_nav == 'tab-chat':
+            nav_style, overlay_style, main_content_style, main_content_class, toggle_btn_style, edge_bar_style = build_chat_layout(is_open)
         else:
-            nav_style = {**nav_base_style, 'left': '-280px'}
-            overlay_style = {**overlay_base_style, 'display': 'none'}
-            main_content_style = {**main_content_base_style, 'marginLeft': '40px'}  # 为边缘条留出空间
-            toggle_btn_style = {**toggle_btn_base_style, 'left': '50px'}  # 导航栏隐藏时按钮在边缘条右侧
-            edge_bar_style = {**edge_bar_base_style, 'left': '0px'}  # 显示边缘条
-            
-        return nav_style, overlay_style, main_content_style, is_open, toggle_btn_style, edge_bar_style, edge_bar_style
+            nav_style, overlay_style, main_content_style, main_content_class, toggle_btn_style, edge_bar_style = build_standard_layout(is_open)
+
+        return nav_style, overlay_style, main_content_style, main_content_class, is_open, toggle_btn_style, edge_bar_style, edge_bar_style
     
     elif trigger_id.startswith('nav-tab-'):
-        # 点击导航项时不改变导航栏的显示状态，使用no_update提升性能
-        return no_update, no_update, no_update, no_update, no_update, no_update, no_update
+        target_nav = nav_mapping.get(trigger_id, current_nav)
+
+        if target_nav == 'tab-chat':
+            nav_style, overlay_style, main_content_style, main_content_class, toggle_btn_style, edge_bar_style = build_chat_layout(False)
+            return nav_style, overlay_style, main_content_style, main_content_class, False, toggle_btn_style, edge_bar_style, edge_bar_style
+
+        nav_style, overlay_style, main_content_style, main_content_class, toggle_btn_style, edge_bar_style = build_standard_layout(is_open)
+        return nav_style, overlay_style, main_content_style, main_content_class, is_open, toggle_btn_style, edge_bar_style, edge_bar_style
+
+    elif trigger_id == 'current-nav-item':
+        active_nav = current_nav if current_nav in nav_mapping.values() else 'tab-defect-status'
+
+        if active_nav == 'tab-chat':
+            nav_style, overlay_style, main_content_style, main_content_class, toggle_btn_style, edge_bar_style = build_chat_layout(False)
+            return nav_style, overlay_style, main_content_style, main_content_class, False, toggle_btn_style, edge_bar_style, edge_bar_style
+
+        nav_style, overlay_style, main_content_style, main_content_class, toggle_btn_style, edge_bar_style = build_standard_layout(is_open)
+        return nav_style, overlay_style, main_content_style, main_content_class, is_open, toggle_btn_style, edge_bar_style, edge_bar_style
     
     raise PreventUpdate
 
@@ -2887,19 +3002,23 @@ def update_nav_selection(nav1_clicks, nav2_clicks, nav3_clicks, nav4_clicks, nav
         'padding': '15px 20px',
         'cursor': 'pointer',
         'borderLeft': '4px solid transparent',
-        'color': 'white',
+        'color': SIDEBAR_TEXT_MUTED,
         'transition': 'all 0.3s ease',
         'display': 'flex',
         'alignItems': 'center',
-        'fontSize': '14px'
+        'fontSize': '14px',
+        'borderRadius': '0 14px 14px 0',
+        'margin': '6px 10px 0 0'
     }
     
     # 激活状态样式
     active_nav_style = {
         **base_nav_style,
-        'backgroundColor': '#34495e',
-        'borderLeft': '4px solid #3498db',
-        'color': '#3498db'
+        'backgroundColor': SIDEBAR_SURFACE_ACTIVE,
+        'borderLeft': f'4px solid {SIDEBAR_PRIMARY}',
+        'color': SIDEBAR_PRIMARY,
+        'fontWeight': '600',
+        'boxShadow': '0 10px 22px rgba(37, 99, 235, 0.08)'
     }
     
     # 确定当前选中的导航项
@@ -3507,22 +3626,30 @@ def render_content(tab):
                     style={'padding': '20px', 'textAlign': 'center', 'color': '#666'}
                 ),
                 style={
+                    'width': '100%',
                     'height': '100%',
-                    'minHeight': '0',
-                    'backgroundColor': 'white',
-                    'border': '1px solid #e5e7eb',
-                    'borderRadius': '12px',
-                    'boxShadow': '0 2px 10px rgba(0,0,0,0.08)',
+                    'minHeight': '100%',
+                    'flex': '1 1 auto',
+                    'backgroundColor': 'transparent',
+                    'border': 'none',
+                    'borderRadius': '0',
+                    'boxShadow': 'none',
                     'overflow': 'hidden',
                     'display': 'flex',
                     'flexDirection': 'column'
                 }
             )
         ], style={
-            'height': 'calc(100vh - 150px)',
-            'minHeight': '0',
+            'width': '100%',
+            'height': '100%',
+            'minHeight': '100%',
+            'flex': '1 1 auto',
+            'margin': '0',
             'display': 'flex',
-            'flexDirection': 'column'
+            'flexDirection': 'column',
+            'backgroundColor': 'transparent',
+            'background': 'transparent',
+            'overflow': 'hidden'
         })
     elif tab == 'tab-defect-high-runner':
         # High Complexity Defect Analysis Tab

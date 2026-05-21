@@ -1,3 +1,4 @@
+import argparse
 import os
 
 # 默认关闭 reloader/hot reload，避免运行时文件写入触发服务重载
@@ -21,7 +22,6 @@ if not IS_RELOADER:
     from functools import lru_cache
     import concurrent.futures
     from typing import Dict, Optional, List
-    from cache_versioning import get_cache_version
 else:
     # Reloader进程的占位符导入
     print("🔄 data_processor: Reloader进程跳过重度导入")
@@ -68,17 +68,20 @@ class HistoryCache:
     
     def preload_histories(self, defect_ids: List[str], history_dir: str = "history", max_workers: int = 10):
         """批量预加载历史数据"""
-        print(f"开始预加载 {len(defect_ids)} 个历史记录（数据库优先）...")
+        print(f"开始预加载 {len(defect_ids)} 个历史文件...")
         
         def load_single_history(defect_id):
             try:
-                history_data = _load_history_with_fallback(defect_id, history_dir=history_dir)
-                if history_data is None:
+                history_file = os.path.join(history_dir, f"{defect_id}_history.json")
+                if not os.path.exists(history_file):
                     return None
-
+                
+                with open(history_file, 'r', encoding='utf-8') as f:
+                    history_data = json.load(f)
+                
                 return defect_id, history_data
             except Exception as e:
-                print(f"预加载历史记录失败 {defect_id}: {e}")
+                print(f"预加载历史文件失败 {defect_id}: {e}")
                 return None
         
         loaded_count = 0
@@ -93,7 +96,7 @@ class HistoryCache:
                     self.set(defect_id, history_data)
                     loaded_count += 1
         
-        print(f"预加载完成，成功加载 {loaded_count} 个历史记录")
+        print(f"预加载完成，成功加载 {loaded_count} 个历史文件")
 
 # 全局历史缓存实例
 history_cache = HistoryCache(cache_size=2000)
@@ -113,163 +116,6 @@ def _default_octane_db_path() -> str:
 
 _DEFAULT_OCTANE_DB_PATH = _default_octane_db_path()
 _DEFAULT_OCTANE_TEAM = os.environ.get("OCTANE_TEAM", "DTSV_China")
-_DEFAULT_OCTANE_SOURCE = os.environ.get("OCTANE_DATA_SOURCE", "db_only").strip().lower()
-
-
-def _extract_year_from_text(text: str, fallback_year: Optional[int] = None) -> int:
-    if not text:
-        return fallback_year if fallback_year is not None else datetime.now().year
-    try:
-        year_match = re.search(r"(\d{4})", str(text))
-        if year_match:
-            return int(year_match.group(1))
-    except Exception:
-        pass
-    return fallback_year if fallback_year is not None else datetime.now().year
-
-
-def _load_octane_payload_data(kind: str, year: int, spec: str = "", db_path: Optional[str] = None) -> Optional[List[Dict]]:
-    db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
-    if not db_path_val or not os.path.exists(db_path_val):
-        return None
-
-    try:
-        conn = sqlite3.connect(db_path_val)
-        try:
-            row = conn.execute(
-                "SELECT payload_json FROM octane_payloads WHERE kind=? AND team=? AND year=? AND spec=?",
-                (kind, _DEFAULT_OCTANE_TEAM, int(year), spec),
-            ).fetchone()
-        finally:
-            conn.close()
-
-        if not row:
-            return None
-
-        payload = json.loads(row[0])
-        data_list = payload.get("data") if isinstance(payload, dict) else payload
-        if isinstance(data_list, list) and data_list and all(isinstance(item, dict) for item in data_list):
-            return data_list
-    except Exception:
-        return None
-
-    return None
-
-
-def _load_defects_from_optimized_table(year: int, db_path: Optional[str] = None) -> Optional[List[Dict]]:
-    """从优化表 octane_defects 读取原始 defect JSON 数据（按年份全量）。"""
-    db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
-    if not db_path_val or not os.path.exists(db_path_val):
-        return None
-
-    rows = []
-    try:
-        conn = sqlite3.connect(db_path_val)
-        try:
-            rows = conn.execute(
-                """
-                SELECT raw_json
-                FROM octane_defects
-                WHERE year=?
-                ORDER BY defect_id
-                """,
-                (int(year),),
-            ).fetchall()
-        finally:
-            conn.close()
-    except Exception:
-        return None
-
-    if not rows:
-        return None
-
-    data_list = []
-    for row in rows:
-        try:
-            obj = json.loads(row[0]) if row and row[0] else None
-            if isinstance(obj, dict):
-                data_list.append(obj)
-        except Exception:
-            continue
-
-    return data_list if data_list else None
-
-
-def _load_manual_runs_from_optimized_table(
-    year: int,
-    db_path: Optional[str] = None,
-    run_team: Optional[str] = _DEFAULT_OCTANE_TEAM,
-) -> Optional[List[Dict]]:
-    """从优化表 octane_manual_runs 读取原始 manual run JSON 数据。"""
-    db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
-    if not db_path_val or not os.path.exists(db_path_val):
-        return None
-
-    rows = []
-    try:
-        conn = sqlite3.connect(db_path_val)
-        try:
-            if run_team:
-                # 优先按 run_team 过滤当前团队，避免跨团队混入
-                rows = conn.execute(
-                    """
-                    SELECT raw_json
-                    FROM octane_manual_runs
-                    WHERE year=? AND run_team=?
-                    ORDER BY spec, mr_id
-                    """,
-                    (int(year), run_team),
-                ).fetchall()
-
-            # 若未指定 run_team 或 run_team 过滤后无数据，回退到该年份所有数据
-            if not rows:
-                rows = conn.execute(
-                    """
-                    SELECT raw_json
-                    FROM octane_manual_runs
-                    WHERE year=?
-                    ORDER BY spec, mr_id
-                    """,
-                    (int(year),),
-                ).fetchall()
-        finally:
-            conn.close()
-    except Exception:
-        return None
-
-    if not rows:
-        return None
-
-    data_list = []
-    for row in rows:
-        try:
-            obj = json.loads(row[0]) if row and row[0] else None
-            if isinstance(obj, dict):
-                data_list.append(obj)
-        except Exception:
-            continue
-
-    return data_list if data_list else None
-
-
-def _discover_table_years(db_path: Optional[str], table_name: str) -> List[int]:
-    if not db_path or not os.path.exists(db_path):
-        return []
-
-    years = []
-    try:
-        conn = sqlite3.connect(db_path)
-        try:
-            rows = conn.execute(
-                f"SELECT DISTINCT year FROM {table_name} WHERE year IS NOT NULL ORDER BY year"
-            ).fetchall()
-            years = [int(row[0]) for row in rows if row and row[0] is not None]
-        finally:
-            conn.close()
-    except Exception:
-        return []
-
-    return years
 
 
 def _load_history_from_db(defect_id: str, db_path: str) -> Optional[Dict]:
@@ -287,45 +133,6 @@ def _load_history_from_db(defect_id: str, db_path: str) -> Optional[Dict]:
             return json.loads(row[0])
         finally:
             conn.close()
-    except Exception:
-        return None
-
-
-def get_history_data(defect_id: str, history_dir: str = "history", db_path: Optional[str] = None) -> Optional[Dict]:
-    """获取历史数据，使用缓存优化"""
-    # 先从缓存获取
-    cached_data = history_cache.get(defect_id)
-    if cached_data is not None:
-        return cached_data
-    
-    db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
-    history_data = _load_history_with_fallback(defect_id, history_dir=history_dir, db_path=db_path_val)
-    if history_data is None:
-        return None
-
-    history_cache.set(defect_id, history_data)
-    return history_data
-
-
-def _load_history_with_fallback(defect_id: str, history_dir: str = "history", db_path: Optional[str] = None) -> Optional[Dict]:
-    db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
-
-    prefer_db = _DEFAULT_OCTANE_SOURCE != "file_only"
-    if prefer_db:
-        history_data_db = _load_history_from_db(defect_id, db_path_val)
-        if history_data_db is not None:
-            return history_data_db
-
-    if _DEFAULT_OCTANE_SOURCE == "db_only":
-        return None
-
-    try:
-        history_file = os.path.join(history_dir, f"{defect_id}_history.json")
-        if not os.path.exists(history_file):
-            return None
-
-        with open(history_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
     except Exception:
         return None
 
@@ -402,7 +209,8 @@ def _save_cached_computed_fields(rows_df: pd.DataFrame, db_path: Optional[str] =
     if rows_df is None or rows_df.empty or not db_path_val:
         return 0
 
-    if not os.path.exists(os.path.dirname(db_path_val)):
+    db_dir = os.path.dirname(db_path_val)
+    if db_dir and not os.path.exists(db_dir):
         return 0
 
     required_cols = [
@@ -470,403 +278,35 @@ def _save_cached_computed_fields(rows_df: pd.DataFrame, db_path: Optional[str] =
         return 0
 
 
-def _normalize_project_value(value) -> str:
-    text = "" if pd.isna(value) else str(value).strip()
-    if not text:
-        return "Unknown"
-
-    canonical_map = {
-        'idcevo': 'IDCEVO',
-        'idc': 'IDC',
-        'mgu': 'MGU',
-        'app': 'App',
-        'rsu': 'RSU',
-    }
-    lower_text = text.lower()
-    if lower_text in canonical_map:
-        return canonical_map[lower_text]
-    return text
-
-
-def _normalize_project_signal(value) -> str:
-    text = "" if pd.isna(value) else str(value).strip()
-    if not text:
-        return ""
-
-    if text.lower() in {"unknown", "none", "nan", "null", "unknown/empty"}:
-        return ""
-
-    return _normalize_project_value(text)
-
-
-def _infer_project_from_ecu(ecu_value) -> str:
-    ecu_text = "" if pd.isna(ecu_value) else str(ecu_value).strip().upper()
-    if not ecu_text:
-        return ""
-
-    if ecu_text in {"CDE-01", "ICON-25", "BMTH-01", "IPN-10", "IPN-10_DE", "SD-AMAP"} or "IDCEVO" in ecu_text:
-        return "IDCEVO"
-    if "HU-MGU_02_A" in ecu_text or "IDC23" in ecu_text:
-        return "IDC"
-    if ecu_text == "SP_NAVINFO":
-        return "MGU"
-    if ecu_text == "BMT":
-        return "MGU"
-    if "HU-MGU_02_L" in ecu_text or "HU-MGU_01" in ecu_text or "MGU22" in ecu_text or "MGU21" in ecu_text or "MGU18" in ecu_text:
-        return "MGU"
-    if "RSE" in ecu_text or "RSU" in ecu_text:
-        return "RSU"
-    if "MY BMW" in ecu_text or "APP" in ecu_text or "MOBILE" in ecu_text:
-        return "App"
-
-    return ""
-
-
-def _infer_project_from_software_version(sw_value) -> str:
-    text = "" if pd.isna(sw_value) else str(sw_value).strip().upper()
-    if not text:
-        return ""
-
-    if "IDCEVO" in text:
-        return "IDCEVO"
-    if "IDC23" in text or "IDC_23" in text:
-        return "IDC"
-    if "MGU" in text:
-        return "MGU"
-    if "RSE" in text or "RSU" in text:
-        return "RSU"
-    return ""
-
-
-# lead_model → project: only models with ≥0.90 ratio and ≥50 samples in known defects
-_LEAD_MODEL_PROJECT_MAP = {
-    "NA6": "IDCEVO", "NA8": "IDCEVO", "G78": "IDCEVO",
-    "U12": "IDC", "G48": "IDC", "U11": "IDC", "J01": "IDC",
-    "F65": "IDC", "U25": "IDC", "G45": "IDC", "J05": "IDC",
-    "F78": "IDC", "F66": "IDC",
-    "G28": "MGU", "G20": "MGU",
-}
-
-
-def _infer_project_from_lead_model(lead_model_value) -> str:
-    text = "" if pd.isna(lead_model_value) else str(lead_model_value).strip()
-    if not text:
-        return ""
-    return _LEAD_MODEL_PROJECT_MAP.get(text, "")
-
-
-def _resolve_defect_project_value(row, app_top_aidas=None, rsu_top_aidas=None) -> str:
-    for field_name in ('_source_project', '_source_tproject', '_vin_project'):
-        normalized = _normalize_project_signal(row.get(field_name))
-        if normalized:
-            return normalized
-
-    top_aida = "" if pd.isna(row.get('top_aida')) else str(row.get('top_aida')).strip()
-    if top_aida:
-        if app_top_aidas and top_aida in app_top_aidas:
-            return 'App'
-        if rsu_top_aidas and top_aida in rsu_top_aidas:
-            return 'RSU'
-
-    ecu_project = _infer_project_from_ecu(row.get('ecu'))
-    if ecu_project:
-        return ecu_project
-
-    sw_project = _infer_project_from_software_version(row.get('software_version'))
-    if sw_project:
-        return sw_project
-
-    lm_project = _infer_project_from_lead_model(row.get('lead_model'))
-    if lm_project:
-        return lm_project
-
-    return 'Unknown'
-
-
-def _get_existing_columns(conn: sqlite3.Connection, table_name: str) -> List[str]:
-    try:
-        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-        return [str(row[1]) for row in rows if len(row) > 1 and row[1]]
-    except Exception:
-        return []
-
-
-def _ensure_project_columns(conn: sqlite3.Connection, table_name: str) -> bool:
-    cols = _get_existing_columns(conn, table_name)
-    if not cols:
-        return False
-
-    if 'project' not in cols:
-        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN project TEXT")
-    if 'tproject' not in cols:
-        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN tproject TEXT")
-    return True
-
-
-def _ensure_text_columns(conn: sqlite3.Connection, table_name: str, columns: List[str]) -> bool:
-    existing = _get_existing_columns(conn, table_name)
-    if not existing:
-        return False
-
-    existing_set = set(existing)
-    for col in columns:
-        if col and col not in existing_set:
-            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} TEXT")
-            existing_set.add(col)
-    return True
-
-
-def _pick_id_column(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
-    if df is None or df.empty:
-        return None
-    for col in candidates:
-        if col in df.columns:
-            return col
-    return None
-
-
-def _build_project_update_rows(df: pd.DataFrame, id_col: str) -> List[tuple]:
-    if df is None or df.empty or not id_col or 'project' not in df.columns:
-        return []
-
-    dedup = {}
-    for _, row in df[[id_col, 'project']].iterrows():
-        row_id = str(row.get(id_col, '')).strip()
-        if not row_id:
-            continue
-        project_value = _normalize_project_value(row.get('project'))
-        dedup[row_id] = project_value
-
-    return [(project_value, project_value, row_id) for row_id, project_value in dedup.items()]
-
-
-def _serialize_sync_value(value, field_name: str):
-    if field_name in ('project', 'tproject'):
-        return _normalize_project_value(value)
-
-    if value is None:
-        return None
-
-    if isinstance(value, np.ndarray):
-        value = value.tolist()
-
-    if isinstance(value, (list, dict, tuple, set)):
-        try:
-            return json.dumps(value, ensure_ascii=False)
-        except Exception:
-            return str(value)
-
-    if pd.isna(value):
-        return None
-
-    if isinstance(value, (pd.Timestamp, datetime)):
-        return value.isoformat()
-
-    return value
-
-
-def _build_field_update_rows(df: pd.DataFrame, id_col: str, fields: List[str]) -> List[tuple]:
-    if df is None or df.empty or not id_col or not fields:
-        return []
-
-    available_fields = [f for f in fields if f in df.columns]
-    if not available_fields:
-        return []
-
-    dedup_map = {}
-    for _, row in df[[id_col] + available_fields].iterrows():
-        row_id = str(row.get(id_col, '')).strip()
-        if not row_id:
-            continue
-
-        row_payload = {}
-        for field in available_fields:
-            row_payload[field] = _serialize_sync_value(row.get(field), field)
-
-        if 'project' in row_payload and 'tproject' not in row_payload:
-            row_payload['tproject'] = _serialize_sync_value(row_payload.get('project'), 'tproject')
-
-        dedup_map[row_id] = row_payload
-
-    normalized_fields = list(available_fields)
-    if 'project' in normalized_fields and 'tproject' not in normalized_fields:
-        normalized_fields.append('tproject')
-
-    rows = []
-    for row_id, payload in dedup_map.items():
-        rows.append(tuple(payload.get(col) for col in normalized_fields) + (row_id,))
-
-    return normalized_fields, rows
-
-
-def _update_table_fields(
-    conn: sqlite3.Connection,
-    table_name: str,
-    key_column: str,
-    fields: List[str],
-    updates: List[tuple],
-) -> int:
-    if not fields or not updates:
-        return 0
-
-    if not _ensure_text_columns(conn, table_name, fields):
-        return 0
-
-    assignments = ", ".join([f"{col}=?" for col in fields])
-    sql = f"UPDATE {table_name} SET {assignments} WHERE {key_column}=?"
-    cursor = conn.executemany(sql, updates)
-    return max(0, int(cursor.rowcount or 0))
-
-
-def _backfill_empty_project_defaults(conn: sqlite3.Connection, table_name: str, key_column: str) -> int:
-        cols = set(_get_existing_columns(conn, table_name))
-        if 'project' not in cols or 'tproject' not in cols or key_column not in cols:
-                return 0
-
-        conn.execute(
-                f"""
-                UPDATE {table_name}
-                SET project = 'Unknown'
-                WHERE {key_column} IS NOT NULL
-                    AND TRIM(CAST({key_column} AS TEXT)) <> ''
-                    AND (project IS NULL OR TRIM(project) = '')
-                """
-        )
-        cursor = conn.execute(
-                f"""
-                UPDATE {table_name}
-                SET tproject = project
-                WHERE {key_column} IS NOT NULL
-                    AND TRIM(CAST({key_column} AS TEXT)) <> ''
-                    AND (tproject IS NULL OR TRIM(tproject) = '')
-                """
-        )
-        return max(0, int(cursor.rowcount or 0))
-
-
-def sync_processed_fields_to_db(
-    defect_df: Optional[pd.DataFrame] = None,
-    manual_df: Optional[pd.DataFrame] = None,
-    db_path: Optional[str] = None,
-) -> Dict[str, int]:
-    """将 data_processor 处理后的关键业务字段同步回优化表，供 Agent 直接查询。"""
-    stats = {
-        'defect_candidates': 0,
-        'manual_run_candidates': 0,
-        'defect_updates': 0,
-        'manual_run_updates': 0,
-    }
-
+def get_history_data(defect_id: str, history_dir: str = "history", db_path: Optional[str] = None) -> Optional[Dict]:
+    """获取历史数据，使用缓存优化"""
+    # 先从缓存获取
+    cached_data = history_cache.get(defect_id)
+    if cached_data is not None:
+        return cached_data
+    
     db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
-    if not db_path_val or not os.path.exists(db_path_val):
-        return stats
+    history_data_db = _load_history_from_db(defect_id, db_path_val)
+    if history_data_db is not None:
+        history_cache.set(defect_id, history_data_db)
+        return history_data_db
 
-    if defect_df is None:
-        defect_years = _discover_table_years(db_path_val, 'octane_defects')
-        defect_frames = []
-        for year in defect_years:
-            try:
-                yearly_df = load_defect_data(file_pattern=f"defect/{year}_defect.json")
-            except Exception:
-                continue
-            if yearly_df is not None and not yearly_df.empty:
-                defect_frames.append(yearly_df)
-
-        if defect_frames:
-            defect_df = pd.concat(defect_frames, ignore_index=True)
-            if 'id' in defect_df.columns:
-                defect_df['id'] = defect_df['id'].astype(str).str.strip()
-                defect_df = defect_df[defect_df['id'] != '']
-                defect_df = defect_df.drop_duplicates(subset=['id'], keep='last').reset_index(drop=True)
-        else:
-            defect_df = load_defect_data()
-
-    if manual_df is None:
-        manual_years = _discover_table_years(db_path_val, 'octane_manual_runs')
-        if manual_years:
-            old_test_years_env = os.environ.get('TEST_DATA_YEARS')
-            os.environ['TEST_DATA_YEARS'] = ",".join(str(y) for y in manual_years)
-            try:
-                manual_df = load_test_data()
-            finally:
-                if old_test_years_env is None:
-                    os.environ.pop('TEST_DATA_YEARS', None)
-                else:
-                    os.environ['TEST_DATA_YEARS'] = old_test_years_env
-        else:
-            manual_df = load_test_data()
-
-    defect_id_col = _pick_id_column(defect_df, ['defect_id', 'id'])
-    manual_id_col = _pick_id_column(manual_df, ['mr_id', 'id', 'run_id'])
-
-    defect_fields = [
-        'project', 'tproject', 'market', 'aida_english', 'top_aida',
-        'matrix', 'matrix_display', 'matrix_order', 'severity_group', 'complexity',
-        'domain', 'classification', 'Shift_PU', 'fv', 'team', 'fvp',
-        'pu', 'status_phase', 'test_week', 'software_version', 'blocking_reason',
-        'error_occurrence', 'solution', 'release', 'ecu', 'tester', 'istep', 'lead_model',
-    ]
-    manual_fields = [
-        'project', 'tproject', 'aida_english', 'top_aida',
-        'fv', 'team', 'fvp', 'lead_model', 'test_week',
-        'run_status', 'tester', 'pu', 'model', 'test_event', 'author_name',
-    ]
-
-    defect_fields_use, defect_updates = ([], [])
-    manual_fields_use, manual_updates = ([], [])
-
-    if defect_id_col:
-        defect_build = _build_field_update_rows(defect_df, defect_id_col, defect_fields)
-        if defect_build:
-            defect_fields_use, defect_updates = defect_build
-    if manual_id_col:
-        manual_build = _build_field_update_rows(manual_df, manual_id_col, manual_fields)
-        if manual_build:
-            manual_fields_use, manual_updates = manual_build
-
-    stats['defect_candidates'] = len(defect_updates)
-    stats['manual_run_candidates'] = len(manual_updates)
-
-    if not defect_updates and not manual_updates:
-        return stats
-
-    conn = sqlite3.connect(db_path_val)
+    # 缓存未命中，从文件加载
     try:
-        if defect_updates:
-            stats['defect_updates'] = _update_table_fields(
-                conn,
-                table_name='octane_defects',
-                key_column='defect_id',
-                fields=defect_fields_use,
-                updates=defect_updates,
-            )
-
-        if manual_updates:
-            stats['manual_run_updates'] = _update_table_fields(
-                conn,
-                table_name='octane_manual_runs',
-                key_column='mr_id',
-                fields=manual_fields_use,
-                updates=manual_updates,
-            )
-
-        _backfill_empty_project_defaults(conn, table_name='octane_defects', key_column='defect_id')
-        _backfill_empty_project_defaults(conn, table_name='octane_manual_runs', key_column='mr_id')
-
-        conn.commit()
-    finally:
-        conn.close()
-
-    return stats
-
-
-def sync_processed_project_to_db(
-    defect_df: Optional[pd.DataFrame] = None,
-    manual_df: Optional[pd.DataFrame] = None,
-    db_path: Optional[str] = None,
-) -> Dict[str, int]:
-    """兼容旧接口：已升级为同步处理后的关键业务字段（不止 project）。"""
-    return sync_processed_fields_to_db(defect_df=defect_df, manual_df=manual_df, db_path=db_path)
+        history_file = os.path.join(history_dir, f"{defect_id}_history.json")
+        if not os.path.exists(history_file):
+            return None
+        
+        with open(history_file, 'r', encoding='utf-8') as f:
+            history_data = json.load(f)
+        
+        # 存入缓存
+        history_cache.set(defect_id, history_data)
+        return history_data
+        
+    except Exception as e:
+        print(f"读取历史文件失败 {defect_id}: {e}")
+        return None
 
 # ===== 通用工具函数 =====
 
@@ -996,24 +436,7 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
         return pd.DataFrame()
     
     dfs = []
-    year_val = _extract_year_from_text(file_pattern)
-
-    # 默认数据库优先，减少磁盘JSON解析开销
-    if _DEFAULT_OCTANE_SOURCE != "file_only":
-        db_defect_data = _load_octane_payload_data("defects", year_val)
-        if db_defect_data:
-            print(f"📦 从数据库加载 {year_val} 年 defects 数据成功: {len(db_defect_data)} 条")
-            dfs.append(pd.json_normalize(db_defect_data, max_level=0))
-
-        optimized_defect_data = _load_defects_from_optimized_table(year_val)
-        if optimized_defect_data:
-            print(f"📦 从数据库优化表加载 {year_val} 年 defects 数据成功: {len(optimized_defect_data)} 条")
-            dfs.append(pd.json_normalize(optimized_defect_data, max_level=0))
-
-    if _DEFAULT_OCTANE_SOURCE == "db_only":
-        files = []
-    else:
-        files = [] if (dfs and _DEFAULT_OCTANE_SOURCE in ("db_first",)) else glob.glob(file_pattern)
+    files = glob.glob(file_pattern)
     
     # 过滤掉失败记录文件和master数据文件，只保留实际的缺陷数据文件
     filtered_files = [f for f in files if not any(pattern in f for pattern in [
@@ -1056,39 +479,42 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
                 print(f"警告: 处理文件 {file} 时发生意外错误: {e}。已跳过。")
                 continue
     
-    # 在 file_only 或 db miss 时兜底数据库
-    if not dfs and _DEFAULT_OCTANE_SOURCE != "file_only":
-        db_defect_data = _load_octane_payload_data("defects", year_val)
-        if db_defect_data:
-            print(f"📦 文件加载未命中，回退数据库 {year_val} 年 defects: {len(db_defect_data)} 条")
-            dfs.append(pd.json_normalize(db_defect_data, max_level=0))
+    if not dfs:
+        try:
+            year_match = re.search(r"(\d{4})", file_pattern)
+            year_val = int(year_match.group(1)) if year_match else datetime.now().year
+        except Exception:
+            year_val = datetime.now().year
 
-        optimized_defect_data = _load_defects_from_optimized_table(year_val)
-        if optimized_defect_data:
-            print(f"📦 文件加载未命中，回退数据库优化表 {year_val} 年 defects: {len(optimized_defect_data)} 条")
-            dfs.append(pd.json_normalize(optimized_defect_data, max_level=0))
+        db_path_val = _DEFAULT_OCTANE_DB_PATH
+        if os.path.exists(db_path_val):
+            try:
+                conn = sqlite3.connect(db_path_val)
+                try:
+                    row = conn.execute(
+                        "SELECT payload_json FROM octane_payloads WHERE kind=? AND team=? AND year=? AND spec=?",
+                        ("defects", _DEFAULT_OCTANE_TEAM, int(year_val), ""),
+                    ).fetchone()
+                finally:
+                    conn.close()
+
+                if row:
+                    payload = json.loads(row[0])
+                    data_list = payload.get("data") if isinstance(payload, dict) else payload
+                    if isinstance(data_list, list) and data_list and all(isinstance(item, dict) for item in data_list):
+                        dfs.append(pd.json_normalize(data_list, max_level=0))
+            except Exception:
+                pass
 
     if not dfs:
         return pd.DataFrame()
         
     ddf = pd.concat(dfs, ignore_index=True)
-
-    if 'id' in ddf.columns:
-        ddf['id'] = ddf['id'].astype(str).str.strip()
-        ddf = ddf[ddf['id'] != '']
-        ddf = ddf.drop_duplicates(subset=['id'], keep='last').reset_index(drop=True)
     
     # 处理时间和测试周
     if 'creation_time' in ddf.columns:
         ddf['creation_time'] = ddf['creation_time'].str.replace('T', ' ').str.replace('Z', '')
         ddf['creation_time'] = pd.to_datetime(ddf['creation_time'], format='%Y-%m-%d %H:%M:%S')
-
-        # 当按具体年份加载时，确保仅返回对应年份数据
-        if file_pattern and ('*' not in str(file_pattern)):
-            year_match = re.search(r"(\d{4})", str(file_pattern))
-            if year_match:
-                target_year = int(year_match.group(1))
-                ddf = ddf[ddf['creation_time'].dt.year == target_year]
         
         # 生成包含年份的test_week
         ddf['test_week'] = (ddf['creation_time'].dt.year.astype(str) + '-CW' + 
@@ -1752,24 +1178,13 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
             'is_master_score': is_master_score
         }
 
-    # 预加载master数据以提高性能（数据库优先，按当前年份）
+    # 预加载master数据以提高性能
     master_data_cache = {}
     try:
-        master_data_list = _load_octane_payload_data("defects_master", year_val)
-        if not master_data_list:
-            master_file_path = f"defect/{year_val}_defect_master.json"
-            if os.path.exists(master_file_path):
-                with open(master_file_path, "r", encoding="utf-8") as f:
-                    loaded_master = json.load(f)
-                if isinstance(loaded_master, dict) and isinstance(loaded_master.get("data"), list):
-                    master_data_list = loaded_master["data"]
-                elif isinstance(loaded_master, list):
-                    master_data_list = loaded_master
-                else:
-                    master_data_list = []
-
-        master_df_temp = pd.json_normalize(master_data_list) if master_data_list else pd.DataFrame()
-
+        with open("defect/2025_defect_master.json", "r", encoding="utf-8") as f:
+            master_data = json.load(f)
+        master_df_temp = pd.json_normalize(master_data)
+        
         if not master_df_temp.empty:
             # 将master数据转换为字典，以id为key，方便快速查找
             master_df_temp['id'] = master_df_temp['id'].astype(str)
@@ -1795,10 +1210,8 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
     # 添加子票数量字段
     if '子票数量' not in ddf.columns:
         ddf['子票数量'] = 0
-    
-    # 预载入已计算字段缓存，按 last_modified 做增量复用
+
     recalc_mask = pd.Series(True, index=ddf.index)
-    cached_hits = 0
     if 'id' in ddf.columns and 'last_modified' in ddf.columns:
         ddf['_defect_id_norm'] = ddf['id'].astype(str).str.strip()
         ddf['_last_modified_norm'] = ddf['last_modified'].apply(lambda x: '' if pd.isna(x) else str(x))
@@ -1812,7 +1225,6 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
             cache_valid_mask = has_cached_row & (ddf['_last_modified_norm'] == ddf['_cached_last_modified'])
 
             if cache_valid_mask.any():
-                cached_hits = int(cache_valid_mask.sum())
                 ddf.loc[cache_valid_mask, 'processing_cycle_days'] = ddf.loc[cache_valid_mask, '_defect_id_norm'].map(
                     cache_by_id['cached_processing_cycle_days'].to_dict()
                 ).fillna(0)
@@ -1836,9 +1248,8 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
                 ).fillna(0).astype(int).astype(bool)
 
                 recalc_mask = ~cache_valid_mask
-                print(f"♻️ 已复用 {cached_hits} 条缓存计算结果，需重算 {int(recalc_mask.sum())} 条")
+                print(f"♻️ 已复用 {int(cache_valid_mask.sum())} 条缓存计算结果，需重算 {int(recalc_mask.sum())} 条")
 
-    # 添加processing_cycle_days字段（仅重算增量）
     if 'processing_cycle_days' not in ddf.columns:
         ddf['processing_cycle_days'] = 0
 
@@ -1865,9 +1276,7 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
                 return 0
 
         # 只对 'Parent' 类型的票据应用此逻辑
-        parent_mask = ddf['parent_child'] == 'Parent'
-        if recalc_mask is not None:
-            parent_mask = parent_mask & recalc_mask
+        parent_mask = (ddf['parent_child'] == 'Parent') & recalc_mask
         if parent_mask.any():
             print("为 'Parent' 票据计算子票数量...")
             # 使用 relation_to_udf 字段来计算
@@ -1875,7 +1284,6 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
             print(f"已为 {parent_mask.sum()} 个 'Parent' 票据更新了子票数量。")
 
 
-    # 应用新的TopIssue风险评分系统（仅重算增量）
     for col, default_val in [
         ("topissue_display", "0"),
         ("topissue_recommend_reason", ""),
@@ -1890,17 +1298,13 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
         print("计算TopIssue风险评分...")
         topissue_results = ddf.loc[recalc_mask].apply(calculate_topissue_risk_score, axis=1)
 
-        # 预先统一为浮点，避免后续写入时触发 dtype 警告
         ddf["topissue_risk_score"] = pd.to_numeric(ddf["topissue_risk_score"], errors='coerce').fillna(0.0).astype(float)
-
-        # 拆分结果到对应列
         ddf.loc[recalc_mask, "topissue_display"] = topissue_results.apply(lambda x: x["topissue_display"])
         ddf.loc[recalc_mask, "topissue_recommend_reason"] = topissue_results.apply(lambda x: x["topissue_recommend_reason"])
         ddf.loc[recalc_mask, "topissue_risk_score"] = topissue_results.apply(lambda x: x["topissue_risk_score"])
         ddf.loc[recalc_mask, "is_topissue"] = topissue_results.apply(lambda x: x["is_topissue"])
         ddf.loc[recalc_mask, "is_master_score"] = topissue_results.apply(lambda x: x["is_master_score"])
 
-        # 回写增量计算结果到数据库
         saved_count = _save_cached_computed_fields(ddf.loc[recalc_mask], data_year=year_val)
         if saved_count > 0:
             print(f"💾 已回写 {saved_count} 条计算结果到数据库缓存")
@@ -1992,18 +1396,8 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
 
     # 加载VIN到项目的映射和VIN到Market的映射
     vin_to_project, vin_to_market = load_vin_project_mapping()
-
-    if 'project' in ddf.columns:
-        ddf['_source_project'] = ddf['project']
-    else:
-        ddf['_source_project'] = ''
-
-    if 'tproject' in ddf.columns:
-        ddf['_source_tproject'] = ddf['tproject']
-    else:
-        ddf['_source_tproject'] = ''
-
-    ddf['_vin_project'] = ''
+    
+    # 初始化tproject列
     ddf['project'] = ''
 
     if 'vin_udf' in ddf.columns:
@@ -2019,7 +1413,7 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
                         if vin.strip() in vin_to_project]
             return ', '.join(filter(None, projects))
 
-        ddf['_vin_project'] = ddf['vin_udf'].map(update_tproject)
+        ddf['project'] = ddf['vin_udf'].map(update_tproject)
         
         # 添加Market字段处理
         def update_market(vin_udf):
@@ -2070,28 +1464,32 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
     # --- top_aida 计算结束 ---
     
     # --- 新增：基于top_aida映射App/RSU项目 ---
-    print("开始根据多信号规则生成缺陷项目...")
+    print("开始根据top_aida映射App/RSU项目...")
     try:
         app_rsu_mapping = load_app_rsu_mapping()
         app_top_aidas = app_rsu_mapping.get('app', [])
         rsu_top_aidas = app_rsu_mapping.get('rsu', [])
-
-        ddf['project'] = ddf.apply(
-            lambda row: _resolve_defect_project_value(
-                row,
-                app_top_aidas=app_top_aidas,
-                rsu_top_aidas=rsu_top_aidas,
-            ),
-            axis=1,
-        )
-        print(f"项目分布: {ddf['project'].value_counts().to_dict()}")
+        
+        if 'top_aida' in ddf.columns:
+            # 将符合App条件的记录tproject设为'App'
+            if app_top_aidas:
+                app_mask = ddf['top_aida'].isin(app_top_aidas)
+                ddf.loc[app_mask, 'project'] = 'App'
+                print(f"已将 {app_mask.sum()} 条记录的project设为'App'")
+            
+            # 将符合RSU条件的记录project设为'RSU'
+            if rsu_top_aidas:
+                rsu_mask = ddf['top_aida'].isin(rsu_top_aidas)
+                ddf.loc[rsu_mask, 'project'] = 'RSU'
+                print(f"已将 {rsu_mask.sum()} 条记录的project设为'RSU'")
+                
+            print(f"项目分布: {ddf['project'].value_counts().to_dict()}")
+        else:
+            print("警告: 缺少 'top_aida' 列，无法映射App/RSU项目")
             
     except Exception as e:
-        print(f"警告: 缺陷项目生成过程中出错: {e}")
-        ddf['project'] = ddf.apply(lambda row: _resolve_defect_project_value(row), axis=1)
-    # --- 缺陷项目生成结束 ---
-
-    ddf = ddf.drop(columns=['_source_project', '_source_tproject', '_vin_project'], errors='ignore')
+        print(f"警告: App/RSU项目映射过程中出错: {e}")
+    # --- App/RSU项目映射结束 ---
 
     # 提取Matrix标签
     def extract_matrix(tags):
@@ -2149,26 +1547,19 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
             for sheet_name in writer.sheet_names:
                 print(f"正在处理工作表: {sheet_name}...")
                 try:
-                    # 仅读取映射所需列，显著降低启动阶段Excel解析开销
-                    df_map = writer.parse(
-                        sheet_name=sheet_name,
-                        usecols=lambda c: str(c).strip().lower() in {'top_aida', 'fv'},
-                        dtype=str,
-                    )
+                    df_map = pd.read_excel(excel_file, sheet_name=sheet_name)
                 except Exception as read_err:
                     print(f"警告: 读取工作表 '{sheet_name}' 时出错: {read_err}。跳过此工作表。")
                     continue
 
-                col_lookup = {str(col).strip().lower(): col for col in df_map.columns}
-                if 'top_aida' not in col_lookup or 'fv' not in col_lookup:
-                    print(f"警告: 工作表 '{sheet_name}' 缺少必要的列（需要 'top_aida', 'fv'）。跳过此工作表。")
+                required_map_cols = ['project', 'top_aida', 'fv']
+                if not all(col in df_map.columns for col in required_map_cols):
+                    print(f"警告: 工作表 '{sheet_name}' 缺少必要的列（需要 'project', 'top_aida', 'fv'）。跳过此工作表。")
                     continue
 
                 fv_col = f"fv_{sheet_name}"
-                df_subset = df_map[[col_lookup['top_aida'], col_lookup['fv']]].rename(
-                    columns={col_lookup['top_aida']: 'top_aida', col_lookup['fv']: fv_col}
-                )
-                df_subset = df_subset.drop_duplicates(subset=['top_aida'])
+                df_map = df_map.rename(columns={'fv': fv_col})
+                df_subset = df_map[['top_aida', fv_col]].drop_duplicates(subset=['top_aida'])
 
                 # 确保连接键 top_aida 类型一致
                 ddf['top_aida'] = ddf['top_aida'].astype(str)
@@ -2272,15 +1663,10 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
         try:
             # 建立完整的AIDA-FV映射字典（包含模糊匹配）
             comprehensive_aida_fv_map = {}
-            fv_xls = pd.ExcelFile(excel_file)
             
             for sheet_name in ['IDCevo', 'IDC', 'MGU', 'App', 'RSU']:
                 try:
-                    df_map = fv_xls.parse(
-                        sheet_name=sheet_name,
-                        usecols=lambda c: str(c).strip().lower() in {'top_aida', 'fv', 'aida_english'},
-                        dtype=str,
-                    )
+                    df_map = pd.read_excel(excel_file, sheet_name=sheet_name)
                     if 'top_aida' in df_map.columns and 'fv' in df_map.columns:
                         for _, row in df_map.iterrows():
                             if pd.notna(row['top_aida']) and pd.notna(row['fv']):
@@ -2378,29 +1764,21 @@ def load_defect_data(file_pattern="defect/2025_defect.json"):
     
     # 处理状态字段 - 确保status_phase字段正确填充
     print("处理状态字段...")
-    phase_name_series = None
     if 'phase.name' in ddf.columns:
-        phase_name_series = ddf['phase.name']
-    elif 'phase' in ddf.columns:
-        phase_name_series = ddf['phase'].apply(lambda x: x.get('name', '') if isinstance(x, dict) else '')
-
-    if phase_name_series is not None:
-        # 如果status_phase字段不存在或为空，从phase/phase.name中提取
+        # 如果status_phase字段不存在或为空，从phase.name中提取
         if 'status_phase' not in ddf.columns:
-            ddf['status_phase'] = phase_name_series
+            ddf['status_phase'] = ddf['phase.name']
         else:
+            # 填充空的status_phase字段
             mask = ddf['status_phase'].isna() | (ddf['status_phase'] == '')
-            ddf.loc[mask, 'status_phase'] = phase_name_series[mask]
-
+            ddf.loc[mask, 'status_phase'] = ddf.loc[mask, 'phase.name']
+        
+        # 统计status_phase分布
         status_counts = ddf['status_phase'].value_counts()
         print(f"状态字段处理完成，状态分布: {status_counts.head(10).to_dict()}")
-    elif 'status_phase' in ddf.columns:
-        status_counts = ddf['status_phase'].value_counts()
-        print(f"状态字段处理完成（使用现有status_phase），状态分布: {status_counts.head(10).to_dict()}")
     else:
-        print("警告: 数据中缺少 phase/phase.name/status_phase 字段，无法处理状态")
+        print("警告: 数据中没有phase.name字段，无法处理状态")
 
-    # 清理内部缓存辅助列，避免污染业务数据集
     temp_cols = [
         '_defect_id_norm',
         '_last_modified_norm',
@@ -2418,24 +1796,17 @@ def enrich_ddf_with_master_info(ddf, master_file_path="defect/2025_defect_master
     主票据文件中的 'relation_to_udf' 字段将被解析以获取所有子票ID，用于与 ddf 的 'id' 字段进行匹配。
     匹配成功后，主票据的 ID、其自身的 child ticket 列表 (来自 relation_to_udf) 及其 child count 将被添加到 ddf 中。
     """
-    year_val = _extract_year_from_text(master_file_path)
-    print(f"开始加载 {year_val} 年主票据信息以充实 ddf（数据库优先）...")
+    print(f"开始从主票据文件 '{master_file_path}' 加载主票据信息以充实 ddf...")
 
-    data_list = None
-    if _DEFAULT_OCTANE_SOURCE != "file_only":
-        data_list = _load_octane_payload_data("defects_master", year_val)
-        if data_list:
-            print(f"📦 从数据库加载 {year_val} 年 defects_master 成功: {len(data_list)} 条")
+    if not os.path.exists(master_file_path):
+        print(f"警告: 主票据文件 {master_file_path} 未找到。跳过充实步骤。")
+        return ddf
 
-    if data_list is None and _DEFAULT_OCTANE_SOURCE != "db_only":
-        if not os.path.exists(master_file_path):
-            print(f"警告: 主票据文件 {master_file_path} 未找到。跳过充实步骤。")
-            return ddf
-
-        try:
-            with open(master_file_path, encoding="utf8") as f:
-                loaded_json = json.load(f)
-
+    try:
+        with open(master_file_path, encoding="utf8") as f:
+            loaded_json = json.load(f) # load a single json object or list
+            data_list = None
+            # Handle Octane's typical structure where data is under a "data" key, or if the file is just a list of records
             if isinstance(loaded_json, dict) and "data" in loaded_json and isinstance(loaded_json["data"], list):
                 data_list = loaded_json["data"]
             elif isinstance(loaded_json, list):
@@ -2443,18 +1814,17 @@ def enrich_ddf_with_master_info(ddf, master_file_path="defect/2025_defect_master
             else:
                 print(f"警告: 主票据文件 {master_file_path} 的 JSON 结构不符合预期（既不是包含 'data' 列表的字典，也不是纯列表）。已跳过。")
                 return ddf
-        except json.JSONDecodeError as e:
-            print(f"警告: 解析主票据文件 {master_file_path} 时 JSON 解码失败: {e}。已跳过。")
-            return ddf
-        except Exception as e:
-            print(f"警告: 处理主票据文件 {master_file_path} 时发生意外错误: {e}。已跳过。")
-            return ddf
-
-    if not data_list or not all(isinstance(item, dict) for item in data_list):
-        print(f"警告: {year_val} 年主票据数据为空或格式异常。跳过充实步骤。")
+            
+            if not data_list or not all(isinstance(item, dict) for item in data_list): # ensure data_list contains dicts
+                print(f"警告: 主票据文件 {master_file_path} 中提取的 'data' 列表为空或其元素非字典类型。已跳过。")
+                return ddf
+            master_df = pd.json_normalize(data_list, max_level=1) # Use max_level=1 if fields like relation_to_udf might be dicts, or 0 if direct values
+    except json.JSONDecodeError as e:
+        print(f"警告: 解析主票据文件 {master_file_path} 时 JSON 解码失败: {e}。已跳过。")
         return ddf
-
-    master_df = pd.json_normalize(data_list, max_level=1)
+    except Exception as e:
+        print(f"警告: 处理主票据文件 {master_file_path} 时发生意外错误: {e}。已跳过。")
+        return ddf
 
     if master_df.empty:
         print(f"警告: 从 {master_file_path} 加载的主票据数据为空。跳过充实步骤。")
@@ -2663,26 +2033,20 @@ def enrich_ddf_with_master_info(ddf, master_file_path="defect/2025_defect_master
     
     # 处理状态字段 - 确保status_phase字段正确填充
     print("处理合并后数据的状态字段...")
-    phase_name_series = None
     if 'phase.name' in ddf_enriched.columns:
-        phase_name_series = ddf_enriched['phase.name']
-    elif 'phase' in ddf_enriched.columns:
-        phase_name_series = ddf_enriched['phase'].apply(lambda x: x.get('name', '') if isinstance(x, dict) else '')
-
-    if phase_name_series is not None:
+        # 如果status_phase字段不存在或为空，从phase.name中提取
         if 'status_phase' not in ddf_enriched.columns:
-            ddf_enriched['status_phase'] = phase_name_series
+            ddf_enriched['status_phase'] = ddf_enriched['phase.name']
         else:
+            # 填充空的status_phase字段
             mask = ddf_enriched['status_phase'].isna() | (ddf_enriched['status_phase'] == '')
-            ddf_enriched.loc[mask, 'status_phase'] = phase_name_series[mask]
-
+            ddf_enriched.loc[mask, 'status_phase'] = ddf_enriched.loc[mask, 'phase.name']
+        
+        # 统计status_phase分布
         status_counts = ddf_enriched['status_phase'].value_counts()
         print(f"合并后状态字段处理完成，状态分布: {status_counts.head(10).to_dict()}")
-    elif 'status_phase' in ddf_enriched.columns:
-        status_counts = ddf_enriched['status_phase'].value_counts()
-        print(f"合并后状态字段处理完成（使用现有status_phase），状态分布: {status_counts.head(10).to_dict()}")
     else:
-        print("警告: 合并后数据缺少 phase/phase.name/status_phase 字段，无法处理状态")
+        print("警告: 合并后数据中没有phase.name字段，无法处理状态")
     
     return ddf_enriched
 
@@ -2868,52 +2232,6 @@ SEVERITY_COLORS = {
 
 CHART_HEIGHT = 600
 
-
-def _normalize_phase_text(phase_value) -> str:
-    """规范化状态文本，兼容 dict 值和带严重度后缀的状态。"""
-    if isinstance(phase_value, dict):
-        phase_value = phase_value.get('name') or phase_value.get('full_name') or ''
-    s = str(phase_value or '').strip().lower()
-    if not s:
-        return ''
-    # 常见形态：06-Concluded_Medium / 09-Concluded without action_High
-    if '_' in s:
-        base, tail = s.rsplit('_', 1)
-        if tail in {'critical', 'high', 'medium', 'low', 's1', 's2', 's3', 's4'}:
-            s = base
-    return s
-
-
-def _is_resolved_phase(phase_value) -> bool:
-    """判断是否属于关闭/已解决状态，兼容中英文与同义写法。"""
-    s = _normalize_phase_text(phase_value)
-    if not s:
-        return False
-    if s in {
-        '06-concluded',
-        '09-concluded without action',
-        '10-closed',
-        'closed',
-        'resolved',
-        'fixed',
-        'done',
-        'completed',
-        'concluded',
-        'concluded without action',
-    }:
-        return True
-    return (
-        ('conclud' in s)
-        or ('resolv' in s)
-        or ('clos' in s)
-        or ('fix' in s)
-        or ('complet' in s)
-        or ('结案' in s)
-        or ('已关闭' in s)
-        or ('已解决' in s)
-        or ('已修复' in s)
-    )
-
 def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None, pus=None):
     """
     通用筛选函数，支持多选筛选
@@ -2942,7 +2260,6 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
         if "09-concluded without action (child)" in statuses:
             # 创建普通状态列表（移除特殊状态）
             normal_statuses = [s for s in statuses if s != "09-concluded without action (child)"]
-            phase_norm = filtered['status_phase'].apply(_normalize_phase_text)
             
             # 创建新的子票筛选条件：
             # 1. 票据是Child类型
@@ -2950,7 +2267,7 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
             # 3. 主票的状态不是09、06、10
             child_mask = (
                 (filtered['parent_child'] == 'Child') &
-                (phase_norm.isin(['09-concluded without action', '01-new']))
+                (filtered['status_phase'].isin(['09-Concluded without action', '01-New']))
             )
             
             # 进一步检查这些子票的主票状态
@@ -2966,19 +2283,13 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
                         master_df = pd.json_normalize(master_data)
                         
                         # 检查主票是否为需要排除的状态
-                        excluded_master_statuses = ['10-rejected']
+                        excluded_master_statuses = ['06-Concluded', '09-Concluded without action', '10-Rejected']
                         if 'phase.name' in master_df.columns:
-                            # 使用phase.name字段（兼容concluded类状态）
-                            excluded_masters = master_df[
-                                master_df['phase.name'].apply(_is_resolved_phase)
-                                | master_df['phase.name'].astype(str).str.strip().str.lower().isin(excluded_master_statuses)
-                            ]['id'].astype(str).tolist()
+                            # 使用phase.name字段
+                            excluded_masters = master_df[master_df['phase.name'].isin(excluded_master_statuses)]['id'].astype(str).tolist()
                         elif 'status' in master_df.columns:
                             # 备用：使用status字段
-                            excluded_masters = master_df[
-                                master_df['status'].apply(_is_resolved_phase)
-                                | master_df['status'].astype(str).str.strip().str.lower().isin(excluded_master_statuses)
-                            ]['id'].astype(str).tolist()
+                            excluded_masters = master_df[master_df['status'].isin(excluded_master_statuses)]['id'].astype(str).tolist()
                         else:
                             excluded_masters = []
                         
@@ -2991,12 +2302,7 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
             # 合并筛选条件
             if normal_statuses:
                 # 有其他正常状态，需要与子票合并
-                normal_status_norm = {
-                    _normalize_phase_text(s)
-                    for s in normal_statuses
-                    if _normalize_phase_text(s)
-                }
-                normal_mask = phase_norm.isin(normal_status_norm)
+                normal_mask = filtered['status_phase'].isin(normal_statuses)
                 combined_mask = normal_mask | child_mask
                 filtered = filtered[combined_mask]
             else:
@@ -3004,13 +2310,7 @@ def apply_filters(df, projects=None, test_weeks=None, aidas=None, statuses=None,
                 filtered = filtered[child_mask]
         else:
             # 没有特殊状态，使用常规筛选
-            selected_status_norm = {
-                _normalize_phase_text(s)
-                for s in statuses
-                if _normalize_phase_text(s)
-            }
-            phase_norm = filtered['status_phase'].apply(_normalize_phase_text)
-            filtered = filtered[phase_norm.isin(selected_status_norm)]
+            filtered = filtered[filtered['status_phase'].isin(statuses)]
     if pus and len(pus) > 0:
         filtered = filtered[filtered['pu'].isin(pus)]
         
@@ -3023,163 +2323,70 @@ def load_test_data():
         print("🔄 data_processor.load_test_data: Reloader进程跳过数据加载")
         return pd.DataFrame()
     print("开始加载测试管理数据...")
-    expected_cols = [
-        'model', 'test_id', 'test_name', 'author_name', 'test_event',
-        'tester', 'aida_count', 'aida', 'pu', 'run_status',
-        'finished_udf', 'test_week', 'project', 'top_aida', 'fv', 'team', 'fvp', 'lead_model'
-    ]
-
-    # 默认与缺陷年份一致，可通过 DEFAULT_TEST_YEAR 单独覆盖
-    default_test_year = _extract_year_from_text(
-        os.environ.get("DEFAULT_TEST_YEAR", "") or os.environ.get("DEFAULT_DEFECT_YEAR", "2026"),
-        fallback_year=2026,
-    )
-
-    # 测试数据加载年份策略：
-    # 1) TEST_DATA_YEARS=2025,2026 显式指定
-    # 2) 未指定时默认加载相邻两年，避免只看到跨年尾部周次
-    test_years_env = os.environ.get("TEST_DATA_YEARS", "").strip()
-    if test_years_env:
-        parsed_years = [
-            _extract_year_from_text(part, fallback_year=None)
-            for part in re.split(r"[,;\s]+", test_years_env)
-            if part and part.strip()
-        ]
-        test_years = sorted({int(y) for y in parsed_years if y is not None})
-        if not test_years:
-            test_years = sorted({default_test_year - 1, default_test_year})
-    else:
-        test_years = sorted({default_test_year - 1, default_test_year})
-
     dfs = []
-    db_loaded = False
-
-    # 数据库优先加载测试管理数据
-    if _DEFAULT_OCTANE_SOURCE != "file_only":
-        db_path_val = _DEFAULT_OCTANE_DB_PATH
-        if db_path_val and os.path.exists(db_path_val):
-            try:
-                conn = sqlite3.connect(db_path_val)
-                try:
-                    rows = []
-                    for test_year in test_years:
-                        rows.extend(
-                            conn.execute(
-                                """
-                                SELECT spec, payload_json
-                                FROM octane_payloads
-                                WHERE kind=? AND team=? AND year=?
-                                ORDER BY spec
-                                """,
-                                ("manual_runs", _DEFAULT_OCTANE_TEAM, int(test_year)),
-                            ).fetchall()
-                        )
-                finally:
-                    conn.close()
-
-                db_data_list = []
-                loaded_specs = []
-                for spec, payload_json in rows:
-                    try:
-                        payload = json.loads(payload_json)
-                        data_list = payload.get("data") if isinstance(payload, dict) else payload
-                        if isinstance(data_list, list) and data_list and all(isinstance(item, dict) for item in data_list):
-                            db_data_list.extend(data_list)
-                            loaded_specs.append(spec or "")
-                    except Exception:
-                        continue
-
-                if db_data_list:
-                    print(f"已从数据库加载测试管理数据: years={test_years}, specs={len(loaded_specs)}, rows={len(db_data_list)}")
-                    dfs.append(pd.json_normalize(db_data_list, max_level=0))
-                    db_loaded = True
-
-                # 同步场景需要尽量全覆盖：额外合并优化表原始数据（按年份全量）
-                optimized_data_list = []
-                for test_year in test_years:
-                    year_data = _load_manual_runs_from_optimized_table(
-                        test_year,
-                        db_path=db_path_val,
-                        run_team=None,
-                    )
-                    if year_data:
-                        optimized_data_list.extend(year_data)
-
-                if optimized_data_list:
-                    print(f"已从数据库优化表加载测试管理数据: years={test_years}, rows={len(optimized_data_list)}")
-                    dfs.append(pd.json_normalize(optimized_data_list, max_level=0))
-                    db_loaded = True
-                elif not db_data_list:
-                    print(f"提示: 数据库中未找到 manual_runs 数据（payload/optimized 均未命中，years={test_years}），准备回退到 JSON 文件。")
-            except Exception as e:
-                print(f"警告: 从数据库加载测试管理数据失败: {e}，准备回退到 JSON 文件。")
-        else:
-            print(f"提示: 未找到数据库文件 {db_path_val}，准备回退到 JSON 文件。")
-
-    if _DEFAULT_OCTANE_SOURCE == "db_only" and not db_loaded:
-        print("警告: 当前为 db_only 模式且数据库无测试管理数据，返回空 DataFrame。")
+    json_files = glob.glob("mr/R25*.json")
+    if not json_files:
+        print("警告: 在 'mr/' 目录下未找到 'R25*.json' 文件。将返回空 DataFrame。")
+        # 返回一个包含预期列的空 DataFrame，以避免后续错误
+        expected_cols = [
+            'model', 'test_id', 'test_name', 'author_name', 'test_event',
+            'tester', 'aida_count', 'aida', 'pu', 'run_status',
+            'finished_udf', 'test_week', 'project', 'top_aida', 'fv', 'team', 'fvp', 'lead_model'
+            # 确保包含所有后续代码会用到的列
+        ]
         return pd.DataFrame(columns=expected_cols)
 
-    # 数据库未命中时回退到 JSON
-    if not db_loaded:
-        json_glob = os.environ.get("TEST_RUN_JSON_GLOB", "mr/R25*.json")
-        json_files = glob.glob(json_glob)
-        if not json_files:
-            print(f"警告: 在 'mr/' 目录下未找到 '{json_glob}' 文件。将返回空 DataFrame。")
-            return pd.DataFrame(columns=expected_cols)
+    print(f"找到 {len(json_files)} 个 JSON 文件，正在加载...")
+    for file in json_files:
+        try:
+            with open(file, encoding="utf8") as f:
+                # 检查文件是否为空
+                content = f.read()
+                if not content.strip():
+                    print(f"警告: 文件 {file} 为空，已跳过。")
+                    continue
+                # 重置文件指针以供 json.load 使用
+                f.seek(0)
+                loaded_json = json.load(f)
+                data_list = None
 
-        print(f"数据库未命中，回退到 JSON 加载：找到 {len(json_files)} 个文件（{json_glob}）")
-        for file in json_files:
-            try:
-                with open(file, encoding="utf8") as f:
-                    # 检查文件是否为空
-                    content = f.read()
-                    if not content.strip():
-                        print(f"警告: 文件 {file} 为空，已跳过。")
-                        continue
-                    # 重置文件指针以供 json.load 使用
-                    f.seek(0)
-                    loaded_json = json.load(f)
-                    data_list = None
+                # 检查JSON结构
+                if isinstance(loaded_json, dict) and "data" in loaded_json and isinstance(loaded_json["data"], list):
+                    data_list = loaded_json["data"]
+                elif isinstance(loaded_json, list):
+                    data_list = loaded_json # 整个JSON文件就是记录列表
+                else:
+                    print(f"警告: 文件 {file} 的 JSON 结构不符合预期（既不是包含 'data' 列表的字典，也不是纯列表）。已跳过。")
+                    continue
+                
+                if not data_list: # 如果 data 列表为空
+                    print(f"警告: 文件 {file} 中提取的 'data' 列表为空或格式不正确。已跳过。")
+                    continue
+                
+                # 确保 data_list 的元素是字典 (适合 json_normalize)
+                if not all(isinstance(item, dict) for item in data_list):
+                    print(f"警告: 文件 {file} 的 data_list 包含非字典元素。已跳过。")
+                    continue
 
-                    # 检查JSON结构
-                    if isinstance(loaded_json, dict) and "data" in loaded_json and isinstance(loaded_json["data"], list):
-                        data_list = loaded_json["data"]
-                    elif isinstance(loaded_json, list):
-                        data_list = loaded_json # 整个JSON文件就是记录列表
-                    else:
-                        print(f"警告: 文件 {file} 的 JSON 结构不符合预期（既不是包含 'data' 列表的字典，也不是纯列表）。已跳过。")
-                        continue
-
-                    if not data_list: # 如果 data 列表为空
-                        print(f"警告: 文件 {file} 中提取的 'data' 列表为空或格式不正确。已跳过。")
-                        continue
-
-                    # 确保 data_list 的元素是字典 (适合 json_normalize)
-                    if not all(isinstance(item, dict) for item in data_list):
-                        print(f"警告: 文件 {file} 的 data_list 包含非字典元素。已跳过。")
-                        continue
-
-                    dfs.append(pd.json_normalize(data_list, max_level=0))
-            except json.JSONDecodeError as e:
-                print(f"警告: 解析文件 {file} 时出错: {e}。已跳过。")
-                continue
-            except Exception as e:
-                print(f"警告: 处理文件 {file} 时发生意外错误: {e}。已跳过。")
-                continue
+                dfs.append(pd.json_normalize(data_list, max_level=0))
+        except json.JSONDecodeError as e:
+            print(f"警告: 解析文件 {file} 时出错: {e}。已跳过。")
+            continue
+        except Exception as e:
+             print(f"警告: 处理文件 {file} 时发生意外错误: {e}。已跳过。")
+             continue
 
     if not dfs:
-        print("警告: 未能加载到任何测试管理数据（数据库与JSON均未命中）。将返回空 DataFrame。")
+        print("警告: 未能从任何 JSON 文件成功加载数据。将返回空 DataFrame。")
+        expected_cols = [
+            'model', 'test_id', 'test_name', 'author_name', 'test_event',
+            'tester', 'aida_count', 'aida', 'pu', 'run_status',
+            'finished_udf', 'test_week', 'project', 'top_aida', 'fv', 'team', 'fvp'
+        ]
         return pd.DataFrame(columns=expected_cols)
 
-    print("测试管理数据加载完成，正在合并...")
+    print("JSON 数据加载完成，正在合并...")
     tdf = pd.concat(dfs, ignore_index=True)
-
-    if 'id' in tdf.columns:
-        tdf['id'] = tdf['id'].astype(str).str.strip()
-        tdf = tdf[tdf['id'] != '']
-        tdf = tdf.drop_duplicates(subset=['id'], keep='last').reset_index(drop=True)
-
     print(f"合并后的 DataFrame 有 {len(tdf)} 行，列: {list(tdf.columns)}")
 
     # --- 数据转换和特征工程 ---
@@ -3236,16 +2443,6 @@ def load_test_data():
     else:
         print("警告: DataFrame 中缺少 'finished_udf' 列，无法计算 'test_week'。将使用 'Future Planning' 填充")
         tdf['test_week'] = 'Future Planning'
-
-    # 生成年份字段，供 Test Coverage / Test Status 统一筛选
-    year_series = pd.Series(np.nan, index=tdf.index, dtype='float64')
-    if 'finished_udf_dt' in tdf.columns:
-        year_series = tdf['finished_udf_dt'].dt.year.astype('float64')
-
-    extracted_years = pd.to_numeric(tdf['test_week'].astype(str).str.extract(r'(\d{2,4})\s*-\s*CW')[0], errors='coerce')
-    extracted_years = extracted_years.apply(lambda y: y + 2000 if pd.notna(y) and y < 100 else y)
-    year_series = extracted_years.where(extracted_years.notna(), year_series)
-    tdf['year'] = year_series.astype('Int64')
 
     # --- 生成top_aida列用于项目分类 ---
     print("生成top_aida列用于项目分类...")
@@ -3386,27 +2583,16 @@ def load_test_data():
 
             for sheet_name in writer.sheet_names:
                 print(f"正在处理工作表: {sheet_name}...")
-                try:
-                    # 仅读取映射所需列，避免全量解析导致启动变慢
-                    df_map = writer.parse(
-                        sheet_name=sheet_name,
-                        usecols=lambda c: str(c).strip().lower() in {'top_aida', 'fv'},
-                        dtype=str,
-                    )
-                except Exception as read_err:
-                    print(f"警告: 读取工作表 '{sheet_name}' 时出错: {read_err}。跳过此工作表。")
-                    continue
-
-                col_lookup = {str(col).strip().lower(): col for col in df_map.columns}
-                if 'top_aida' not in col_lookup or 'fv' not in col_lookup:
-                    print(f"警告: 工作表 '{sheet_name}' 缺少必要的列（需要 'top_aida', 'fv'）。跳过此工作表。")
+                df_map = pd.read_excel(excel_file, sheet_name=sheet_name)
+                # 检查映射文件是否包含必要列
+                required_map_cols = ['project', 'top_aida', 'fv']
+                if not all(col in df_map.columns for col in required_map_cols):
+                    print(f"警告: 工作表 '{sheet_name}' 缺少必要的列（需要 'project', 'top_aida', 'fv'）。跳过此工作表。")
                     continue
 
                 fv_col = f"fv_{sheet_name}" # 为每个 sheet 的 fv 创建临时唯一列名
-                df_subset = df_map[[col_lookup['top_aida'], col_lookup['fv']]].rename(
-                    columns={col_lookup['top_aida']: 'top_aida', col_lookup['fv']: fv_col}
-                )
-                df_subset = df_subset.drop_duplicates(subset=['top_aida'])
+                df_map = df_map.rename(columns={'fv': fv_col})
+                df_subset = df_map[['top_aida', fv_col]].drop_duplicates(subset=['top_aida'])
 
                 # 确保连接键 top_aida 类型一致
                 tdf['top_aida'] = tdf['top_aida'].astype(str)
@@ -3459,15 +2645,10 @@ def load_test_data():
         try:
             # 建立完整的AIDA-FV映射字典（包含模糊匹配）
             comprehensive_aida_fv_map = {}
-            fv_xls = pd.ExcelFile(excel_file)
             
             for sheet_name in ['IDCevo', 'IDC', 'MGU', 'App', 'RSU']:
                 try:
-                    df_map = fv_xls.parse(
-                        sheet_name=sheet_name,
-                        usecols=lambda c: str(c).strip().lower() in {'top_aida', 'fv', 'aida_english'},
-                        dtype=str,
-                    )
+                    df_map = pd.read_excel(excel_file, sheet_name=sheet_name)
                     if 'top_aida' in df_map.columns and 'fv' in df_map.columns:
                         for _, row in df_map.iterrows():
                             if pd.notna(row['top_aida']) and pd.notna(row['fv']):
@@ -3628,20 +2809,20 @@ def get_latest_solution_cluster_from_history(defect_id, history_dir="history"):
     返回:
     最新的solution cluster name，如果没有找到则返回空字符串
     """
+    history_file = os.path.join(history_dir, f"{defect_id}_history.json")
+    
+    if not os.path.exists(history_file):
+        return ""
+    
     try:
-        history_data = get_history_data(defect_id, history_dir)
-        if not history_data:
-            return ""
-
-        if isinstance(history_data, dict) and 'data' in history_data:
-            entries = history_data['data']
-        elif isinstance(history_data, list):
-            entries = history_data
-        else:
+        with open(history_file, 'r', encoding='utf-8') as f:
+            history_data = json.load(f)
+        
+        if not history_data or 'data' not in history_data:
             return ""
         
         # 按时间戳排序，获取最新的solution_cluster_udf变更
-        history_entries = sorted(entries,
+        history_entries = sorted(history_data['data'], 
                                key=lambda x: x.get('timestamp', ''), 
                                reverse=True)
         
@@ -3657,7 +2838,7 @@ def get_latest_solution_cluster_from_history(defect_id, history_dir="history"):
         return ""
         
     except Exception as e:
-        print(f"读取缺陷 {defect_id} 的历史记录时出错: {e}")
+        print(f"读取缺陷 {defect_id} 的历史文件时出错: {e}")
         return ""
 
 def enrich_solution_cluster_from_history(df, history_dir="history"):
@@ -3707,6 +2888,8 @@ def calculate_processing_cycle_days(defect_id, status_phase, creation_time, hist
     try:
         import pandas as pd
         
+        RESOLVED_PHASES = ['06-Concluded', '09-Concluded without action', '10-Closed']
+        
         if pd.isna(creation_time):
             return 0
         
@@ -3716,7 +2899,7 @@ def calculate_processing_cycle_days(defect_id, status_phase, creation_time, hist
         
         current_dt = pd.Timestamp.now()
         
-        if _is_resolved_phase(status_phase):
+        if status_phase in RESOLVED_PHASES:
             resolved_time = get_resolved_time_from_history(defect_id, history_dir)
             if resolved_time:
                 resolved_dt = pd.to_datetime(resolved_time)
@@ -3751,11 +2934,13 @@ def get_resolved_time_from_history(defect_id, history_dir="history"):
             
         entries.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
         
+        RESOLVED_PHASES = ['06-Concluded', '09-Concluded without action', '10-Closed']
+        
         for entry in entries:
             if entry.get('action') == 'update' and 'change_set' in entry:
                 for change in entry['change_set']:
                     if change.get('field_name') == 'phase':
-                        if _is_resolved_phase(change.get('value_text')):
+                        if change.get('value_text') in RESOLVED_PHASES:
                             return entry.get('timestamp')
                             
         return None
@@ -4054,6 +3239,528 @@ def enhance_pu_filling(ddf):
     
     return ddf
 
+
+def _normalize_sync_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    if isinstance(value, dict):
+        return str(value.get('name') or value.get('full_name') or '').strip()
+    text = str(value).strip()
+    if text.lower() in {'nan', 'none'}:
+        return ""
+    return text
+
+
+def _normalize_project_name(value):
+    text = _normalize_sync_text(value)
+    if not text:
+        return ""
+
+    normalized = text.upper()
+    if 'IDCEVO' in normalized or normalized.startswith('ENTRYEVO'):
+        return 'IDCEVO'
+    if normalized.startswith('MGU'):
+        return 'MGU'
+    if normalized == 'IDC':
+        return 'IDC'
+    if normalized == 'RSU':
+        return 'RSU'
+    if normalized == 'UNKNOWN':
+        return 'Unknown'
+    if normalized == 'APP':
+        return 'App'
+    return text
+
+
+def _ensure_table_columns(conn, table_name, column_defs):
+    existing_columns = {
+        str(row[1])
+        for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        if len(row) > 1
+    }
+    for column_name, column_sql in column_defs.items():
+        if column_name not in existing_columns:
+            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
+
+
+def _discover_years_from_table(conn, table_name, year_column='year'):
+    try:
+        rows = conn.execute(
+            f"SELECT DISTINCT {year_column} FROM {table_name} WHERE {year_column} IS NOT NULL ORDER BY {year_column}"
+        ).fetchall()
+    except Exception:
+        return []
+
+    years = []
+    for row in rows:
+        try:
+            years.append(int(row[0]))
+        except Exception:
+            continue
+    return years
+
+
+def _table_columns(conn, table_name):
+    try:
+        return {
+            str(row[1])
+            for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+            if len(row) > 1
+        }
+    except Exception:
+        return set()
+
+
+def _build_select_expr(existing_columns, column_name, fallback="''"):
+    return column_name if column_name in existing_columns else f"{fallback} AS {column_name}"
+
+
+def _load_defect_sync_frame_from_db(db_path, years=None):
+    if not db_path or not os.path.exists(db_path):
+        return pd.DataFrame()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        existing_columns = _table_columns(conn, 'octane_defects')
+        if not existing_columns:
+            return pd.DataFrame()
+
+        select_columns = [
+            'defect_id',
+            _build_select_expr(existing_columns, 'project'),
+            _build_select_expr(existing_columns, 'market'),
+            _build_select_expr(existing_columns, 'pu'),
+            _build_select_expr(existing_columns, 'fv'),
+            _build_select_expr(existing_columns, 'team'),
+            _build_select_expr(existing_columns, 'fvp'),
+            _build_select_expr(existing_columns, 'lead_model'),
+            _build_select_expr(existing_columns, 'test_week'),
+            _build_select_expr(existing_columns, 'vin'),
+            _build_select_expr(existing_columns, 'top_aida'),
+            _build_select_expr(existing_columns, 'assigned_ecu'),
+            _build_select_expr(existing_columns, 'software_version'),
+            _build_select_expr(existing_columns, 'first_use_sop_of_function'),
+            _build_select_expr(existing_columns, 'year', 'NULL'),
+        ]
+        query = f"SELECT {', '.join(select_columns)} FROM octane_defects"
+        params = []
+        if years:
+            placeholders = ','.join(['?'] * len(years))
+            query += f" WHERE year IN ({placeholders})"
+            params.extend([int(year) for year in years])
+
+        rows = conn.execute(query, params).fetchall()
+        if not rows:
+            return pd.DataFrame()
+
+        frame = pd.DataFrame(rows, columns=[
+            'id', 'project', 'market', 'pu', 'fv', 'team', 'fvp', 'lead_model',
+            'test_week', 'vin_udf', 'top_aida', 'assigned_ecu', 'software_version',
+            'first_use_sop_of_function', 'year'
+        ])
+        return frame
+    finally:
+        conn.close()
+
+
+def _load_manual_sync_frame_from_db(db_path):
+    if not db_path or not os.path.exists(db_path):
+        return pd.DataFrame()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        existing_columns = _table_columns(conn, 'octane_manual_runs')
+        if not existing_columns:
+            return pd.DataFrame()
+
+        select_columns = [
+            'mr_id',
+            _build_select_expr(existing_columns, 'project'),
+            _build_select_expr(existing_columns, 'fv'),
+            _build_select_expr(existing_columns, 'team'),
+            _build_select_expr(existing_columns, 'fvp'),
+            _build_select_expr(existing_columns, 'lead_model'),
+        ]
+        rows = conn.execute(
+            f"SELECT {', '.join(select_columns)} FROM octane_manual_runs"
+        ).fetchall()
+        if not rows:
+            return pd.DataFrame()
+
+        return pd.DataFrame(rows, columns=['id', 'project', 'fv', 'team', 'fvp', 'lead_model'])
+    finally:
+        conn.close()
+
+
+def _combine_sync_frames(frames):
+    usable_frames = []
+    for frame in frames:
+        if frame is None or frame.empty or 'id' not in frame.columns:
+            continue
+        normalized = frame.copy()
+        normalized['id'] = normalized['id'].astype(str).str.strip()
+        normalized = normalized[normalized['id'] != '']
+        usable_frames.append(normalized)
+
+    if not usable_frames:
+        return pd.DataFrame()
+
+    combined = pd.concat(usable_frames, ignore_index=True, sort=False)
+    combined = combined.drop_duplicates(subset=['id'], keep='last')
+    return combined
+
+
+def _assign_project_from_signals(row, vin_to_project, app_top_aidas, rsu_top_aidas):
+    existing_project = _normalize_project_name(row.get('project'))
+    if existing_project and existing_project != 'Unknown':
+        return existing_project
+
+    vin_text = _normalize_sync_text(row.get('vin_udf')).upper()
+    if vin_text:
+        projects = []
+        for vin in vin_text.split(','):
+            mapped = _normalize_project_name(vin_to_project.get(vin.strip(), ''))
+            if mapped and mapped not in projects:
+                projects.append(mapped)
+        if projects:
+            return ', '.join(projects)
+
+    top_aida = _normalize_sync_text(row.get('top_aida'))
+    if top_aida:
+        if top_aida in app_top_aidas:
+            return 'App'
+        if top_aida in rsu_top_aidas:
+            return 'RSU'
+
+    assigned_ecu = _normalize_sync_text(row.get('assigned_ecu')).upper()
+    software_version = _normalize_sync_text(row.get('software_version')).upper()
+    lead_model = _normalize_sync_text(row.get('lead_model')).upper()
+
+    idcevo_signals = ['IDCEVO', 'CDE-01', 'ICON-25', 'BMTH-01', 'IPN-10', 'IPN-10_DE', 'SD-AMAP']
+    idc_signals = ['IDC23', 'HU-MGU_02_A']
+    mgu_signals = ['MGU', 'HU-MGU_02_L', 'HU-MGU_01', 'SP_NAVINFO', 'BMT']
+    rsu_signals = ['RSE', 'RSU']
+    app_signals = ['APP', 'MOBILE', 'MY BMW', 'ANDROID', 'IOS', 'HARMONYOS']
+
+    if any(signal in assigned_ecu for signal in idcevo_signals) or 'IDCEVO' in software_version:
+        return 'IDCEVO'
+    if any(signal in assigned_ecu for signal in idc_signals) or 'IDC23' in software_version:
+        return 'IDC'
+    if any(signal in assigned_ecu for signal in mgu_signals) or 'BMWMGU' in software_version or 'MGU' in software_version:
+        return 'MGU'
+    if any(signal in assigned_ecu for signal in rsu_signals):
+        return 'RSU'
+    if any(signal in assigned_ecu for signal in app_signals) or any(signal in software_version for signal in app_signals):
+        return 'App'
+
+    if lead_model in {'U12'}:
+        return 'IDC'
+    if lead_model in {'NA5', 'NA6'}:
+        return 'IDCEVO'
+    if lead_model in {'G28'}:
+        return 'MGU'
+
+    return 'Unknown'
+
+
+def _prepare_defect_sync_frame(defect_df):
+    if defect_df is None or defect_df.empty:
+        return pd.DataFrame()
+
+    prepared = defect_df.copy()
+    if 'id' not in prepared.columns:
+        return pd.DataFrame()
+
+    defaults = {
+        'project': '',
+        'market': '',
+        'pu': '',
+        'fv': '',
+        'team': '',
+        'fvp': '',
+        'lead_model': '',
+        'test_week': '',
+        'vin_udf': '',
+        'top_aida': '',
+        'assigned_ecu': '',
+        'software_version': '',
+        'first_use_sop_of_function': '',
+        'Shift_PU': '',
+    }
+    for column_name, default_value in defaults.items():
+        if column_name not in prepared.columns:
+            prepared[column_name] = default_value
+
+    vin_to_project = {}
+    vin_to_market = {}
+    try:
+        project_mapping_file = os.path.join('project', 'vin_project_mapping.xlsx')
+        if os.path.exists(project_mapping_file):
+            mapping_df = pd.read_excel(project_mapping_file)
+            if 'VIN' in mapping_df.columns and 'project' in mapping_df.columns:
+                for _, row in mapping_df.iterrows():
+                    vin = _normalize_sync_text(row.get('VIN')).upper()
+                    if not vin:
+                        continue
+                    vin_to_project[vin] = _normalize_project_name(row.get('project'))
+                    vin_to_market[vin] = _normalize_sync_text(row.get('ISO Countrycode (INT)'))
+    except Exception as exc:
+        print(f"警告: 读取 VIN 项目映射失败: {exc}")
+
+    app_top_aidas = []
+    rsu_top_aidas = []
+    try:
+        mapping = load_app_rsu_mapping()
+        app_top_aidas = mapping.get('app', [])
+        rsu_top_aidas = mapping.get('rsu', [])
+    except Exception as exc:
+        print(f"警告: 读取 App/RSU 映射失败: {exc}")
+
+    prepared['vin_udf'] = prepared['vin_udf'].apply(_normalize_sync_text)
+    prepared['project'] = prepared.apply(
+        lambda row: _assign_project_from_signals(row, vin_to_project, app_top_aidas, rsu_top_aidas),
+        axis=1,
+    )
+
+    def _resolve_market(vin_text):
+        text = _normalize_sync_text(vin_text).upper()
+        if not text:
+            return ''
+        markets = []
+        for vin in text.split(','):
+            market = _normalize_sync_text(vin_to_market.get(vin.strip(), ''))
+            if market and market not in markets:
+                markets.append(market)
+        return ', '.join(markets)
+
+    empty_market_mask = prepared['market'].apply(_normalize_sync_text) == ''
+    prepared.loc[empty_market_mask, 'market'] = prepared.loc[empty_market_mask, 'vin_udf'].apply(_resolve_market)
+
+    empty_pu_mask = prepared['pu'].apply(_normalize_sync_text) == ''
+    prepared.loc[empty_pu_mask, 'pu'] = prepared.loc[empty_pu_mask, 'first_use_sop_of_function'].apply(_normalize_sync_text)
+
+    prepared = enhance_pu_filling(prepared)
+
+    dips_fvs = {
+        'DIPS_TSP_Call_Services', 'DIPS_TSP_CD_Updates', 'DIPS_TSP_Remote_Services',
+        'Mybmw App', 'eMob', 'DIPS_TSP_Car_Apps_CN', 'DIPS_TSP_MobileApps',
+        'DIPS_TSP_Enabler', 'Slip-Through'
+    }
+    fvp_mapping = {
+        'DIPS_TSP_Call_Services': 'Tianhua',
+        'DIPS_TSP_CD_Updates': 'Tianhua',
+        'DIPS_TSP_Remote_Services': 'Tianhua',
+        'eMob': 'Tianhua',
+        'DIPS_TSP_MobileApps': 'Tianhua',
+        'DIPS_TSP_Enabler': 'Tianhua',
+        'IuK_TSP_Navi': 'Tony',
+        'IuK_TSP_AZV': 'Xu Miao',
+        'IuK_TSP_Entertainment': 'Xu Miao',
+        'IuK_TSP_Audio': 'Xu Miao',
+        'IuK_TSP_Connectivity': 'Xu Miao',
+        'DIPS_TSP_Car_Apps_CN': 'Huanran',
+        'IuK_TSP_HMI': 'Jerry',
+        'DIPS_TSP_RSU': 'Jerry',
+        'IuK_TSP_Carfunctions': 'Jerry',
+        'IuK_TSP_Perso CN': 'Jerry',
+        'RSU': 'Jerry',
+        'Mybmw App': 'Marin',
+    }
+
+    empty_team_mask = prepared['team'].apply(_normalize_sync_text) == ''
+    prepared.loc[empty_team_mask, 'team'] = prepared.loc[empty_team_mask, 'fv'].apply(
+        lambda value: 'DIPS' if _normalize_sync_text(value) in dips_fvs else 'IUK'
+    )
+
+    empty_fvp_mask = prepared['fvp'].apply(_normalize_sync_text) == ''
+    prepared.loc[empty_fvp_mask, 'fvp'] = prepared.loc[empty_fvp_mask, 'fv'].apply(
+        lambda value: fvp_mapping.get(_normalize_sync_text(value), 'Unknown')
+    )
+
+    prepared['project'] = prepared['project'].apply(_normalize_project_name)
+    prepared['tproject'] = prepared['project']
+    prepared['market'] = prepared['market'].apply(_normalize_sync_text)
+    prepared['pu'] = prepared['pu'].apply(_normalize_sync_text)
+    prepared['fv'] = prepared['fv'].apply(_normalize_sync_text)
+    prepared['team'] = prepared['team'].apply(_normalize_sync_text)
+    prepared['fvp'] = prepared['fvp'].apply(_normalize_sync_text)
+    prepared['lead_model'] = prepared['lead_model'].apply(_normalize_sync_text)
+
+    return prepared[['id', 'project', 'tproject', 'market', 'pu', 'fv', 'team', 'fvp', 'lead_model']]
+
+
+def _prepare_manual_sync_frame(manual_df):
+    if manual_df is None or manual_df.empty or 'id' not in manual_df.columns:
+        return pd.DataFrame()
+
+    prepared = manual_df.copy()
+    for column_name in ['project', 'fv', 'team', 'fvp', 'lead_model']:
+        if column_name not in prepared.columns:
+            prepared[column_name] = ''
+
+    prepared['project'] = prepared['project'].apply(_normalize_project_name)
+    prepared['tproject'] = prepared['project']
+    prepared['fv'] = prepared['fv'].apply(_normalize_sync_text)
+    prepared['team'] = prepared['team'].apply(_normalize_sync_text)
+    prepared['fvp'] = prepared['fvp'].apply(_normalize_sync_text)
+    prepared['lead_model'] = prepared['lead_model'].apply(_normalize_sync_text)
+
+    return prepared[['id', 'project', 'tproject', 'fv', 'team', 'fvp', 'lead_model']]
+
+
+def sync_processed_project_to_db(defect_df=None, manual_df=None, db_path=None):
+    return sync_processed_fields_to_db(defect_df=defect_df, manual_df=manual_df, db_path=db_path)
+
+
+def sync_processed_fields_to_db(defect_df=None, manual_df=None, db_path=None, sync_defects=True, sync_manual_runs=True):
+    db_path_val = db_path or _DEFAULT_OCTANE_DB_PATH
+    if not db_path_val:
+        raise ValueError('db_path is required for sync_processed_fields_to_db')
+
+    stats = {
+        'db_path': db_path_val,
+        'defect_updates': 0,
+        'manual_run_updates': 0,
+        'defect_years': [],
+    }
+
+    conn = sqlite3.connect(db_path_val)
+    try:
+        if sync_defects:
+            defect_years = _discover_years_from_table(conn, 'octane_defects')
+            stats['defect_years'] = defect_years
+            defect_frames = [_load_defect_sync_frame_from_db(db_path_val, defect_years)]
+            if defect_df is None:
+                for year_value in defect_years:
+                    try:
+                        defect_frames.append(load_defect_data(file_pattern=f'defect/{year_value}_defect.json'))
+                    except Exception as exc:
+                        print(f"警告: 加载 {year_value} defect 数据失败: {exc}")
+            else:
+                defect_frames.append(defect_df)
+
+            combined_defect_df = _combine_sync_frames(defect_frames)
+            prepared_defect_df = _prepare_defect_sync_frame(combined_defect_df)
+
+            if not prepared_defect_df.empty:
+                _ensure_table_columns(conn, 'octane_defects', {
+                    'project': 'project TEXT',
+                    'tproject': 'tproject TEXT',
+                    'market': 'market TEXT',
+                    'pu': 'pu TEXT',
+                    'fv': 'fv TEXT',
+                    'team': 'team TEXT',
+                    'fvp': 'fvp TEXT',
+                    'lead_model': 'lead_model TEXT',
+                })
+                payload = [
+                    (
+                        _normalize_sync_text(row['project']),
+                        _normalize_sync_text(row['tproject']),
+                        _normalize_sync_text(row['market']),
+                        _normalize_sync_text(row['pu']),
+                        _normalize_sync_text(row['fv']),
+                        _normalize_sync_text(row['team']),
+                        _normalize_sync_text(row['fvp']),
+                        _normalize_sync_text(row['lead_model']),
+                        _normalize_sync_text(row['id']),
+                    )
+                    for _, row in prepared_defect_df.iterrows()
+                ]
+                conn.executemany(
+                    """
+                    UPDATE octane_defects
+                    SET project = COALESCE(NULLIF(?, ''), project),
+                        tproject = COALESCE(NULLIF(?, ''), tproject),
+                        market = COALESCE(NULLIF(?, ''), market),
+                        pu = COALESCE(NULLIF(?, ''), pu),
+                        fv = COALESCE(NULLIF(?, ''), fv),
+                        team = COALESCE(NULLIF(?, ''), team),
+                        fvp = COALESCE(NULLIF(?, ''), fvp),
+                        lead_model = COALESCE(NULLIF(?, ''), lead_model)
+                    WHERE defect_id = ?
+                    """,
+                    payload,
+                )
+                stats['defect_updates'] = conn.total_changes
+
+        changes_before_manual = conn.total_changes
+        if sync_manual_runs:
+            manual_frames = [_load_manual_sync_frame_from_db(db_path_val)]
+            if manual_df is None:
+                try:
+                    manual_frames.append(load_test_data())
+                except Exception as exc:
+                    print(f"警告: 加载 manual run 数据失败: {exc}")
+            else:
+                manual_frames.append(manual_df)
+
+            combined_manual_df = _combine_sync_frames(manual_frames)
+            prepared_manual_df = _prepare_manual_sync_frame(combined_manual_df)
+
+            if not prepared_manual_df.empty:
+                _ensure_table_columns(conn, 'octane_manual_runs', {
+                    'project': 'project TEXT',
+                    'tproject': 'tproject TEXT',
+                    'fv': 'fv TEXT',
+                    'team': 'team TEXT',
+                    'fvp': 'fvp TEXT',
+                    'lead_model': 'lead_model TEXT',
+                })
+                payload = [
+                    (
+                        _normalize_sync_text(row['project']),
+                        _normalize_sync_text(row['tproject']),
+                        _normalize_sync_text(row['fv']),
+                        _normalize_sync_text(row['team']),
+                        _normalize_sync_text(row['fvp']),
+                        _normalize_sync_text(row['lead_model']),
+                        _normalize_sync_text(row['id']),
+                    )
+                    for _, row in prepared_manual_df.iterrows()
+                ]
+                conn.executemany(
+                    """
+                    UPDATE octane_manual_runs
+                    SET project = COALESCE(NULLIF(?, ''), project),
+                        tproject = COALESCE(NULLIF(?, ''), tproject),
+                        fv = COALESCE(NULLIF(?, ''), fv),
+                        team = COALESCE(NULLIF(?, ''), team),
+                        fvp = COALESCE(NULLIF(?, ''), fvp),
+                        lead_model = COALESCE(NULLIF(?, ''), lead_model)
+                    WHERE mr_id = ?
+                    """,
+                    payload,
+                )
+                stats['manual_run_updates'] = conn.total_changes - changes_before_manual
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return stats
+
+
+def _run_cli():
+    parser = argparse.ArgumentParser(description='Data processor maintenance commands.')
+    parser.add_argument('--sync-processed-fields-to-db', action='store_true', help='Sync processed project/market/PU/FV fields back to SQLite.')
+    parser.add_argument('--db-path', default=_DEFAULT_OCTANE_DB_PATH, help='Path to the target SQLite database.')
+    parser.add_argument('--defects-only', action='store_true', help='Only sync octane_defects and skip octane_manual_runs.')
+    args = parser.parse_args()
+
+    if args.sync_processed_fields_to_db:
+        stats = sync_processed_fields_to_db(
+            db_path=args.db_path,
+            sync_manual_runs=not args.defects_only,
+        )
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
+        return 0
+
+    parser.print_help()
+    return 1
+
 # ===== Inflow/Outflow 分析函数 =====
 # 添加缓存支持
 try:
@@ -4086,14 +3793,7 @@ def calculate_inflow_outflow_trends(history_dir="history", date_range_weeks=52, 
     # 构建缓存键
     if CACHE_AVAILABLE:
         import hashlib
-        try:
-            data_version = get_cache_version(
-                prefix="v5",
-                extra_tag=os.environ.get("APP_CACHE_CODE_VERSION", "inflow_outflow"),
-            )
-        except Exception:
-            data_version = "v5_fallback"
-        cache_key = f"inflow_outflow_trends_{history_dir}_{date_range_weeks}_{data_version}"
+        cache_key = f"inflow_outflow_trends_{history_dir}_{date_range_weeks}"
         cache_key_hash = hashlib.md5(cache_key.encode()).hexdigest()
         
         # 如果不强制刷新，先尝试从缓存获取
@@ -4124,14 +3824,20 @@ def _calculate_inflow_outflow_trends_impl(history_dir="history", date_range_week
     """
     Inflow/Outflow趋势分析的实际实现
     """
+    import glob
+    import json
     import pandas as pd
     from datetime import datetime, timedelta
     import time
     
     start_time = time.time()
     
-    source_mode = "db"
-    db_path_val = _DEFAULT_OCTANE_DB_PATH
+    # 获取所有历史文件
+    all_files = glob.glob(os.path.join(history_dir, "*_history.json"))
+    if not all_files:
+        return pd.DataFrame(columns=['week', 'inflow', 'outflow'])
+    
+    print(f"正在分析 {len(all_files)} 个历史文件...")
     
     # 时间范围设定（使用UTC时间以匹配历史数据）
     end_date = datetime.utcnow()
@@ -4144,175 +3850,62 @@ def _calculate_inflow_outflow_trends_impl(history_dir="history", date_range_week
     # 计数器
     weekly_inflow = {}
     weekly_outflow = {}
-
-    def try_db_phase_aggregate() -> bool:
-        """Use SQLite JSON aggregation to avoid Python-level full-history scanning."""
-        if _DEFAULT_OCTANE_SOURCE == "file_only" or not db_path_val or not os.path.exists(db_path_val):
-            return False
-
-        # ISO-like lexical compare works for UTC timestamps in Octane payloads.
-        start_ts = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-        end_ts = end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-        sql = """
-        SELECT
-            week_key,
-            SUM(CASE
-                WHEN ((old_val LIKE '00%' AND new_val LIKE '01%')
-                      OR (old_val = '' AND new_val LIKE '01%'))
-                THEN 1 ELSE 0 END) AS inflow_count,
-            SUM(CASE
-                WHEN (new_val LIKE '06%' OR new_val LIKE '09%')
-                THEN 1 ELSE 0 END) AS outflow_count
-        FROM (
-            SELECT
-                strftime('%Y-W%W', replace(substr(json_extract(e.value, '$.timestamp'), 1, 19), 'T', ' ')) AS week_key,
-                COALESCE(json_extract(c.value, '$.old_value_text'), '') AS old_val,
-                COALESCE(NULLIF(json_extract(c.value, '$.value_text'), ''), json_extract(c.value, '$.valueName'), '') AS new_val
-              FROM octane_defect_histories h,
-                  json_each(h.payload_json, '$.data') e,
-                  json_each(e.value, '$.change_set') c
-            WHERE json_extract(c.value, '$.field_name') = 'phase'
-              AND json_extract(e.value, '$.timestamp') >= ?
-              AND json_extract(e.value, '$.timestamp') <= ?
-        ) t
-        GROUP BY week_key
-        ORDER BY week_key
-        """
-
-        try:
-            conn = sqlite3.connect(db_path_val)
-            try:
-                cur = conn.execute(sql, (start_ts, end_ts))
-                rows = cur.fetchall()
-            finally:
-                conn.close()
-
-            for week_key, inflow_count, outflow_count in rows:
-                wk = str(week_key or '').strip()
-                if not wk:
-                    continue
-                weekly_inflow[wk] = int(inflow_count or 0)
-                weekly_outflow[wk] = int(outflow_count or 0)
-
-            print(f"⚡ 数据库聚合模式完成: {len(rows)} 个周期")
-            return True
-        except Exception as e:
-            print(f"⚠️ 数据库聚合模式失败，回退逐条扫描: {e}")
-            return False
-
-    def process_entry(entry):
-        timestamp_str = entry.get('timestamp')
-        if not timestamp_str:
-            return
-
-        try:
-            ts = pd.to_datetime(timestamp_str, errors='coerce', utc=True)
-            if pd.isna(ts):
-                return
-            timestamp = ts.tz_convert(None)
-            if not (start_date <= timestamp <= end_date):
-                return
-
-            week_key = timestamp.strftime('%Y-W%V')
-            if week_key not in weekly_inflow:
-                weekly_inflow[week_key] = 0
-                weekly_outflow[week_key] = 0
-
-            changes = entry.get('change_set', [])
-            for change in changes:
-                if isinstance(change, dict) and change.get('field_name') == 'phase':
-                    old_val = change.get('old_value_text', '')
-                    new_val = change.get('value_text', '') or change.get('valueName', '')
-
-                    # Inflow: 00 -> 01 或者直接到01-new（从另一个系统创建的票）
-                    if (old_val.startswith('00') and new_val.startswith('01')) or \
-                       (not old_val and new_val.startswith('01')):
-                        weekly_inflow[week_key] += 1
-
-                    # Outflow: any -> 06/09
-                    if any(new_val.startswith(phase) for phase in outflow_phases):
-                        weekly_outflow[week_key] += 1
-        except Exception:
-            return
     
     processed = 0
-    total_sources = 0
-
-    # Fast path: SQL aggregation (much faster than Python JSON full scan).
-    if try_db_phase_aggregate():
-        processed = 1
-
-    # 数据库优先：直接扫描 octane_defect_histories
-    if processed == 0 and _DEFAULT_OCTANE_SOURCE != "file_only" and db_path_val and os.path.exists(db_path_val):
+    for file_path in all_files:
         try:
-            conn = sqlite3.connect(db_path_val)
-            try:
-                rows = conn.execute("SELECT payload_json FROM octane_defect_histories").fetchall()
-            finally:
-                conn.close()
-
-            total_sources = len(rows)
-            print(f"正在分析数据库历史记录: {total_sources} 条 defect history...")
-            for row in rows:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            if not data or 'data' not in data:
+                continue
+            
+            # 处理文件中的所有条目
+            for entry in data['data']:
+                timestamp_str = entry.get('timestamp')
+                if not timestamp_str:
+                    continue
+                
                 try:
-                    payload = json.loads(row[0]) if row and row[0] else None
-                    if isinstance(payload, dict) and 'data' in payload and isinstance(payload['data'], list):
-                        entries = payload['data']
-                    elif isinstance(payload, list):
-                        entries = payload
-                    else:
-                        entries = []
-
-                    for entry in entries:
-                        if isinstance(entry, dict):
-                            process_entry(entry)
-                except Exception:
-                    pass
-
-                processed += 1
-                if processed % 200 == 0:
-                    elapsed = time.time() - start_time
-                    print(f"📈 进度: {processed}/{total_sources} ({elapsed:.1f}s)")
-        except Exception as e:
-            print(f"警告: 数据库历史趋势分析失败: {e}")
-
-    # 数据库无结果时，按模式决定是否回退本地文件
-    if processed == 0:
-        if _DEFAULT_OCTANE_SOURCE == "db_only":
-            print("警告: db_only 模式下未读取到历史数据，返回空结果。")
-            return pd.DataFrame(columns=['week', 'inflow', 'outflow'])
-
-        source_mode = "file"
-        all_files = glob.glob(os.path.join(history_dir, "*_history.json"))
-        if not all_files:
-            return pd.DataFrame(columns=['week', 'inflow', 'outflow'])
-
-        total_sources = len(all_files)
-        print(f"数据库未命中，回退分析 {total_sources} 个历史文件...")
-
-        for file_path in all_files:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    payload = json.load(f)
-
-                if isinstance(payload, dict) and 'data' in payload and isinstance(payload['data'], list):
-                    entries = payload['data']
-                elif isinstance(payload, list):
-                    entries = payload
-                else:
-                    entries = []
-
-                for entry in entries:
-                    if isinstance(entry, dict):
-                        process_entry(entry)
-            except Exception:
-                pass
-
-            processed += 1
-            if processed % 200 == 0:
-                elapsed = time.time() - start_time
-                print(f"📈 进度: {processed}/{total_sources} ({elapsed:.1f}s)")
+                    timestamp = pd.to_datetime(timestamp_str).tz_localize(None)  # 转换为naive datetime以便比较
+                    if not (start_date <= timestamp <= end_date):
+                        continue
+                    
+                    week_key = timestamp.strftime('%Y-W%V')
+                    
+                    # 初始化计数器
+                    if week_key not in weekly_inflow:
+                        weekly_inflow[week_key] = 0
+                        weekly_outflow[week_key] = 0
+                    
+                    # 检查阶段变化
+                    changes = entry.get('change_set', [])
+                    for change in changes:
+                        if (isinstance(change, dict) and 
+                            change.get('field_name') == 'phase'):
+                            
+                            old_val = change.get('old_value_text', '')
+                            new_val = change.get('value_text', '') or change.get('valueName', '')
+                            
+                            # Inflow: 00 -> 01 或者直接到01-new（从另一个系统创建的票）
+                            if (old_val.startswith('00') and new_val.startswith('01')) or \
+                               (not old_val and new_val.startswith('01')):
+                                weekly_inflow[week_key] += 1
+                            
+                            # Outflow: any -> 06/09/10
+                            if any(new_val.startswith(phase) for phase in outflow_phases):
+                                weekly_outflow[week_key] += 1
+                
+                except:
+                    continue
+                    
+        except Exception:
+            continue
+        
+        processed += 1
+        if processed % 100 == 0:
+            elapsed = time.time() - start_time
+            print(f"📈 进度: {processed}/{len(all_files)} ({elapsed:.1f}s)")
     
     # 只保留有实际数据的周期，不生成未来的空数据
     # 找到最早和最晚有数据的周期
@@ -4370,7 +3963,7 @@ def _calculate_inflow_outflow_trends_impl(history_dir="history", date_range_week
     total_inflow = df_result['inflow'].sum() if not df_result.empty else 0
     total_outflow = df_result['outflow'].sum() if not df_result.empty else 0
     
-    print(f"Inflow/Outflow 趋势分析完成，共 {len(df_result)} 周数据（source={source_mode}）")
+    print(f"Inflow/Outflow 趋势分析完成，共 {len(df_result)} 周数据")
     print(f"总Inflow: {total_inflow}, 总Outflow: {total_outflow}")
     print(f"⏱️  完整模式耗时: {total_time:.2f} 秒")
     
@@ -4426,34 +4019,4 @@ def get_inflow_outflow_summary_stats(df_trends):
 
 
 if __name__ == '__main__':
-    import argparse
-
-    parser = argparse.ArgumentParser(description='data_processor standalone utilities')
-    parser.add_argument(
-        '--sync-project-to-db',
-        action='store_true',
-        help='Backward-compatible alias: sync processed business fields into octane_defects and octane_manual_runs',
-    )
-    parser.add_argument(
-        '--sync-processed-fields-to-db',
-        action='store_true',
-        help='Sync processed business fields (project/FV/Team/FVP/etc.) into octane_defects and octane_manual_runs',
-    )
-    parser.add_argument(
-        '--db-path',
-        default=None,
-        help='Optional SQLite database path. Default uses OCTANE_DB_PATH or local default.',
-    )
-    args = parser.parse_args()
-
-    auto_sync = os.environ.get('DATA_PROCESSOR_AUTO_SYNC_FIELDS', '0').strip().lower() in ('1', 'true', 'yes')
-
-    if args.sync_project_to_db or args.sync_processed_fields_to_db or auto_sync:
-        sync_stats = sync_processed_fields_to_db(db_path=args.db_path)
-        print(
-            '处理字段同步完成: '
-            f"defect_updates={sync_stats.get('defect_updates', 0)}/"
-            f"{sync_stats.get('defect_candidates', 0)}, "
-            f"manual_run_updates={sync_stats.get('manual_run_updates', 0)}/"
-            f"{sync_stats.get('manual_run_candidates', 0)}"
-        )
+    raise SystemExit(_run_cli())

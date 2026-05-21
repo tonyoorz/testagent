@@ -2,6 +2,7 @@ import unittest
 from dash import html
 
 from agent.core.enhanced_ai_chat_manager import (
+    EnhancedAIChatManager,
     build_duplicate_followup_query,
     count_duplicate_followup_rounds,
     append_duplicate_result_message,
@@ -112,6 +113,44 @@ class TestCountDuplicateFollowupRounds(unittest.TestCase):
 
 
 class TestEnhancedDuplicateResultCards(unittest.TestCase):
+    def test_create_enhanced_chat_interface_uses_light_app_shell_layout(self):
+        manager = EnhancedAIChatManager(dashboard_type="defect", use_agent=False, assistant_name="SiSi")
+
+        component = manager.create_enhanced_chat_interface(chat_id_prefix="defect-explore-chat-page")
+
+        self.assertIsInstance(component, html.Div)
+        component_repr = repr(component)
+        self.assertIn("defect-explore-chat-page-shell", component_repr)
+        self.assertIn("defect-explore-chat-page-rail", component_repr)
+        self.assertIn("defect-explore-chat-page-stage", component_repr)
+        self.assertIn("defect-explore-chat-page-composer", component_repr)
+        self.assertIn("defect-explore-chat-page-history", component_repr)
+        self.assertEqual(component.style.get("backgroundColor"), "transparent")
+        self.assertEqual(component.style.get("background"), "transparent")
+        self.assertIn("New Chat", component_repr)
+
+    def test_create_enhanced_chat_interface_lets_parent_page_own_background(self):
+        manager = EnhancedAIChatManager(dashboard_type="defect", use_agent=False, assistant_name="SiSi")
+
+        component = manager.create_enhanced_chat_interface(chat_id_prefix="defect-explore-chat-page")
+
+        self.assertIsInstance(component, html.Div)
+        self.assertEqual(component.style.get("backgroundColor"), "transparent")
+        self.assertEqual(component.style.get("background"), "transparent")
+
+    def test_create_enhanced_chat_interface_uses_compact_stage_header(self):
+        manager = EnhancedAIChatManager(dashboard_type="defect", use_agent=False, assistant_name="SiSi")
+
+        component = manager.create_enhanced_chat_interface(chat_id_prefix="defect-explore-chat-page")
+
+        stage = component.children[1].children[0]
+        stage_repr = repr(stage)
+
+        self.assertNotIn("Set as default", stage_repr)
+        self.assertIn("Suggested", stage_repr)
+        self.assertIn("defect-explore-chat-page-model-select", stage_repr)
+        self.assertIn("defect-explore-chat-page-clear-button", stage_repr)
+
     def test_render_enhanced_duplicate_result_message_contains_ticket_level_feedback_buttons(self):
         message = {
             "role": "assistant",
