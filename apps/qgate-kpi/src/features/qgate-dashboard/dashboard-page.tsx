@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { getDefaultQGateDashboardFilters } from "../../lib/default-filters";
 import type { QGateDashboardFilters, QGateDashboardState, QGateDashboardViewModel } from "../../lib/types";
@@ -54,6 +54,21 @@ type QGateDashboardPageProps =
 
 export type { QGateDashboardPageProps };
 
+const QGATE_FILTER_SECTIONS = [
+  {
+    title: "Scope",
+    description: "Core team and year scope",
+  },
+  {
+    title: "Issue history",
+    description: "History row filters",
+  },
+  {
+    title: "Thresholds",
+    description: "Transition density and time range",
+  },
+] as const;
+
 function FilterChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (
     <button className={active ? "filter-chip is-active" : "filter-chip"} onClick={onClick} type="button">
@@ -75,51 +90,103 @@ function SearchableSingleSelect({
   selectedValue: string;
   onChange: (value: string) => void;
 }) {
-  const [query, setQuery] = useState(selectedValue);
+  const [query, setQuery] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const fieldRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const panelId = useId();
 
   useEffect(() => {
-    setQuery(selectedValue);
-  }, [selectedValue]);
+    if (!isOpen) {
+      setQuery("");
+      return;
+    }
+
+    searchInputRef.current?.focus();
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!fieldRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isOpen]);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const filteredOptions = normalizedQuery
-    ? options.filter((value) => value.toLowerCase().includes(normalizedQuery)).slice(0, 25)
-    : selectedValue
-      ? options.filter((value) => value === selectedValue)
-      : [];
+  const filteredOptions = (normalizedQuery ? options.filter((value) => value.toLowerCase().includes(normalizedQuery)) : options).slice(0, 12);
+  const triggerLabel = selectedValue || allLabel;
 
   return (
-    <label className="filter-field">
+    <div className="filter-field qgate-search-field" ref={fieldRef}>
       <span className="filter-label">{label}</span>
-      <input
-        aria-label={label}
-        autoComplete="off"
-        onChange={(event) => {
-          const nextValue = event.target.value;
-          setQuery(nextValue);
-          if (nextValue === "") {
-            onChange("");
-          }
-        }}
-        placeholder={allLabel}
-        type="search"
-        value={query}
-      />
-      <div className="chip-row">
-        <FilterChip active={selectedValue === ""} label={allLabel} onClick={() => onChange("")} />
-        {filteredOptions.map((value) => (
-          <FilterChip
-            active={selectedValue === value}
-            key={value}
-            label={value}
-            onClick={() => {
-              setQuery(value);
-              onChange(value);
-            }}
+      <button
+        aria-controls={panelId}
+        aria-expanded={isOpen}
+        aria-label={`Open ${label} filter`}
+        className={isOpen ? "qgate-search-trigger is-open" : "qgate-search-trigger"}
+        onClick={() => setIsOpen((current) => !current)}
+        type="button"
+      >
+        <span className={selectedValue ? "qgate-search-trigger-value is-selected" : "qgate-search-trigger-value"}>{triggerLabel}</span>
+        <span className="qgate-search-trigger-hint">{isOpen ? "Close" : "Choose"}</span>
+      </button>
+      {isOpen ? (
+        <div className="qgate-search-popover" id={panelId}>
+          <input
+            aria-label={`${label} search`}
+            autoComplete="off"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={`Search ${label.toLowerCase()}`}
+            ref={searchInputRef}
+            type="search"
+            value={query}
           />
-        ))}
-      </div>
-    </label>
+          <div className="qgate-search-toolbar">
+            <FilterChip
+              active={selectedValue === ""}
+              label={allLabel}
+              onClick={() => {
+                onChange("");
+                setQuery("");
+                setIsOpen(false);
+              }}
+            />
+            <span className="qgate-filter-value-preview">{selectedValue ? `Selected: ${selectedValue}` : "Pick one option"}</span>
+          </div>
+          {filteredOptions.length > 0 ? (
+            <div className="chip-row qgate-search-chip-row" role="group" aria-label={`${label} options`}>
+              {filteredOptions.map((value) => (
+                <FilterChip
+                  active={selectedValue === value}
+                  key={value}
+                  label={value}
+                  onClick={() => {
+                    onChange(value);
+                    setQuery("");
+                    setIsOpen(false);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="chip-helper">No matches for the current search.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 function FilterChipRow({
@@ -477,90 +544,120 @@ export function QGateDashboardPage({ initialData, state, statusMessage }: QGateD
               </button>
             </div>
 
-            <div className="filter-grid">
-              <div className="filter-group">
-                <p className="filter-label">Years</p>
-                <FilterChipRow
-                  allLabel="All years"
-                  helperText="Click to toggle"
-                  onToggle={(value) => toggleField("years", value)}
-                  selectedValues={filters.years}
-                  values={initialData.options.years}
-                />
-              </div>
+            <div className="filter-grid qgate-filter-grid">
+              <section className="qgate-filter-section">
+                <div className="qgate-filter-section-header">
+                  <div>
+                    <p className="full-picture-filter-section-kicker">{QGATE_FILTER_SECTIONS[0].title}</p>
+                    <h3>{QGATE_FILTER_SECTIONS[0].description}</h3>
+                  </div>
+                </div>
+                <div className="qgate-filter-section-body">
+                  <div className="filter-group">
+                    <p className="filter-label">Years</p>
+                    <FilterChipRow
+                      allLabel="All years"
+                      helperText="Click to toggle"
+                      onToggle={(value) => toggleField("years", value)}
+                      selectedValues={filters.years}
+                      values={initialData.options.years}
+                    />
+                  </div>
 
-              <div className="filter-group">
-                <p className="filter-label">Teams</p>
-                <FilterChipRow
-                  allLabel="All teams"
-                  helperText="Click to toggle"
-                  noneLabel="No teams"
-                  onToggle={(value) => toggleField("teams", value)}
-                  selectedValues={filters.teams}
-                  values={initialData.options.teams}
-                />
-              </div>
+                  <div className="filter-group">
+                    <p className="filter-label">Teams</p>
+                    <FilterChipRow
+                      allLabel="All teams"
+                      helperText="Click to toggle"
+                      noneLabel="No teams"
+                      onToggle={(value) => toggleField("teams", value)}
+                      selectedValues={filters.teams}
+                      values={initialData.options.teams}
+                    />
+                  </div>
 
-              <div className="filter-group">
-                <p className="filter-label">Groups</p>
-                <FilterChipRow
-                  allLabel="All groups"
-                  helperText="Click to toggle"
-                  onToggle={(value) => toggleField("groups", value)}
-                  selectedValues={filters.groups}
-                  values={initialData.options.groups}
-                />
-              </div>
+                  <div className="filter-group">
+                    <p className="filter-label">Groups</p>
+                    <FilterChipRow
+                      allLabel="All groups"
+                      helperText="Click to toggle"
+                      onToggle={(value) => toggleField("groups", value)}
+                      selectedValues={filters.groups}
+                      values={initialData.options.groups}
+                    />
+                  </div>
+                </div>
+              </section>
 
-              <SearchableSingleSelect
-                allLabel="All changed by"
-                label="Changed by"
-                onChange={(value) => setSelectField("changedBy", value)}
-                options={initialData.options.changedBy}
-                selectedValue={filters.changedBy[0] ?? ""}
-              />
+              <section className="qgate-filter-section">
+                <div className="qgate-filter-section-header">
+                  <div>
+                    <p className="full-picture-filter-section-kicker">{QGATE_FILTER_SECTIONS[1].title}</p>
+                    <h3>{QGATE_FILTER_SECTIONS[1].description}</h3>
+                  </div>
+                </div>
+                <div className="qgate-filter-section-body qgate-filter-section-body-compact">
+                  <SearchableSingleSelect
+                    allLabel="All changed by"
+                    label="Changed by"
+                    onChange={(value) => setSelectField("changedBy", value)}
+                    options={initialData.options.changedBy}
+                    selectedValue={filters.changedBy[0] ?? ""}
+                  />
 
-              <SearchableSingleSelect
-                allLabel="All FiF"
-                label="FiF"
-                onChange={(value) => setSelectField("fif", value)}
-                options={initialData.options.fif}
-                selectedValue={filters.fif[0] ?? ""}
-              />
+                  <SearchableSingleSelect
+                    allLabel="All FiF"
+                    label="FiF"
+                    onChange={(value) => setSelectField("fif", value)}
+                    options={initialData.options.fif}
+                    selectedValue={filters.fif[0] ?? ""}
+                  />
+                </div>
+              </section>
 
-              <label className="filter-field">
-                <span className="filter-label">Timespan min</span>
-                <input
-                  aria-label="Timespan min"
-                  min="0"
-                  onChange={(event) => setNumericField("timespanMin", event.target.value)}
-                  type="number"
-                  value={filters.timespanMin}
-                />
-              </label>
+              <section className="qgate-filter-section qgate-filter-section-thresholds">
+                <div className="qgate-filter-section-header">
+                  <div>
+                    <p className="full-picture-filter-section-kicker">{QGATE_FILTER_SECTIONS[2].title}</p>
+                    <h3>{QGATE_FILTER_SECTIONS[2].description}</h3>
+                  </div>
+                </div>
+                <div className="qgate-filter-number-grid">
+                  <label className="filter-field qgate-filter-field-compact">
+                    <span className="filter-label">Timespan min</span>
+                    <input
+                      aria-label="Timespan min"
+                      min="0"
+                      onChange={(event) => setNumericField("timespanMin", event.target.value)}
+                      type="number"
+                      value={filters.timespanMin}
+                    />
+                  </label>
 
-              <label className="filter-field">
-                <span className="filter-label">Timespan max</span>
-                <input
-                  aria-label="Timespan max"
-                  min="0"
-                  onChange={(event) => setNumericField("timespanMax", event.target.value)}
-                  placeholder="Open-ended"
-                  type="number"
-                  value={filters.timespanMax ?? ""}
-                />
-              </label>
+                  <label className="filter-field qgate-filter-field-compact">
+                    <span className="filter-label">Timespan max</span>
+                    <input
+                      aria-label="Timespan max"
+                      min="0"
+                      onChange={(event) => setNumericField("timespanMax", event.target.value)}
+                      placeholder="Open-ended"
+                      type="number"
+                      value={filters.timespanMax ?? ""}
+                    />
+                  </label>
 
-              <label className="filter-field">
-                <span className="filter-label">Min samples</span>
-                <input
-                  aria-label="Min samples"
-                  min="0"
-                  onChange={(event) => setNumericField("minTransitionCount", event.target.value)}
-                  type="number"
-                  value={filters.minTransitionCount}
-                />
-              </label>
+                  <label className="filter-field qgate-filter-field-compact">
+                    <span className="filter-label">Min samples</span>
+                    <input
+                      aria-label="Min samples"
+                      min="0"
+                      onChange={(event) => setNumericField("minTransitionCount", event.target.value)}
+                      type="number"
+                      value={filters.minTransitionCount}
+                    />
+                  </label>
+                </div>
+              </section>
             </div>
 
           </section>

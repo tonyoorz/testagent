@@ -73,6 +73,15 @@ const sampleDashboardData = {
   ],
 };
 
+function openSingleSelectFilter(label: "Changed by" | "FiF") {
+  fireEvent.click(screen.getByRole("button", { name: `Open ${label} filter` }));
+}
+
+function searchSingleSelectFilter(label: "Changed by" | "FiF", value: string) {
+  openSingleSelectFilter(label);
+  fireEvent.change(screen.getByLabelText(`${label} search`), { target: { value } });
+}
+
 describe("QGateDashboardPage", () => {
   it("renders the hero title and loading skeleton", () => {
     render(<QGateDashboardPage state="loading" />);
@@ -475,17 +484,38 @@ describe("QGateDashboardPage", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Changed by"), { target: { value: "Bob" } });
+    searchSingleSelectFilter("Changed by", "Bob");
     fireEvent.click(screen.getByRole("button", { name: "Bob" }));
 
     expect(screen.getByText("03-Analysis -> 04-Fix")).toBeInTheDocument();
     expect(screen.queryByText("02-QGate -> 03-Analysis")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("FiF"), { target: { value: "China" } });
+    searchSingleSelectFilter("FiF", "China");
     fireEvent.click(screen.getByRole("button", { name: "China Specific" }));
 
     expect(screen.getByText("03-Analysis -> 04-Fix")).toBeInTheDocument();
     expect(screen.queryByText("02-QGate -> 03-Analysis")).not.toBeInTheDocument();
+  });
+
+  it("opens changed-by quick-pick options on click so the field does not appear inert", () => {
+    render(
+      <QGateDashboardPage
+        state="ready"
+        initialData={{
+          ...sampleDashboardData,
+          options: {
+            ...sampleDashboardData.options,
+            changedBy: ["Alice", "Bob", "Carol"],
+          },
+        }}
+      />,
+    );
+
+    openSingleSelectFilter("Changed by");
+
+    expect(screen.getByRole("group", { name: "Changed by options" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Alice" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bob" })).toBeInTheDocument();
   });
 
   it("shows the phase summary empty state instead of zero-transition team rows when issue-only filters remove all issues", () => {
@@ -524,7 +554,7 @@ describe("QGateDashboardPage", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Changed by"), { target: { value: "Bob" } });
+    searchSingleSelectFilter("Changed by", "Bob");
     fireEvent.click(screen.getByRole("button", { name: "Bob" }));
 
     const summaryChartBox = screen.getByText("Team × Group Efficiency").closest(".chart-box");
@@ -588,7 +618,7 @@ describe("QGateDashboardPage", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Changed by"), { target: { value: "Alice" } });
+    searchSingleSelectFilter("Changed by", "Alice");
     fireEvent.click(screen.getByRole("button", { name: "Alice" }));
 
     const summaryChartBox = screen.getByText("Team × Group Efficiency").closest(".chart-box");

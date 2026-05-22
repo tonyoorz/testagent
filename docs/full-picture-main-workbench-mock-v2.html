@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Main Full Picture Workbench Mock V2</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=JetBrains+Mono:wght@500&display=swap");
+
+      :root {
+        --bg: #f4f7fb;
+        --panel: #ffffff;
+        --panel-muted: #f5f7fb;
+        --line: #e2e8f0;
+        --text: #0f172a;
+        --muted: #64748b;
+        --muted-2: #94a3b8;
+        --primary: #2f6fed;
+        --primary-soft: rgba(47, 111, 237, 0.12);
+        --success: #1f9d62;
+        --success-soft: rgba(31, 157, 98, 0.12);
+        --warning: #d48a1c;
+        --warning-soft: rgba(212, 138, 28, 0.12);
+        --danger: #d95c5c;
+        --danger-soft: rgba(217, 92, 92, 0.12);
+        --sidebar-bg: #121c2f;
+        --sidebar-fg: #c8d1e2;
+        --sidebar-muted: #7c8aa2;
+        --sidebar-hover: rgba(255, 255, 255, 0.05);
+        --radius-xl: 24px;
+        --radius-lg: 20px;
+        --radius-md: 16px;
+        --radius-sm: 12px;
+        --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 30px rgba(15, 23, 42, 0.06);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "DM Sans", "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 236px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        min-height: 100vh;
+        padding: 22px 14px;
+        background: var(--sidebar-bg);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 10px 18px;
+      }
+
+      .brand-icon {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: var(--primary);
+        color: #fff;
+        font-size: 18px;
+        font-weight: 800;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 14px;
+        color: #f8fbff;
+      }
+
+      .brand p {
+        margin: 3px 0 0;
+        font-size: 12px;
+        color: var(--sidebar-muted);
+      }
+
+      .nav-label {
+        padding: 12px 10px 8px;
+        color: rgba(255, 255, 255, 0.36);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .nav-list {
+        display: grid;
+        gap: 4px;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 11px 12px;
+        border-radius: 14px;
+        color: var(--sidebar-fg);
+        background: transparent;
+        border: 0;
+        text-align: left;
+      }
+
+      .nav-item.active {
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--text);
+      }
+
+      .nav-item:not(.active) {
+        cursor: pointer;
+      }
+
+      .nav-item:not(.active):hover {
+        background: var(--sidebar-hover);
+      }
+
+      .nav-main {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .nav-glyph {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.06);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .nav-item.active .nav-glyph {
+        background: var(--primary-soft);
+        color: var(--primary);
+      }
+
+      .nav-title strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .nav-title span {
+        display: block;
+        margin-top: 2px;
+        font-size: 11px;
+        opacity: 0.72;
+      }
+
+      .nav-badge {
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: var(--primary-soft);
+        color: var(--primary);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .sidebar-note {
+        margin-top: 18px;
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .sidebar-note strong {
+        display: block;
+        color: #eff5ff;
+        font-size: 13px;
+      }
+
+      .sidebar-note p {
+        margin: 6px 0 0;
+        color: var(--sidebar-muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .main {
+        padding: 22px;
+      }
+
+      .stage {
+        max-width: 1320px;
+        margin: 0 auto;
+      }
+
+      .header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 4px 4px 18px;
+      }
+
+      .eyebrow {
+        margin: 0 0 6px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted-2);
+      }
+
+      .header h2 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.04;
+        letter-spacing: -0.04em;
+      }
+
+      .header p {
+        margin: 8px 0 0;
+        max-width: 780px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: var(--muted);
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .pill,
+      .btn,
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+      }
+
+      .pill {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: var(--success-soft);
+        color: var(--success);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .btn {
+        padding: 10px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .btn.primary {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .filters {
+        padding: 18px;
+      }
+
+      .filters-top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .search {
+        flex: 1 1 320px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel-muted);
+        color: var(--muted);
+      }
+
+      .search input {
+        width: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+      }
+
+      .scope-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 13px 14px;
+        margin-bottom: 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-muted);
+      }
+
+      .scope-row strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .scope-row p {
+        margin: 4px 0 0;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .chip-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .chip {
+        padding: 7px 11px;
+        border-radius: 999px;
+        background: #fff;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .chip.active {
+        background: var(--primary-soft);
+        color: var(--primary);
+        border-color: rgba(47, 111, 237, 0.18);
+      }
+
+      .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .field {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fff;
+      }
+
+      .field.wide {
+        grid-column: span 2;
+      }
+
+      .field label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted-2);
+      }
+
+      .value {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 38px;
+        padding: 0 12px;
+        border-radius: 12px;
+        background: var(--panel-muted);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .content {
+        display: grid;
+        gap: 16px;
+        margin-top: 16px;
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .kpi {
+        padding: 18px;
+      }
+
+      .kpi-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .kpi label {
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+      }
+
+      .kpi strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 34px;
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+
+      .kpi-icon {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        font-size: 16px;
+      }
+
+      .kpi-note {
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.95fr);
+        gap: 16px;
+      }
+
+      .card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .card-head h3 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .card-head p {
+        margin: 5px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .tag {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--panel-muted);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .mix,
+      .signals,
+      .teams,
+      .tickets {
+        padding: 18px;
+      }
+
+      .mix-grid {
+        display: grid;
+        grid-template-columns: 180px minmax(0, 1fr);
+        gap: 18px;
+        align-items: center;
+      }
+
+      .ring {
+        position: relative;
+        width: 160px;
+        height: 160px;
+        border-radius: 50%;
+        background: conic-gradient(var(--primary) 0 38%, #e77166 38% 52%, #d9e1ec 52% 100%);
+      }
+
+      .ring::after {
+        content: "";
+        position: absolute;
+        inset: 22px;
+        border-radius: 50%;
+        background: #fff;
+      }
+
+      .ring-center {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        text-align: center;
+      }
+
+      .ring-center strong {
+        display: block;
+        font-size: 30px;
+        line-height: 1;
+      }
+
+      .ring-center span {
+        display: block;
+        margin-top: 5px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+
+      .legend {
+        display: grid;
+        gap: 10px;
+      }
+
+      .legend-item {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .legend-item:last-child {
+        border-bottom: 0;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      .legend-item strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .legend-item span {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+
+      .legend-val {
+        text-align: right;
+      }
+
+      .legend-val strong {
+        font-size: 14px;
+      }
+
+      .signal-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .signal {
+        padding: 13px 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-muted);
+      }
+
+      .signal strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .signal p {
+        margin: 5px 0 0;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--muted);
+      }
+
+      .teams-top,
+      .tickets-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .team-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .team {
+        display: grid;
+        grid-template-columns: 180px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-muted);
+      }
+
+      .team strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .team span {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .bars {
+        display: grid;
+        gap: 8px;
+      }
+
+      .bar {
+        display: grid;
+        grid-template-columns: 126px minmax(0, 1fr) 42px;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .bar label {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+      }
+
+      .track {
+        height: 10px;
+        border-radius: 999px;
+        background: #dbe4ef;
+        overflow: hidden;
+      }
+
+      .fill {
+        height: 100%;
+        border-radius: inherit;
+      }
+
+      .bar strong {
+        font-size: 12px;
+        text-align: right;
+      }
+
+      .team-btn {
+        padding: 9px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(47, 111, 237, 0.18);
+        background: #fff;
+        color: var(--primary);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .mini {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th {
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--muted-2);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+
+      td {
+        padding: 13px 12px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+        font-size: 13px;
+        vertical-align: top;
+      }
+
+      tr:hover td {
+        background: rgba(47, 111, 237, 0.03);
+      }
+
+      .ticket-title {
+        max-width: 420px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .badge.forward {
+        background: var(--primary-soft);
+        color: var(--primary);
+      }
+
+      .badge.reject {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .badge.other {
+        background: #e7edf4;
+        color: #556477;
+      }
+
+      .note {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: 1px dashed #ced8e5;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+        background: rgba(255, 255, 255, 0.55);
+      }
+
+      @media (max-width: 1280px) {
+        .filter-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .kpis {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 1080px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: relative;
+          min-height: auto;
+        }
+
+        .split,
+        .mix-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .team,
+        .filter-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .field.wide {
+          grid-column: span 1;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .main {
+          padding: 16px;
+        }
+
+        .header,
+        .actions,
+        .filters-top,
+        .scope-row,
+        .teams-top,
+        .tickets-top {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .kpis {
+          grid-template-columns: 1fr;
+        }
+
+        .bar {
+          grid-template-columns: 1fr;
+        }
+
+        .header h2 {
+          font-size: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-icon">D</div>
+          <div>
+            <h1>DTSV</h1>
+            <p>数据分析平台</p>
+          </div>
+        </div>
+
+        <div class="nav-label">Core</div>
+        <div class="nav-list">
+          <button class="nav-item active" type="button">
+            <div class="nav-main">
+              <div class="nav-glyph">M</div>
+              <div class="nav-title">
+                <strong>Main</strong>
+                <span>Full Picture 工作台</span>
+              </div>
+            </div>
+            <span class="nav-badge">Default</span>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-glyph">P</div>
+              <div class="nav-title">
+                <strong>Project</strong>
+                <span>项目分析</span>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-glyph">T</div>
+              <div class="nav-title">
+                <strong>Team</strong>
+                <span>测试团队分析</span>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-glyph">R</div>
+              <div class="nav-title">
+                <strong>Risk</strong>
+                <span>风险热点</span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <div class="nav-label">Analysis</div>
+        <div class="nav-list">
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-glyph">C</div>
+              <div class="nav-title">
+                <strong>Coverage</strong>
+                <span>覆盖率分析</span>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-glyph">S</div>
+              <div class="nav-title">
+                <strong>Status</strong>
+                <span>状态分析</span>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-glyph">AI</div>
+              <div class="nav-title">
+                <strong>AI Chat</strong>
+                <span>上下文助手</span>
+              </div>
+            </div>
+            <span class="nav-badge">Beta</span>
+          </button>
+        </div>
+
+        <div class="sidebar-note">
+          <strong>这版是高还原视觉方向</strong>
+          <p>减少自定义装饰感，尽量回到参考站点的深色左 rail、浅色工作台、紧凑卡片和轻阴影体系。</p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="stage">
+          <header class="header">
+            <div>
+              <p class="eyebrow">Main / Full Picture</p>
+              <h2>Full Picture Management Workbench</h2>
+              <p>这版不再强调“全新视觉品牌感”，而是尽量贴近参考站点的仪表盘骨架，把 Full Picture 的内容直接嵌进统一数据看板。</p>
+            </div>
+            <div class="actions">
+              <span class="pill">数据已同步</span>
+              <button class="btn" type="button">导出快照</button>
+              <button class="btn primary" type="button">刷新范围</button>
+            </div>
+          </header>
+
+          <section class="panel filters">
+            <div class="filters-top">
+              <label class="search">
+                <span>搜索</span>
+                <input aria-label="Search scope" value="Ticket ID 或名称" />
+              </label>
+              <button class="btn" type="button">搜索</button>
+              <button class="btn" type="button">筛选</button>
+            </div>
+
+            <div class="scope-row">
+              <div>
+                <strong>Main 承载 Full Picture，不单独悬挂为孤立页</strong>
+                <p>内容组织基本正确，当前差距主要来自视觉 token、间距密度、卡片风格和页面壳层，而不是信息结构。</p>
+              </div>
+              <div class="chip-row">
+                <span class="chip active">2026</span>
+                <span class="chip active">All Teams</span>
+                <span class="chip">Plant = All</span>
+                <span class="chip active">Outcome tracked</span>
+              </div>
+            </div>
+
+            <div class="filter-grid">
+              <div class="field">
+                <label>年份</label>
+                <div class="value"><span>2026</span><span>All</span></div>
+              </div>
+              <div class="field">
+                <label>项目</label>
+                <div class="value"><span>China portfolio</span><span>4 selected</span></div>
+              </div>
+              <div class="field">
+                <label>AIDA</label>
+                <div class="value"><span>Digital + EE</span><span>12 selected</span></div>
+              </div>
+              <div class="field">
+                <label>状态</label>
+                <div class="value"><span>Tracked outcome</span><span>2 active</span></div>
+              </div>
+              <div class="field">
+                <label>市场</label>
+                <div class="value"><span>CN / EU / Global</span><span>Multi</span></div>
+              </div>
+              <div class="field">
+                <label>主导车型</label>
+                <div class="value"><span>G68 / U12 / NA6</span><span>Multi</span></div>
+              </div>
+            </div>
+          </section>
+
+          <div class="content">
+            <section class="kpis">
+              <article class="panel kpi">
+                <div class="kpi-top">
+                  <div>
+                    <label>Tickets in scope</label>
+                    <strong>1,284</strong>
+                  </div>
+                  <div class="kpi-icon" style="background:var(--primary-soft);color:var(--primary)">B</div>
+                </div>
+                <div class="kpi-note" style="color:var(--success)">+8.2% 较上次同步</div>
+              </article>
+              <article class="panel kpi">
+                <div class="kpi-top">
+                  <div>
+                    <label>Resolved Forward</label>
+                    <strong>492</strong>
+                  </div>
+                  <div class="kpi-icon" style="background:var(--success-soft);color:var(--success)">C</div>
+                </div>
+                <div class="kpi-note" style="color:var(--success)">38.3% portfolio share</div>
+              </article>
+              <article class="panel kpi">
+                <div class="kpi-top">
+                  <div>
+                    <label>Rejected Directly</label>
+                    <strong>178</strong>
+                  </div>
+                  <div class="kpi-icon" style="background:var(--warning-soft);color:var(--warning)">!</div>
+                </div>
+                <div class="kpi-note" style="color:var(--warning)">13.9% portfolio share</div>
+              </article>
+              <article class="panel kpi">
+                <div class="kpi-top">
+                  <div>
+                    <label>Teams tracked</label>
+                    <strong>7</strong>
+                  </div>
+                  <div class="kpi-icon" style="background:#eef2f7;color:#556477">T</div>
+                </div>
+                <div class="kpi-note" style="color:var(--muted)">Team-local denominator</div>
+              </article>
+            </section>
+
+            <section class="split">
+              <article class="panel mix">
+                <div class="card-head">
+                  <div>
+                    <h3>Portfolio Outcome Mix</h3>
+                    <p>先看 portfolio，再往下进入 team expansion。这一层保持全局范围语义，不改数据定义。</p>
+                  </div>
+                  <span class="tag">Overview</span>
+                </div>
+
+                <div class="mix-grid">
+                  <div class="ring">
+                    <div class="ring-center">
+                      <div>
+                        <strong>53%</strong>
+                        <span>Tracked</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="legend">
+                    <div class="legend-item">
+                      <span class="dot" style="background:var(--primary)"></span>
+                      <div>
+                        <strong>Resolved Forward</strong>
+                        <span>过滤范围下所有 team 的组合结果</span>
+                      </div>
+                      <div class="legend-val">
+                        <strong>492</strong>
+                        <span>38.3%</span>
+                      </div>
+                    </div>
+                    <div class="legend-item">
+                      <span class="dot" style="background:#e77166"></span>
+                      <div>
+                        <strong>Rejected Directly</strong>
+                        <span>保持为一级可见信号</span>
+                      </div>
+                      <div class="legend-val">
+                        <strong>178</strong>
+                        <span>13.9%</span>
+                      </div>
+                    </div>
+                    <div class="legend-item">
+                      <span class="dot" style="background:#d9e1ec"></span>
+                      <div>
+                        <strong>Other</strong>
+                        <span>保留剩余分母上下文</span>
+                      </div>
+                      <div class="legend-val">
+                        <strong>614</strong>
+                        <span>47.8%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="panel signals">
+                <div class="card-head">
+                  <div>
+                    <h3>Main Signals</h3>
+                    <p>右侧不再做大装饰块，只保留简明的叙事卡。</p>
+                  </div>
+                  <span class="tag">Context</span>
+                </div>
+
+                <div class="signal-list">
+                  <div class="signal">
+                    <strong>为什么上一版差别大</strong>
+                    <p>上一版加入了更强的 glass、渐变、超大圆角和更宽松的留白，所以更像“新设计”，不像参考站点。</p>
+                  </div>
+                  <div class="signal">
+                    <strong>这版还原策略</strong>
+                    <p>收紧留白，缩小圆角，降低阴影，回到浅色卡片 + 深色左 rail + 实用型 header/filter 的组合。</p>
+                  </div>
+                  <div class="signal">
+                    <strong>可否高度还原</strong>
+                    <p>可以。内容层已经没太大问题，接下来主要是把 token、spacing、组件表面和动画语气统一到参考站点。</p>
+                  </div>
+                </div>
+              </article>
+            </section>
+
+            <section class="panel teams">
+              <div class="teams-top">
+                <div class="card-head" style="margin:0">
+                  <div>
+                    <h3>Team Expansion by Outcome</h3>
+                    <p>保持在 Portfolio 下边横向展开，这是你前面已经确认过的正确结构。</p>
+                  </div>
+                </div>
+                <div class="chip-row">
+                  <span class="chip active">All teams</span>
+                  <span class="chip active">Resolved Forward</span>
+                </div>
+              </div>
+
+              <div class="team-list">
+                <div class="team">
+                  <div>
+                    <strong>DTSV_China</strong>
+                    <span>Team denominator: 322 tickets</span>
+                  </div>
+                  <div class="bars">
+                    <div class="bar">
+                      <label>Resolved Forward</label>
+                      <div class="track"><div class="fill" style="width:61%;background:var(--primary)"></div></div>
+                      <strong>61%</strong>
+                    </div>
+                    <div class="bar">
+                      <label>Rejected Directly</label>
+                      <div class="track"><div class="fill" style="width:19%;background:#e77166"></div></div>
+                      <strong>19%</strong>
+                    </div>
+                  </div>
+                  <button class="team-btn" type="button">Inspect</button>
+                </div>
+
+                <div class="team">
+                  <div>
+                    <strong>[AT]W72-FIT</strong>
+                    <span>Team denominator: 274 tickets</span>
+                  </div>
+                  <div class="bars">
+                    <div class="bar">
+                      <label>Resolved Forward</label>
+                      <div class="track"><div class="fill" style="width:42%;background:var(--primary)"></div></div>
+                      <strong>42%</strong>
+                    </div>
+                    <div class="bar">
+                      <label>Rejected Directly</label>
+                      <div class="track"><div class="fill" style="width:24%;background:#e77166"></div></div>
+                      <strong>24%</strong>
+                    </div>
+                  </div>
+                  <button class="team-btn" type="button">Inspect</button>
+                </div>
+
+                <div class="team">
+                  <div>
+                    <strong>[AT]BBA_Basis-FIT</strong>
+                    <span>Team denominator: 181 tickets</span>
+                  </div>
+                  <div class="bars">
+                    <div class="bar">
+                      <label>Resolved Forward</label>
+                      <div class="track"><div class="fill" style="width:34%;background:var(--primary)"></div></div>
+                      <strong>34%</strong>
+                    </div>
+                    <div class="bar">
+                      <label>Rejected Directly</label>
+                      <div class="track"><div class="fill" style="width:29%;background:#e77166"></div></div>
+                      <strong>29%</strong>
+                    </div>
+                  </div>
+                  <button class="team-btn" type="button">Inspect</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel tickets">
+              <div class="tickets-top">
+                <div class="card-head" style="margin:0">
+                  <div>
+                    <h3>Ticket Detail</h3>
+                    <p>下半区继续保留 Ticket Detail，不做 tab。这样内容路径与你现在的 Full Picture 最接近。</p>
+                  </div>
+                </div>
+                <div class="mini">selection = team:DTSV_China / outcome:resolvedForward</div>
+              </div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>Ticket</th>
+                    <th>Title</th>
+                    <th>Team</th>
+                    <th>Status</th>
+                    <th>Outcome</th>
+                    <th>Phase</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>2553006</strong></td>
+                    <td><div class="ticket-title">Navigation app reset after route recalculation under mixed market scope.</div></td>
+                    <td>DTSV_China</td>
+                    <td>03-In Analysis</td>
+                    <td><span class="badge forward">Resolved Forward</span></td>
+                    <td>Validation</td>
+                  </tr>
+                  <tr>
+                    <td><strong>2536597</strong></td>
+                    <td><div class="ticket-title">Plant scope handover issue linked to team-level denominator review.</div></td>
+                    <td>DTSV_China</td>
+                    <td>04-In Progress</td>
+                    <td><span class="badge forward">Resolved Forward</span></td>
+                    <td>Implementation</td>
+                  </tr>
+                  <tr>
+                    <td><strong>2531396</strong></td>
+                    <td><div class="ticket-title">Outcome selection propagated into lower drill table without leaving Main workspace.</div></td>
+                    <td>DTSV_China</td>
+                    <td>04-In Progress</td>
+                    <td><span class="badge reject">Rejected Directly</span></td>
+                    <td>Analysis</td>
+                  </tr>
+                  <tr>
+                    <td><strong>2529259</strong></td>
+                    <td><div class="ticket-title">Browser fallback still needs a same-origin bridge to avoid direct cross-origin fetch on 8001.</div></td>
+                    <td>[AT]W72-FIT</td>
+                    <td>01-New</td>
+                    <td><span class="badge other">Other</span></td>
+                    <td>Bootstrap</td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+          </div>
+
+          <div class="note">
+            推荐下一步：如果你认可这版视觉语气，我就按这套 token 和表面风格回写正式设计 spec，然后再开始把 Next 前端壳层改成这种高还原样式。
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Main Full Picture Workbench Mock</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=JetBrains+Mono:wght@500&display=swap");
+
+      :root {
+        --bg: #eef2f7;
+        --bg-soft: #f7f9fc;
+        --panel: rgba(255, 255, 255, 0.92);
+        --panel-strong: #ffffff;
+        --panel-muted: #f2f5f9;
+        --border: rgba(18, 30, 52, 0.1);
+        --border-strong: rgba(18, 30, 52, 0.16);
+        --text: #102038;
+        --text-muted: #64748b;
+        --text-soft: #93a0b4;
+        --nav-bg: #111c2f;
+        --nav-bg-2: #16243b;
+        --nav-text: #c4d0e1;
+        --nav-muted: #7f8da6;
+        --nav-active: #eef5ff;
+        --accent: #2878ff;
+        --accent-soft: rgba(40, 120, 255, 0.12);
+        --accent-strong: #175dd0;
+        --success: #1f9d62;
+        --success-soft: rgba(31, 157, 98, 0.14);
+        --warning: #da8b1a;
+        --warning-soft: rgba(218, 139, 26, 0.14);
+        --danger: #d65959;
+        --danger-soft: rgba(214, 89, 89, 0.14);
+        --shadow: 0 24px 60px rgba(10, 23, 45, 0.12);
+        --shadow-soft: 0 12px 28px rgba(13, 28, 50, 0.08);
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+        --radius-sm: 12px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-height: 100%;
+        background:
+          radial-gradient(circle at top left, rgba(40, 120, 255, 0.08), transparent 28%),
+          radial-gradient(circle at top right, rgba(31, 157, 98, 0.06), transparent 18%),
+          linear-gradient(180deg, #f6f8fb 0%, #edf2f7 100%);
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--text);
+        font-family: "DM Sans", "Segoe UI", sans-serif;
+        background: transparent;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      .app-shell {
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        min-height: 100vh;
+        padding: 24px 18px 20px;
+        background:
+          radial-gradient(circle at top left, rgba(255, 255, 255, 0.06), transparent 22%),
+          linear-gradient(180deg, var(--nav-bg) 0%, var(--nav-bg-2) 100%);
+        border-right: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 8px 8px 18px;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #2878ff 0%, #6aa8ff 100%);
+        color: white;
+        font-size: 20px;
+        font-weight: 800;
+        box-shadow: 0 14px 30px rgba(40, 120, 255, 0.3);
+      }
+
+      .brand-copy h1 {
+        margin: 0;
+        color: #f8fbff;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+      }
+
+      .brand-copy p {
+        margin: 3px 0 0;
+        color: var(--nav-muted);
+        font-size: 12px;
+      }
+
+      .nav-group {
+        display: grid;
+        gap: 6px;
+      }
+
+      .nav-label {
+        padding: 0 10px 8px;
+        color: rgba(255, 255, 255, 0.35);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 12px;
+        border: 0;
+        border-radius: 16px;
+        background: transparent;
+        color: var(--nav-text);
+        text-align: left;
+        cursor: pointer;
+        transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+      }
+
+      .nav-item:hover {
+        transform: translateX(2px);
+        background: rgba(255, 255, 255, 0.05);
+        color: #eef5ff;
+      }
+
+      .nav-item.active {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(238, 245, 255, 0.95));
+        color: #102038;
+        box-shadow: 0 18px 36px rgba(7, 18, 36, 0.18);
+      }
+
+      .nav-item-main {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .nav-icon {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.06);
+        font-size: 14px;
+      }
+
+      .nav-item.active .nav-icon {
+        background: rgba(40, 120, 255, 0.12);
+      }
+
+      .nav-title {
+        display: grid;
+        gap: 2px;
+      }
+
+      .nav-title strong {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .nav-title span {
+        color: inherit;
+        opacity: 0.72;
+        font-size: 11px;
+      }
+
+      .nav-badge {
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(40, 120, 255, 0.12);
+        color: var(--accent-strong);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .sidebar-footer {
+        margin-top: auto;
+        padding: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .sidebar-footer p {
+        margin: 0;
+        color: var(--nav-muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .sidebar-footer strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #eef5ff;
+        font-size: 13px;
+      }
+
+      .workspace {
+        min-width: 0;
+        padding: 22px;
+      }
+
+      .workspace-inner {
+        display: grid;
+        gap: 18px;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 18px;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 18px 22px;
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.72);
+        backdrop-filter: blur(14px);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .crumb {
+        margin: 0 0 6px;
+        color: var(--text-soft);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .topbar h2 {
+        margin: 0;
+        font-size: 26px;
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+      }
+
+      .topbar-copy {
+        margin: 8px 0 0;
+        max-width: 820px;
+        color: var(--text-muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .status-pill,
+      .ghost-button,
+      .primary-button,
+      .chip,
+      .filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+      }
+
+      .status-pill {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(31, 157, 98, 0.12);
+        color: var(--success);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .ghost-button,
+      .primary-button {
+        padding: 11px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: white;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .primary-button {
+        background: linear-gradient(135deg, #2878ff 0%, #4992ff 100%);
+        border-color: transparent;
+        color: white;
+        box-shadow: 0 16px 30px rgba(40, 120, 255, 0.2);
+      }
+
+      .filter-panel {
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background: var(--panel);
+        box-shadow: var(--shadow-soft);
+        backdrop-filter: blur(10px);
+      }
+
+      .filter-topline {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .search {
+        flex: 1 1 320px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--panel-muted);
+        color: var(--text-muted);
+      }
+
+      .search input {
+        width: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--text);
+      }
+
+      .filter-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(247, 249, 252, 0.92);
+      }
+
+      .filter-summary-copy strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .filter-summary-copy p {
+        margin: 4px 0 0;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .chip-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .chip,
+      .filter-chip {
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: #ffffff;
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .chip.active,
+      .filter-chip.active {
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        border-color: rgba(40, 120, 255, 0.18);
+      }
+
+      .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .filter-card {
+        padding: 14px 14px 13px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: white;
+      }
+
+      .filter-card.wide {
+        grid-column: span 2;
+      }
+
+      .filter-label {
+        margin: 0 0 10px;
+        color: var(--text-soft);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .filter-value,
+      .filter-select {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 42px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: var(--panel-muted);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .section-grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .card {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background: var(--panel-strong);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .kpi-card {
+        padding: 18px 18px 16px;
+      }
+
+      .kpi-card::after {
+        content: "";
+        position: absolute;
+        inset: auto -10% -40% auto;
+        width: 140px;
+        height: 140px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(40, 120, 255, 0.1), transparent 68%);
+      }
+
+      .kpi-label {
+        margin: 0;
+        color: var(--text-soft);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .kpi-value {
+        margin: 14px 0 0;
+        font-size: 34px;
+        line-height: 1;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+      }
+
+      .kpi-note {
+        margin: 8px 0 0;
+        color: var(--text-muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .kpi-trend {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 14px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .kpi-trend.good {
+        background: var(--success-soft);
+        color: var(--success);
+      }
+
+      .kpi-trend.warn {
+        background: var(--warning-soft);
+        color: var(--warning);
+      }
+
+      .content-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.9fr);
+        gap: 18px;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .panel-head h3 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+      }
+
+      .panel-head p {
+        margin: 6px 0 0;
+        color: var(--text-muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .panel-tag {
+        padding: 8px 10px;
+        border-radius: 999px;
+        background: var(--panel-muted);
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .mix-card,
+      .signal-card,
+      .team-card,
+      .table-card {
+        padding: 20px;
+      }
+
+      .mix-layout {
+        display: grid;
+        grid-template-columns: 200px minmax(0, 1fr);
+        gap: 22px;
+        align-items: center;
+      }
+
+      .donut-wrap {
+        display: grid;
+        place-items: center;
+      }
+
+      .donut {
+        position: relative;
+        width: 176px;
+        height: 176px;
+        border-radius: 50%;
+        background: conic-gradient(#2878ff 0 39%, #e06c5f 39% 53%, #cfd8e7 53% 100%);
+        box-shadow: inset 0 0 0 1px rgba(18, 30, 52, 0.04);
+      }
+
+      .donut::after {
+        content: "";
+        position: absolute;
+        inset: 22px;
+        border-radius: 50%;
+        background: white;
+        box-shadow: inset 0 0 0 1px rgba(18, 30, 52, 0.06);
+      }
+
+      .donut-center {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        text-align: center;
+      }
+
+      .donut-center strong {
+        display: block;
+        font-size: 32px;
+        line-height: 1;
+        letter-spacing: -0.05em;
+      }
+
+      .donut-center span {
+        margin-top: 6px;
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .legend-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .legend-item {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .legend-dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+      }
+
+      .legend-item strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .legend-item span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 12px;
+        margin-top: 3px;
+      }
+
+      .legend-value {
+        text-align: right;
+      }
+
+      .legend-value strong {
+        font-size: 15px;
+      }
+
+      .legend-value span {
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .signal-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .signal-item {
+        padding: 14px 14px 13px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--panel-muted);
+      }
+
+      .signal-item strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .signal-item p {
+        margin: 6px 0 0;
+        color: var(--text-muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .team-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+
+      .team-rows {
+        display: grid;
+        gap: 12px;
+      }
+
+      .team-row {
+        display: grid;
+        grid-template-columns: 190px minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: center;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--panel-muted);
+      }
+
+      .team-meta strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .team-meta span {
+        display: block;
+        margin-top: 4px;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .team-bars {
+        display: grid;
+        gap: 8px;
+      }
+
+      .bar-line {
+        display: grid;
+        grid-template-columns: 140px minmax(0, 1fr) 48px;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .bar-label {
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .bar-track {
+        position: relative;
+        overflow: hidden;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(160, 174, 196, 0.24);
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: inherit;
+      }
+
+      .bar-value {
+        text-align: right;
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .team-action {
+        padding: 9px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(40, 120, 255, 0.18);
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .table-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+
+      .table-toolbar p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .mini-code {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      thead th {
+        padding: 12px 12px;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-soft);
+        font-size: 11px;
+        font-weight: 800;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      tbody td {
+        padding: 14px 12px;
+        border-bottom: 1px solid rgba(18, 30, 52, 0.06);
+        font-size: 13px;
+        vertical-align: top;
+      }
+
+      tbody tr:hover {
+        background: rgba(40, 120, 255, 0.04);
+      }
+
+      .ticket-name {
+        max-width: 420px;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .badge.forward {
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+      }
+
+      .badge.reject {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .badge.pending {
+        background: rgba(160, 174, 196, 0.18);
+        color: #516076;
+      }
+
+      .footer-note {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 18px;
+        border: 1px dashed rgba(18, 30, 52, 0.14);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.5);
+        color: var(--text-muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 1360px) {
+        .filter-grid,
+        .kpi-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .content-grid,
+        .mix-layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 1100px) {
+        .app-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: relative;
+          min-height: auto;
+          border-right: 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .workspace {
+          padding: 16px;
+        }
+
+        .team-row,
+        .filter-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .filter-card.wide {
+          grid-column: span 1;
+        }
+
+        .bar-line {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .topbar,
+        .filter-summary,
+        .table-toolbar,
+        .team-toolbar,
+        .footer-note,
+        .filter-topline {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .kpi-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .mix-card,
+        .signal-card,
+        .team-card,
+        .table-card,
+        .filter-panel,
+        .topbar {
+          padding: 16px;
+        }
+
+        .topbar h2 {
+          font-size: 22px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">D</div>
+          <div class="brand-copy">
+            <h1>DTSV</h1>
+            <p>Integrated analytics workbench</p>
+          </div>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-label">Core</div>
+          <button class="nav-item active" type="button">
+            <div class="nav-item-main">
+              <div class="nav-icon">M</div>
+              <div class="nav-title">
+                <strong>Main</strong>
+                <span>Full Picture workbench</span>
+              </div>
+            </div>
+            <span class="nav-badge">Default</span>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-item-main">
+              <div class="nav-icon">P</div>
+              <div class="nav-title">
+                <strong>Project</strong>
+                <span>Multi-project comparison</span>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-item-main">
+              <div class="nav-icon">T</div>
+              <div class="nav-title">
+                <strong>Team</strong>
+                <span>Performance and delivery</span>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-item-main">
+              <div class="nav-icon">R</div>
+              <div class="nav-title">
+                <strong>Risk</strong>
+                <span>Escalation and hotspots</span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-label">Analysis</div>
+          <button class="nav-item" type="button">
+            <div class="nav-item-main">
+              <div class="nav-icon">C</div>
+              <div class="nav-title">
+                <strong>Coverage</strong>
+                <span>Test coverage analysis</span>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-item-main">
+              <div class="nav-icon">S</div>
+              <div class="nav-title">
+                <strong>Status</strong>
+                <span>Workflow distribution</span>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-item-main">
+              <div class="nav-icon">AI</div>
+              <div class="nav-title">
+                <strong>AI Chat</strong>
+                <span>Contextual assistant</span>
+              </div>
+            </div>
+            <span class="nav-badge">Beta</span>
+          </button>
+        </div>
+
+        <div class="sidebar-footer">
+          <strong>Main integrates Full Picture</strong>
+          <p>
+            The shell stays reusable for future modules. Full Picture becomes the default workspace instead of an isolated route.
+          </p>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <div class="workspace-inner">
+          <header class="topbar">
+            <div>
+              <p class="crumb">Main / Full Picture</p>
+              <h2>Integrated Full Picture Management Workbench</h2>
+              <p class="topbar-copy">
+                Mixed-layout workspace: executive summary and outcome signals stay above the fold, team expansion remains central, and Ticket Detail stays in the same page for continuous drilldown.
+              </p>
+            </div>
+            <div class="topbar-actions">
+              <span class="status-pill">Live data ready</span>
+              <button class="ghost-button" type="button">Export snapshot</button>
+              <button class="primary-button" type="button">Refresh scope</button>
+            </div>
+          </header>
+
+          <section class="filter-panel">
+            <div class="filter-topline">
+              <label class="search">
+                <span>Search</span>
+                <input type="text" value="Ticket ID or title" aria-label="Search scope" />
+              </label>
+              <button class="ghost-button" type="button">Scope preset</button>
+              <button class="ghost-button" type="button">Advanced filters</button>
+            </div>
+
+            <div class="filter-summary">
+              <div class="filter-summary-copy">
+                <strong>Main keeps filters at the top, not in a right rail</strong>
+                <p>The visual language follows the reference dashboard while preserving Full Picture's multi-select scope and single-page drilldown.</p>
+              </div>
+              <div class="chip-row">
+                <span class="chip active">2026</span>
+                <span class="chip active">DTSV China + FIT</span>
+                <span class="chip">Plant = All</span>
+                <span class="chip active">Outcome tracked</span>
+              </div>
+            </div>
+
+            <div class="filter-grid">
+              <div class="filter-card">
+                <p class="filter-label">Year</p>
+                <div class="filter-value"><span>2026</span><span>All</span></div>
+              </div>
+              <div class="filter-card">
+                <p class="filter-label">Project</p>
+                <div class="filter-value"><span>China portfolio</span><span>4 selected</span></div>
+              </div>
+              <div class="filter-card">
+                <p class="filter-label">AIDA</p>
+                <div class="filter-value"><span>Digital + EE</span><span>12 selected</span></div>
+              </div>
+              <div class="filter-card">
+                <p class="filter-label">Problem Finder Team</p>
+                <div class="filter-value"><span>All teams</span><span>7 selected</span></div>
+              </div>
+              <div class="filter-card wide">
+                <p class="filter-label">Outcome focus</p>
+                <div class="chip-row">
+                  <span class="filter-chip active">Resolved Forward</span>
+                  <span class="filter-chip active">Rejected Directly</span>
+                  <span class="filter-chip">Other tracked</span>
+                </div>
+              </div>
+              <div class="filter-card">
+                <p class="filter-label">Phase</p>
+                <div class="filter-select"><span>All phases</span><span>Multi</span></div>
+              </div>
+              <div class="filter-card">
+                <p class="filter-label">Market</p>
+                <div class="filter-select"><span>CN, EU, Global</span><span>Multi</span></div>
+              </div>
+              <div class="filter-card">
+                <p class="filter-label">Lead Model</p>
+                <div class="filter-select"><span>G68 / U12 / NA6</span><span>Multi</span></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="section-grid">
+            <div class="kpi-grid">
+              <article class="card kpi-card">
+                <p class="kpi-label">Tickets in scope</p>
+                <p class="kpi-value">1,284</p>
+                <p class="kpi-note">Main summary metric for current scope and filters.</p>
+                <span class="kpi-trend good">+8.2% vs last sync</span>
+              </article>
+              <article class="card kpi-card">
+                <p class="kpi-label">Resolved Forward</p>
+                <p class="kpi-value">492</p>
+                <p class="kpi-note">Portfolio-level outcome share stays global under the current filter scope.</p>
+                <span class="kpi-trend good">38.3% share</span>
+              </article>
+              <article class="card kpi-card">
+                <p class="kpi-label">Rejected Directly</p>
+                <p class="kpi-value">178</p>
+                <p class="kpi-note">Visible as a first-class signal card rather than buried inside team rows.</p>
+                <span class="kpi-trend warn">13.9% share</span>
+              </article>
+              <article class="card kpi-card">
+                <p class="kpi-label">Teams tracked</p>
+                <p class="kpi-value">7</p>
+                <p class="kpi-note">Team percentages stay team-local; layout only changes the presentation shell.</p>
+                <span class="kpi-trend good">Local denominator</span>
+              </article>
+            </div>
+
+            <div class="content-grid">
+              <article class="card mix-card">
+                <div class="panel-head">
+                  <div>
+                    <h3>Portfolio Outcome Mix</h3>
+                    <p>Top-level portfolio view under current filters. This stays above team comparison so leadership gets one clean read first.</p>
+                  </div>
+                  <span class="panel-tag">Executive view</span>
+                </div>
+
+                <div class="mix-layout">
+                  <div class="donut-wrap">
+                    <div class="donut">
+                      <div class="donut-center">
+                        <div>
+                          <strong>53%</strong>
+                          <span>tracked outcomes</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="legend-list">
+                    <div class="legend-item">
+                      <span class="legend-dot" style="background:#2878ff"></span>
+                      <div>
+                        <strong>Resolved Forward</strong>
+                        <span>Cross-team portfolio share under active filters</span>
+                      </div>
+                      <div class="legend-value">
+                        <strong>492</strong>
+                        <span>38.3%</span>
+                      </div>
+                    </div>
+                    <div class="legend-item">
+                      <span class="legend-dot" style="background:#e06c5f"></span>
+                      <div>
+                        <strong>Rejected Directly</strong>
+                        <span>Visible without switching to a separate lower tab</span>
+                      </div>
+                      <div class="legend-value">
+                        <strong>178</strong>
+                        <span>13.9%</span>
+                      </div>
+                    </div>
+                    <div class="legend-item">
+                      <span class="legend-dot" style="background:#cfd8e7"></span>
+                      <div>
+                        <strong>Other / not tracked outcome</strong>
+                        <span>Still visible for denominator context and data trust</span>
+                      </div>
+                      <div class="legend-value">
+                        <strong>614</strong>
+                        <span>47.8%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card signal-card">
+                <div class="panel-head">
+                  <div>
+                    <h3>Main Signals</h3>
+                    <p>Compact narrative cards replacing the current dense hero + right rail combination.</p>
+                  </div>
+                  <span class="panel-tag">Context</span>
+                </div>
+
+                <div class="signal-list">
+                  <div class="signal-item">
+                    <strong>Selected scope remains explicit</strong>
+                    <p>Year, project, team, market, and outcome emphasis all stay readable without opening a sidebar.</p>
+                  </div>
+                  <div class="signal-item">
+                    <strong>Team drilldown stays in the same page</strong>
+                    <p>Clicking a team row only sharpens the lower Ticket Detail area instead of navigating away.</p>
+                  </div>
+                  <div class="signal-item">
+                    <strong>Migration impact is mostly shell-level</strong>
+                    <p>Full Picture API, payload adapter, and client-side filtering can remain as-is while the page frame changes.</p>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <article class="card team-card">
+              <div class="team-toolbar">
+                <div class="panel-head" style="margin:0">
+                  <div>
+                    <h3>Team Expansion by Outcome</h3>
+                    <p>Moved directly below portfolio view, stretched horizontally, and optimized for quick comparison across teams.</p>
+                  </div>
+                </div>
+                <div class="chip-row">
+                  <span class="chip active">All teams</span>
+                  <span class="chip">Resolved Forward selected</span>
+                  <span class="chip">Ticket drill ready</span>
+                </div>
+              </div>
+
+              <div class="team-rows">
+                <div class="team-row">
+                  <div class="team-meta">
+                    <strong>DTSV_China</strong>
+                    <span>Team denominator: 322 tickets</span>
+                  </div>
+                  <div class="team-bars">
+                    <div class="bar-line">
+                      <span class="bar-label">Resolved Forward</span>
+                      <span class="bar-track"><span class="bar-fill" style="width:61%;background:#2878ff"></span></span>
+                      <span class="bar-value">61%</span>
+                    </div>
+                    <div class="bar-line">
+                      <span class="bar-label">Rejected Directly</span>
+                      <span class="bar-track"><span class="bar-fill" style="width:19%;background:#e06c5f"></span></span>
+                      <span class="bar-value">19%</span>
+                    </div>
+                  </div>
+                  <button class="team-action" type="button">Inspect tickets</button>
+                </div>
+
+                <div class="team-row">
+                  <div class="team-meta">
+                    <strong>[AT]W72-FIT</strong>
+                    <span>Team denominator: 274 tickets</span>
+                  </div>
+                  <div class="team-bars">
+                    <div class="bar-line">
+                      <span class="bar-label">Resolved Forward</span>
+                      <span class="bar-track"><span class="bar-fill" style="width:42%;background:#2878ff"></span></span>
+                      <span class="bar-value">42%</span>
+                    </div>
+                    <div class="bar-line">
+                      <span class="bar-label">Rejected Directly</span>
+                      <span class="bar-track"><span class="bar-fill" style="width:24%;background:#e06c5f"></span></span>
+                      <span class="bar-value">24%</span>
+                    </div>
+                  </div>
+                  <button class="team-action" type="button">Inspect tickets</button>
+                </div>
+
+                <div class="team-row">
+                  <div class="team-meta">
+                    <strong>[AT]BBA_Basis-FIT</strong>
+                    <span>Team denominator: 181 tickets</span>
+                  </div>
+                  <div class="team-bars">
+                    <div class="bar-line">
+                      <span class="bar-label">Resolved Forward</span>
+                      <span class="bar-track"><span class="bar-fill" style="width:34%;background:#2878ff"></span></span>
+                      <span class="bar-value">34%</span>
+                    </div>
+                    <div class="bar-line">
+                      <span class="bar-label">Rejected Directly</span>
+                      <span class="bar-track"><span class="bar-fill" style="width:29%;background:#e06c5f"></span></span>
+                      <span class="bar-value">29%</span>
+                    </div>
+                  </div>
+                  <button class="team-action" type="button">Inspect tickets</button>
+                </div>
+
+                <div class="team-row">
+                  <div class="team-meta">
+                    <strong>Spotlight_FIT</strong>
+                    <span>Team denominator: 96 tickets</span>
+                  </div>
+                  <div class="team-bars">
+                    <div class="bar-line">
+                      <span class="bar-label">Resolved Forward</span>
+                      <span class="bar-track"><span class="bar-fill" style="width:27%;background:#2878ff"></span></span>
+                      <span class="bar-value">27%</span>
+                    </div>
+                    <div class="bar-line">
+                      <span class="bar-label">Rejected Directly</span>
+                      <span class="bar-track"><span class="bar-fill" style="width:17%;background:#e06c5f"></span></span>
+                      <span class="bar-value">17%</span>
+                    </div>
+                  </div>
+                  <button class="team-action" type="button">Inspect tickets</button>
+                </div>
+              </div>
+            </article>
+
+            <article class="card table-card">
+              <div class="table-toolbar">
+                <div class="panel-head" style="margin:0">
+                  <div>
+                    <h3>Ticket Detail</h3>
+                    <p>Always in the same page. Selection from portfolio or team rows narrows this table instead of switching modes.</p>
+                  </div>
+                </div>
+                <div>
+                  <p class="mini-code">selection = resolvedForward / DTSV_China</p>
+                </div>
+              </div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>Ticket</th>
+                    <th>Title</th>
+                    <th>Team</th>
+                    <th>Status</th>
+                    <th>Outcome</th>
+                    <th>Phase</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>2553006</strong></td>
+                    <td><div class="ticket-name">Navigation app reset after route recalculation under mixed market scope.</div></td>
+                    <td>DTSV_China</td>
+                    <td>03-In Analysis</td>
+                    <td><span class="badge forward">Resolved Forward</span></td>
+                    <td>Validation</td>
+                  </tr>
+                  <tr>
+                    <td><strong>2536597</strong></td>
+                    <td><div class="ticket-name">Plant scope handover issue linked to team-level denominator review.</div></td>
+                    <td>DTSV_China</td>
+                    <td>04-In Progress</td>
+                    <td><span class="badge forward">Resolved Forward</span></td>
+                    <td>Implementation</td>
+                  </tr>
+                  <tr>
+                    <td><strong>2531396</strong></td>
+                    <td><div class="ticket-name">Outcome selection propagated into lower drill table without leaving Main workspace.</div></td>
+                    <td>DTSV_China</td>
+                    <td>04-In Progress</td>
+                    <td><span class="badge reject">Rejected Directly</span></td>
+                    <td>Analysis</td>
+                  </tr>
+                  <tr>
+                    <td><strong>2529259</strong></td>
+                    <td><div class="ticket-name">CORS-safe API bridge still needed for browser fallback path after shell hydration.</div></td>
+                    <td>[AT]W72-FIT</td>
+                    <td>01-New</td>
+                    <td><span class="badge pending">Other</span></td>
+                    <td>Bootstrap</td>
+                  </tr>
+                </tbody>
+              </table>
+            </article>
+          </section>
+
+          <div class="footer-note">
+            <span>
+              Recommended direction: keep `Main` as the default shell, promote Full Picture into that shell, move filters to a top workbench panel, and keep the existing API contract plus client filtering logic underneath.
+            </span>
+            <span class="mini-code">Mock only. No production wiring yet.</span>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

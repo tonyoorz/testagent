@@ -272,6 +272,136 @@ textarea {
   gap: 0.7rem;
 }
 
+.qgate-filter-grid {
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr) minmax(280px, 0.95fr);
+  align-items: start;
+  gap: 0.65rem;
+}
+
+.qgate-filter-section {
+  border: 1px solid #e2eaf3;
+  border-radius: 14px;
+  background: #fbfdff;
+  padding: 0.58rem 0.72rem 0.5rem;
+}
+
+.qgate-filter-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-bottom: 0.42rem;
+  border-bottom: 1px solid #ebf1f7;
+}
+
+.qgate-filter-section-header h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.15;
+  color: #153150;
+}
+
+.qgate-filter-section-body {
+  display: grid;
+  gap: 0;
+  padding-top: 0.32rem;
+}
+
+.qgate-filter-section-body-compact {
+  gap: 0.3rem;
+}
+
+.qgate-filter-number-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  padding-top: 0.32rem;
+}
+
+.qgate-filter-field-compact {
+  padding: 0;
+  border-top: 0;
+}
+
+.qgate-search-field {
+  gap: 0.38rem;
+  position: relative;
+}
+
+.qgate-search-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+  flex-wrap: wrap;
+}
+
+.qgate-search-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.62rem 0.78rem;
+  border: 1px solid #dbe5ef;
+  border-radius: 0.95rem;
+  background: #ffffff;
+  color: #17324f;
+  box-shadow: inset 0 1px 2px rgba(15, 34, 66, 0.04);
+  text-align: left;
+}
+
+.qgate-search-trigger.is-open {
+  border-color: #9ec0eb;
+  box-shadow: 0 0 0 3px rgba(132, 176, 230, 0.18);
+}
+
+.qgate-search-trigger-value {
+  color: #70839a;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.qgate-search-trigger-value.is-selected {
+  color: #17324f;
+  font-weight: 600;
+}
+
+.qgate-search-trigger-hint {
+  color: #54708f;
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.qgate-search-popover {
+  display: grid;
+  gap: 0.42rem;
+  border: 1px solid #e1e8f0;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.42rem;
+}
+
+.qgate-search-results,
+.qgate-search-popover {
+  border: 1px solid #e1e8f0;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.42rem;
+}
+
+.qgate-search-chip-row {
+  max-height: 7.4rem;
+}
+
+.qgate-filter-value-preview {
+  color: #54708f;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
 .filter-group,
 .filter-field {
   display: grid;
@@ -303,15 +433,27 @@ textarea {
 .filter-field select,
 .filter-field input {
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid #dbe5ef;
   border-radius: 0.95rem;
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+  background: #ffffff;
+  color: #17324f;
   padding: 0.52rem 0.74rem;
+  box-shadow: inset 0 1px 2px rgba(15, 34, 66, 0.04);
 }
 
 .filter-field select option {
   color: #132238;
+}
+
+.filter-field input::placeholder {
+  color: #70839a;
+}
+
+.filter-field input:focus,
+.filter-field select:focus {
+  outline: 0;
+  border-color: #9ec0eb;
+  box-shadow: 0 0 0 3px rgba(132, 176, 230, 0.18);
 }
 
 .chip-row {
@@ -320,6 +462,14 @@ textarea {
   gap: 0.22rem;
   max-height: 3.35rem;
   overflow: auto;
+}
+
+.qgate-filter-section .chip-row {
+  max-height: 4.4rem;
+}
+
+.qgate-filter-number-grid .filter-field input {
+  min-height: 2.3rem;
 }
 
 .chip-stack {
@@ -1225,6 +1375,11 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .qgate-filter-grid,
+  .qgate-filter-number-grid {
+    grid-template-columns: 1fr;
+  }
+
   .full-picture-filter-grid {
     grid-template-columns: 1fr;
   }
@@ -1300,6 +1455,11 @@ textarea {
   }
 
   .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .qgate-filter-grid,
+  .qgate-filter-number-grid {
     grid-template-columns: 1fr;
   }
 

@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Full Picture Workbench V2 Interactive Mock</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=JetBrains+Mono:wght@500&display=swap");
+
+      :root {
+        --fpw-bg: #f4f7fb;
+        --fpw-panel: #ffffff;
+        --fpw-panel-soft: #f7f9fc;
+        --fpw-line: #e2e8f0;
+        --fpw-line-strong: #cfd8e3;
+        --fpw-text: #0f172a;
+        --fpw-muted: #64748b;
+        --fpw-muted-2: #94a3b8;
+        --fpw-primary: #2f6fed;
+        --fpw-primary-soft: rgba(47, 111, 237, 0.12);
+        --fpw-success: #1d9b61;
+        --fpw-success-soft: rgba(29, 155, 97, 0.12);
+        --fpw-warning: #d48620;
+        --fpw-warning-soft: rgba(212, 134, 32, 0.12);
+        --fpw-danger: #d95c5c;
+        --fpw-danger-soft: rgba(217, 92, 92, 0.14);
+        --fpw-sidebar: #121c2f;
+        --fpw-sidebar-text: #c8d1e2;
+        --fpw-sidebar-muted: #7c8aa2;
+        --fpw-radius-xl: 22px;
+        --fpw-radius-lg: 18px;
+        --fpw-radius-md: 14px;
+        --fpw-radius-sm: 12px;
+        --fpw-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px rgba(15, 23, 42, 0.06);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--fpw-bg);
+        color: var(--fpw-text);
+        font-family: "DM Sans", "Segoe UI", sans-serif;
+        overflow: hidden;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        min-height: 100vh;
+        padding: 20px 14px;
+        background: var(--fpw-sidebar);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 10px 20px;
+      }
+
+      .brand-badge {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: var(--fpw-primary);
+        color: white;
+        font-size: 18px;
+        font-weight: 800;
+      }
+
+      .brand-title {
+        margin: 0;
+        font-size: 14px;
+        color: white;
+      }
+
+      .brand-subtitle {
+        margin: 3px 0 0;
+        font-size: 12px;
+        color: var(--fpw-sidebar-muted);
+      }
+
+      .nav-label {
+        padding: 12px 10px 8px;
+        color: rgba(255, 255, 255, 0.38);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      .nav-list {
+        display: grid;
+        gap: 4px;
+      }
+
+      .sidebar-toggle {
+        position: absolute;
+        right: -12px;
+        top: 78px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        border: 1px solid var(--fpw-line);
+        background: white;
+        color: var(--fpw-muted);
+        font-size: 12px;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
+        padding: 11px 12px;
+        border: 0;
+        border-radius: 14px;
+        background: transparent;
+        color: var(--fpw-sidebar-text);
+        text-align: left;
+      }
+
+      .nav-item.is-active {
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--fpw-text);
+      }
+
+      .nav-item:not(.is-active):hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .nav-main {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .nav-icon {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.06);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .nav-item.is-active .nav-icon {
+        background: var(--fpw-primary-soft);
+        color: var(--fpw-primary);
+      }
+
+      .nav-copy strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .nav-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(47, 111, 237, 0.14);
+        color: var(--fpw-primary);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .main {
+        overflow-y: auto;
+      }
+
+      .stage {
+        min-height: 100vh;
+      }
+
+      .panel {
+        border: 1px solid var(--fpw-line);
+        border-radius: var(--fpw-radius-xl);
+        background: var(--fpw-panel);
+        box-shadow: var(--fpw-shadow);
+      }
+
+      .header {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 0;
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--fpw-line);
+        background: rgba(244, 247, 251, 0.82);
+        backdrop-filter: blur(12px);
+      }
+
+      .route-badge,
+      .status-badge,
+      .mono-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .status-badge {
+        gap: 8px;
+        padding: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--fpw-muted);
+        font-size: 12px;
+      }
+
+      .mono-badge {
+        font-family: "JetBrains Mono", monospace;
+        background: #eef2f7;
+        color: #536377;
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.1;
+        letter-spacing: -0.04em;
+      }
+
+      .header p {
+        margin: 2px 0 0;
+        max-width: none;
+        color: var(--fpw-muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .header-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        font-size: 12px;
+        color: var(--fpw-muted);
+      }
+
+      .header-status-dot {
+        display: inline-flex;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--fpw-success);
+      }
+
+      .page-content {
+        padding: 20px 24px 24px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--fpw-line);
+        background: white;
+        color: var(--fpw-text);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .btn-compact {
+        height: 40px;
+        padding: 0 14px;
+      }
+
+      .btn-ghost {
+        background: transparent;
+      }
+
+      .btn-primary {
+        background: var(--fpw-primary);
+        border-color: var(--fpw-primary);
+        color: white;
+      }
+
+      .workbench {
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .workbench-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--fpw-line);
+      }
+
+      .search {
+        flex: 1 1 320px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 40px;
+        padding: 0 12px;
+        border: 1px solid var(--fpw-line);
+        border-radius: 12px;
+        background: var(--fpw-panel-soft);
+        color: var(--fpw-muted);
+      }
+
+      .search input {
+        width: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+      }
+
+      .active-inline {
+        display: none;
+      }
+
+      .active-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--fpw-line);
+        background: var(--fpw-panel-soft);
+        color: var(--fpw-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .link-btn {
+        display: inline-flex;
+        align-items: center;
+        padding: 0 2px;
+        border: 0;
+        background: transparent;
+        color: var(--fpw-primary);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 12px 14px;
+        padding: 14px 16px 16px;
+      }
+
+      .filter-field {
+        min-width: 0;
+        position: relative;
+      }
+
+      .filter-field label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--fpw-muted-2);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+
+      .filter-select-shell {
+        position: relative;
+      }
+
+      .filter-select-button {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        height: 36px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid var(--fpw-line);
+        background: rgba(247, 249, 252, 0.9);
+        color: var(--fpw-muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .filter-select-button.is-active {
+        background: white;
+        border-color: rgba(47, 111, 237, 0.18);
+        color: var(--fpw-text);
+      }
+
+      .filter-select-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .caret {
+        color: var(--fpw-muted-2);
+        font-size: 12px;
+      }
+
+      .filter-menu {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        z-index: 40;
+        min-width: 100%;
+        max-height: 220px;
+        overflow: auto;
+        padding: 8px;
+        border: 1px solid var(--fpw-line);
+        border-radius: 12px;
+        background: white;
+        box-shadow: var(--fpw-shadow);
+        display: grid;
+        gap: 4px;
+      }
+
+      .filter-menu.is-hidden {
+        display: none;
+      }
+
+      .filter-option {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        width: 100%;
+        padding: 8px 10px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--fpw-muted);
+        font-size: 12px;
+        font-weight: 600;
+        text-align: left;
+      }
+
+      .filter-option:hover {
+        background: var(--fpw-panel-soft);
+      }
+
+      .filter-option.is-active {
+        background: var(--fpw-primary-soft);
+        color: var(--fpw-primary);
+      }
+
+      .checkmark {
+        font-size: 11px;
+      }
+
+      .content {
+        display: grid;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .kpi-card {
+        padding: 16px;
+      }
+
+      .kpi-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .kpi-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--fpw-muted);
+      }
+
+      .kpi-value {
+        display: block;
+        margin-top: 4px;
+        font-size: 30px;
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+
+      .kpi-note {
+        margin-top: 10px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .kpi-icon {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .analysis-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.45fr);
+        gap: 12px;
+      }
+
+      .card {
+        padding: 16px;
+      }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .card-head h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .card-head p {
+        margin: 4px 0 0;
+        font-size: 11px;
+        color: var(--fpw-muted);
+      }
+
+      .subtle-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--fpw-panel-soft);
+        color: var(--fpw-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .outcome-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .outcome-row {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid var(--fpw-line);
+        border-radius: 16px;
+        background: var(--fpw-panel-soft);
+        text-align: left;
+      }
+
+      .outcome-row.is-active {
+        border-color: rgba(47, 111, 237, 0.2);
+        background: rgba(47, 111, 237, 0.06);
+      }
+
+      .outcome-row-top {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .outcome-row strong {
+        font-size: 14px;
+      }
+
+      .outcome-stats {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .outcome-count {
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+      }
+
+      .outcome-rate {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        color: var(--fpw-muted);
+      }
+
+      .bar-track {
+        margin-top: 12px;
+        height: 12px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #dbe3ee;
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: inherit;
+      }
+
+      .selection-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+
+      .selection-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 11px;
+        border-radius: 999px;
+        background: var(--fpw-primary-soft);
+        color: var(--fpw-primary);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .team-table {
+        display: grid;
+        gap: 8px;
+      }
+
+      .team-row {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid var(--fpw-line);
+        border-radius: 16px;
+        background: white;
+        text-align: left;
+      }
+
+      .team-row.is-active {
+        border-color: rgba(47, 111, 237, 0.22);
+        background: rgba(47, 111, 237, 0.04);
+      }
+
+      .team-row-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .team-name {
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .team-meta {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--fpw-muted);
+      }
+
+      .metric-lines {
+        display: grid;
+        gap: 8px;
+      }
+
+      .metric-line {
+        display: grid;
+        grid-template-columns: 132px minmax(0, 1fr) 44px;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .metric-line label {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--fpw-muted);
+      }
+
+      .metric-line strong {
+        font-size: 12px;
+        text-align: right;
+      }
+
+      .table-card {
+        padding: 16px;
+      }
+
+      .table-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .table-head h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .table-head p {
+        margin: 5px 0 0;
+        font-size: 11px;
+        color: var(--fpw-muted);
+      }
+
+      .table-shell {
+        overflow-x: auto;
+        border: 1px solid var(--fpw-line);
+        border-radius: 16px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+      }
+
+      th {
+        padding: 12px;
+        border-bottom: 1px solid var(--fpw-line);
+        text-align: left;
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--fpw-muted-2);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        background: #fbfcfe;
+      }
+
+      td {
+        padding: 13px 12px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.72);
+        font-size: 13px;
+        vertical-align: top;
+      }
+
+      tr:hover td {
+        background: rgba(47, 111, 237, 0.03);
+      }
+
+      .ticket-title {
+        min-width: 280px;
+        color: var(--fpw-muted);
+        line-height: 1.5;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .badge-forward {
+        background: var(--fpw-primary-soft);
+        color: var(--fpw-primary);
+      }
+
+      .badge-reject {
+        background: var(--fpw-danger-soft);
+        color: var(--fpw-danger);
+      }
+
+      .badge-neutral {
+        background: #eef2f7;
+        color: #566679;
+      }
+
+      .empty-state {
+        padding: 22px;
+        text-align: center;
+        color: var(--fpw-muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 1260px) {
+        .filter-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .kpi-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 1080px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: relative;
+          min-height: auto;
+        }
+
+        .analysis-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .header,
+        .header-status,
+        .workbench-top,
+        .table-head {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .page-content {
+          padding: 16px;
+        }
+
+        .filter-grid,
+        .kpi-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .metric-line {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-badge">D</div>
+          <div>
+            <h1 class="brand-title">DTSV</h1>
+            <p class="brand-subtitle">QGate KPI / Full Picture</p>
+          </div>
+        </div>
+
+        <div class="nav-list">
+          <button class="nav-item is-active" type="button">
+            <div class="nav-main">
+              <div class="nav-icon">W</div>
+              <div class="nav-copy">
+                <strong>Main</strong>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-icon">L</div>
+              <div class="nav-copy">
+                <strong>Project Analysis</strong>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-icon">H</div>
+              <div class="nav-copy">
+                <strong>Team Analysis</strong>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-icon">C</div>
+              <div class="nav-copy">
+                <strong>Coverage Analysis</strong>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-icon">S</div>
+              <div class="nav-copy">
+                <strong>Defect Status</strong>
+              </div>
+            </div>
+          </button>
+          <button class="nav-item" type="button">
+            <div class="nav-main">
+              <div class="nav-icon">AI</div>
+              <div class="nav-copy">
+                <strong>AI Chat</strong>
+              </div>
+            </div>
+            <span class="nav-pill">Beta</span>
+          </button>
+        </div>
+        <button class="sidebar-toggle" type="button">‹</button>
+
+      </aside>
+
+      <main class="main">
+        <div class="stage">
+          <header class="header">
+            <div>
+              <h1>Full Picture Workbench V2</h1>
+              <p>Management-focused Full Picture workbench with the legacy page retained for comparison.</p>
+            </div>
+            <div class="header-status">
+              <span class="header-status-dot"></span>
+              <span>Data synced · 2026-05-22</span>
+              <button class="btn btn-ghost btn-compact" type="button" id="legacy-button">Legacy</button>
+            </div>
+          </header>
+
+          <div class="page-content">
+            <section class="panel workbench">
+              <div class="workbench-top">
+                <label class="search">
+                  <span>Search</span>
+                  <input id="search-input" placeholder="Search ticket ID or title" type="text" />
+                </label>
+                <button class="btn btn-primary btn-compact" id="search-button" type="button">Search</button>
+                <button class="btn btn-compact" id="toggle-filters-button" type="button">Filters</button>
+                <button class="btn btn-compact" id="reset-button" type="button">Reset</button>
+              </div>
+
+              <div class="active-inline" id="active-inline"></div>
+
+              <div class="filter-grid" id="filter-grid">
+                <div class="filter-field">
+                  <label>Year</label>
+                  <div class="filter-select-shell" data-filter-key="year"></div>
+                </div>
+                <div class="filter-field">
+                  <label>Project</label>
+                  <div class="filter-select-shell" data-filter-key="project"></div>
+                </div>
+                <div class="filter-field">
+                  <label>AIDA</label>
+                  <div class="filter-select-shell" data-filter-key="aida"></div>
+                </div>
+                <div class="filter-field">
+                  <label>Market</label>
+                  <div class="filter-select-shell" data-filter-key="market"></div>
+                </div>
+                <div class="filter-field">
+                  <label>Phase</label>
+                  <div class="filter-select-shell" data-filter-key="phase"></div>
+                </div>
+                <div class="filter-field">
+                  <label>Team</label>
+                  <div class="filter-select-shell" data-filter-key="team"></div>
+                </div>
+                <div class="filter-field">
+                  <label>Group</label>
+                  <div class="filter-select-shell" data-filter-key="group"></div>
+                </div>
+                <div class="filter-field">
+                  <label>Lead Model</label>
+                  <div class="filter-select-shell" data-filter-key="leadModel"></div>
+                </div>
+                <div class="filter-field">
+                  <label>Assigned ECU</label>
+                  <div class="filter-select-shell" data-filter-key="assignedEcu"></div>
+                </div>
+                <div class="filter-field">
+                  <label>PU</label>
+                  <div class="filter-select-shell" data-filter-key="pu"></div>
+                </div>
+                <div class="filter-field">
+                  <label>Solution Cluster</label>
+                  <div class="filter-select-shell" data-filter-key="solutionCluster"></div>
+                </div>
+              </div>
+            </section>
+
+            <div class="content">
+            <section class="kpi-grid" id="kpi-grid"></section>
+
+            <section class="analysis-grid">
+              <article class="panel card">
+                <div class="card-head">
+                  <div>
+                    <h2>Portfolio Outcome</h2>
+                    <p>Select an outcome to narrow the table.</p>
+                  </div>
+                  <span class="subtle-pill" id="portfolio-pill">2 tracked outcomes</span>
+                </div>
+                <div class="outcome-list" id="outcome-list"></div>
+                <div class="selection-strip" id="selection-strip"></div>
+              </article>
+
+              <article class="panel card">
+                <div class="card-head">
+                  <div>
+                    <h2>Team Expansion</h2>
+                    <p>Select a team row to drill into tickets.</p>
+                  </div>
+                  <span class="subtle-pill" id="team-pill">Teams in scope</span>
+                </div>
+                <div class="team-table" id="team-table"></div>
+              </article>
+            </section>
+
+            <section class="panel table-card">
+              <div class="table-head">
+                <div>
+                  <h2>Ticket Detail</h2>
+                  <p id="table-subtitle">Showing all tickets in the current scope.</p>
+                </div>
+                <span class="mono-badge" id="table-count">rows = 0</span>
+              </div>
+
+              <div class="table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Ticket</th>
+                      <th>Title</th>
+                      <th>Team</th>
+                      <th>Status</th>
+                      <th>Outcome</th>
+                      <th>Phase</th>
+                      <th>Group</th>
+                      <th>Project</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ticket-table-body"></tbody>
+                </table>
+                <div class="empty-state" hidden id="empty-state">No tickets match the current filters.</div>
+              </div>
+            </section>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const tickets = [
+        {
+          id: "2553006",
+          title: "Navigation app reset after route recalculation under mixed market scope.",
+          team: "DTSV_China",
+          status: "03-In Analysis",
+          outcome: "resolvedForward",
+          phase: "Validation",
+          group: "Integration",
+          project: "G68",
+          year: "2026",
+          aida: "Digital",
+          market: "CN",
+        },
+        {
+          id: "2536597",
+          title: "Plant scope handover issue linked to team-level denominator review.",
+          team: "DTSV_China",
+          status: "04-In Progress",
+          outcome: "resolvedForward",
+          phase: "Implementation",
+          group: "Q-Gate",
+          project: "U12",
+          year: "2026",
+          aida: "EE",
+          market: "EU",
+        },
+        {
+          id: "2531396",
+          title: "Outcome selection propagated into lower drill table without leaving Main workspace.",
+          team: "DTSV_China",
+          status: "04-In Progress",
+          outcome: "rejectedDirectly",
+          phase: "Analysis",
+          group: "Integration",
+          project: "NA6",
+          year: "2026",
+          aida: "Digital",
+          market: "CN",
+        },
+        {
+          id: "2529259",
+          title: "Fallback browser fetch still needs a same-origin bridge to avoid cross-origin request failures.",
+          team: "[AT]W72-FIT",
+          status: "01-New",
+          outcome: "neutral",
+          phase: "Bootstrap",
+          group: "Other",
+          project: "G68",
+          year: "2026",
+          aida: "EE",
+          market: "Global",
+        },
+        {
+          id: "2528018",
+          title: "Resolved-forward tickets under DTSV_China are hidden by broad chip overflow on dense layouts.",
+          team: "[AT]W72-FIT",
+          status: "03-In Analysis",
+          outcome: "resolvedForward",
+          phase: "Validation",
+          group: "Integration",
+          project: "G68",
+          year: "2026",
+          aida: "Interior",
+          market: "CN",
+        },
+        {
+          id: "2526002",
+          title: "Direct reject path spikes after late phase ownership handover in EU market samples.",
+          team: "[AT]W72-FIT",
+          status: "02-Assigned",
+          outcome: "rejectedDirectly",
+          phase: "Analysis",
+          group: "CoC",
+          project: "U12",
+          year: "2026",
+          aida: "EE",
+          market: "EU",
+        },
+        {
+          id: "2524104",
+          title: "BBA basis regression closes forward only after narrowing to group-aware scope handling.",
+          team: "[AT]BBA_Basis-FIT",
+          status: "05-Ready for Test",
+          outcome: "resolvedForward",
+          phase: "Validation",
+          group: "Q-Gate",
+          project: "NA6",
+          year: "2026",
+          aida: "Digital",
+          market: "CN",
+        },
+        {
+          id: "2521095",
+          title: "Rejected-directly volume on BBA basis is inflated when mixed projects stay bundled.",
+          team: "[AT]BBA_Basis-FIT",
+          status: "03-In Analysis",
+          outcome: "rejectedDirectly",
+          phase: "Analysis",
+          group: "CoC",
+          project: "U12",
+          year: "2026",
+          aida: "Interior",
+          market: "EU",
+        },
+        {
+          id: "2518458",
+          title: "Legacy page comparison confirms new workbench keeps the same payload semantics.",
+          team: "[AT]BBA_Basis-FIT",
+          status: "06-Closed",
+          outcome: "resolvedForward",
+          phase: "Validation",
+          group: "Integration",
+          project: "G68",
+          year: "2025",
+          aida: "EE",
+          market: "Global",
+        },
+        {
+          id: "2516231",
+          title: "Market-specific closure path differs across Global and CN slices for identical team scope.",
+          team: "DTSV_China",
+          status: "02-Assigned",
+          outcome: "neutral",
+          phase: "Investigation",
+          group: "Other",
+          project: "NA6",
+          year: "2025",
+          aida: "Digital",
+          market: "Global",
+        },
+        {
+          id: "2512217",
+          title: "2025 fallback sample remains available to verify default year behavior and reset actions.",
+          team: "[AT]W72-FIT",
+          status: "06-Closed",
+          outcome: "resolvedForward",
+          phase: "Validation",
+          group: "Q-Gate",
+          project: "U12",
+          year: "2025",
+          aida: "Interior",
+          market: "EU",
+        },
+        {
+          id: "2511170",
+          title: "Neutral tickets continue to exist in scope but do not count toward the two tracked outcomes.",
+          team: "[AT]BBA_Basis-FIT",
+          status: "04-In Progress",
+          outcome: "neutral",
+          phase: "Investigation",
+          group: "Other",
+          project: "G68",
+          year: "2026",
+          aida: "EE",
+          market: "Global",
+        },
+      ];
+
+      const projectMeta = {
+        G68: { leadModel: "G68", assignedEcu: "HU-H4" },
+        U12: { leadModel: "U12", assignedEcu: "BDC" },
+        NA6: { leadModel: "NA6", assignedEcu: "ADAS" },
+      };
+
+      const teamMeta = {
+        DTSV_China: { pu: "China Validation" },
+        "[AT]W72-FIT": { pu: "FIT Core" },
+        "[AT]BBA_Basis-FIT": { pu: "Basis Integration" },
+      };
+
+      const aidaMeta = {
+        Digital: { solutionCluster: "UI Flow" },
+        EE: { solutionCluster: "EE Core" },
+        Interior: { solutionCluster: "Cabin Systems" },
+      };
+
+      const enrichedTickets = tickets.map((ticket) => ({
+        ...ticket,
+        leadModel: projectMeta[ticket.project].leadModel,
+        assignedEcu: projectMeta[ticket.project].assignedEcu,
+        pu: teamMeta[ticket.team].pu,
+        solutionCluster: aidaMeta[ticket.aida].solutionCluster,
+      }));
+
+      const filterConfig = {
+        year: { values: ["2026", "2025"], allLabel: "All years", placeholder: "Choose year..." },
+        project: { values: ["G68", "U12", "NA6"], allLabel: "All projects", placeholder: "Choose project..." },
+        team: { values: ["DTSV_China", "[AT]W72-FIT", "[AT]BBA_Basis-FIT"], allLabel: "All teams", placeholder: "Choose team..." },
+        aida: { values: ["Digital", "EE", "Interior"], allLabel: "All AIDA", placeholder: "Choose AIDA..." },
+        phase: { values: ["Validation", "Implementation", "Analysis", "Bootstrap", "Investigation"], allLabel: "All phases", placeholder: "Choose phase..." },
+        market: { values: ["CN", "EU", "Global"], allLabel: "All markets", placeholder: "Choose market..." },
+        group: { values: ["Q-Gate", "Integration", "CoC", "Other"], allLabel: "All groups", placeholder: "Choose group..." },
+        leadModel: { values: ["G68", "U12", "NA6"], allLabel: "All models", placeholder: "Choose model..." },
+        assignedEcu: { values: ["HU-H4", "BDC", "ADAS"], allLabel: "All ECUs", placeholder: "Choose ECU..." },
+        pu: { values: ["China Validation", "FIT Core", "Basis Integration"], allLabel: "All PUs", placeholder: "Choose PU..." },
+        solutionCluster: { values: ["UI Flow", "EE Core", "Cabin Systems"], allLabel: "All clusters", placeholder: "Choose cluster..." },
+      };
+
+      const state = {
+        filters: {
+          year: ["2026"],
+          project: [],
+          team: [],
+          aida: [],
+          phase: [],
+          market: [],
+          group: [],
+          leadModel: [],
+          assignedEcu: [],
+          pu: [],
+          solutionCluster: [],
+        },
+        search: "",
+        selectedOutcome: null,
+        selectedTeam: null,
+        openFilterKey: null,
+        filtersExpanded: true,
+      };
+
+      const outcomeMeta = {
+        resolvedForward: {
+          label: "Resolved Forward",
+          tone: "var(--fpw-primary)",
+          soft: "var(--fpw-primary-soft)",
+          badgeClass: "badge-forward",
+        },
+        rejectedDirectly: {
+          label: "Rejected Directly",
+          tone: "#d95c5c",
+          soft: "var(--fpw-danger-soft)",
+          badgeClass: "badge-reject",
+        },
+        neutral: {
+          label: "Other",
+          tone: "#6b7280",
+          soft: "#eef2f7",
+          badgeClass: "badge-neutral",
+        },
+      };
+
+      const filterContainers = document.querySelectorAll("[data-filter-key]");
+      const filterGrid = document.getElementById("filter-grid");
+      const kpiGrid = document.getElementById("kpi-grid");
+      const outcomeList = document.getElementById("outcome-list");
+      const selectionStrip = document.getElementById("selection-strip");
+      const teamTable = document.getElementById("team-table");
+      const tableBody = document.getElementById("ticket-table-body");
+      const tableCount = document.getElementById("table-count");
+      const tableSubtitle = document.getElementById("table-subtitle");
+      const emptyState = document.getElementById("empty-state");
+      const searchInput = document.getElementById("search-input");
+      const portfolioPill = document.getElementById("portfolio-pill");
+      const teamPill = document.getElementById("team-pill");
+      const resetButton = document.getElementById("reset-button");
+      const legacyButton = document.getElementById("legacy-button");
+      const toggleFiltersButton = document.getElementById("toggle-filters-button");
+      const searchButton = document.getElementById("search-button");
+
+      function formatInteger(value) {
+        return new Intl.NumberFormat("en-US").format(value);
+      }
+
+      function formatPercent(value) {
+        return `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`;
+      }
+
+      function toPercent(numerator, denominator) {
+        if (!denominator) {
+          return 0;
+        }
+
+        return Math.round((numerator / denominator) * 1000) / 10;
+      }
+
+      function toggleFilter(filterKey, value) {
+        const current = state.filters[filterKey];
+        if (value === null) {
+          state.filters[filterKey] = [];
+        } else if (current.includes(value)) {
+          state.filters[filterKey] = current.filter((item) => item !== value);
+        } else {
+          state.filters[filterKey] = [...current, value];
+        }
+        render();
+      }
+
+      function summarizeFilter(filterKey) {
+        const config = filterConfig[filterKey];
+        const selected = state.filters[filterKey];
+
+        if (selected.length === 0) {
+          return config.placeholder || config.allLabel;
+        }
+
+        if (selected.length === 1) {
+          return selected[0];
+        }
+
+        if (selected.length === 2) {
+          return `${selected[0]}, ${selected[1]}`;
+        }
+
+        return `${selected.length} selected`;
+      }
+
+      function renderFilters() {
+        filterContainers.forEach((container) => {
+          const filterKey = container.dataset.filterKey;
+          const config = filterConfig[filterKey];
+          const values = config.values;
+          const selected = state.filters[filterKey];
+
+          container.innerHTML = "";
+
+          const button = document.createElement("button");
+          button.className = selected.length > 0 || state.openFilterKey === filterKey ? "filter-select-button is-active" : "filter-select-button";
+          button.type = "button";
+          button.innerHTML = `
+            <span class="filter-select-text">${summarizeFilter(filterKey)}</span>
+            <span class="caret">${state.openFilterKey === filterKey ? "▴" : "▾"}</span>
+          `;
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            state.openFilterKey = state.openFilterKey === filterKey ? null : filterKey;
+            render();
+          });
+          container.appendChild(button);
+
+          const menu = document.createElement("div");
+          menu.className = state.openFilterKey === filterKey ? "filter-menu" : "filter-menu is-hidden";
+
+          const allOption = document.createElement("button");
+          allOption.className = selected.length === 0 ? "filter-option is-active" : "filter-option";
+          allOption.type = "button";
+          allOption.innerHTML = `<span>${config.allLabel}</span><span class="checkmark">${selected.length === 0 ? "✓" : ""}</span>`;
+          allOption.addEventListener("click", (event) => {
+            event.stopPropagation();
+            toggleFilter(filterKey, null);
+            state.openFilterKey = filterKey;
+          });
+          menu.appendChild(allOption);
+
+          values.forEach((value) => {
+            const option = document.createElement("button");
+            option.className = selected.includes(value) ? "filter-option is-active" : "filter-option";
+            option.type = "button";
+            option.innerHTML = `<span>${value}</span><span class="checkmark">${selected.includes(value) ? "✓" : ""}</span>`;
+            option.addEventListener("click", (event) => {
+              event.stopPropagation();
+              toggleFilter(filterKey, value);
+              state.openFilterKey = filterKey;
+            });
+            menu.appendChild(option);
+          });
+
+          container.appendChild(menu);
+        });
+
+        filterGrid.style.display = state.filtersExpanded ? "grid" : "none";
+        toggleFiltersButton.innerHTML = `Filters <span class="caret">${state.filtersExpanded ? "▴" : "▾"}</span>`;
+      }
+
+      function ticketMatchesFilters(ticket) {
+        const matchesSearch =
+          !state.search ||
+          ticket.id.toLowerCase().includes(state.search) ||
+          ticket.title.toLowerCase().includes(state.search);
+
+        if (!matchesSearch) {
+          return false;
+        }
+
+        return Object.entries(state.filters).every(([key, selected]) => {
+          if (selected.length === 0) {
+            return true;
+          }
+
+          return selected.includes(ticket[key]);
+        });
+      }
+
+      function getFilteredTickets() {
+        return enrichedTickets.filter(ticketMatchesFilters);
+      }
+
+      function getTrackedOutcomeTickets(filteredTickets) {
+        return filteredTickets.filter((ticket) => ticket.outcome === "resolvedForward" || ticket.outcome === "rejectedDirectly");
+      }
+
+      function buildTeamRows(filteredTickets) {
+        const grouped = new Map();
+
+        filteredTickets.forEach((ticket) => {
+          if (!grouped.has(ticket.team)) {
+            grouped.set(ticket.team, {
+              team: ticket.team,
+              total: 0,
+              resolvedForward: 0,
+              rejectedDirectly: 0,
+            });
+          }
+
+          const row = grouped.get(ticket.team);
+          row.total += 1;
+
+          if (ticket.outcome === "resolvedForward") {
+            row.resolvedForward += 1;
+          }
+
+          if (ticket.outcome === "rejectedDirectly") {
+            row.rejectedDirectly += 1;
+          }
+        });
+
+        return Array.from(grouped.values()).sort((a, b) => b.total - a.total || a.team.localeCompare(b.team));
+      }
+
+      function renderKpis(filteredTickets, trackedTickets, teamRows) {
+        const resolvedForwardCount = trackedTickets.filter((ticket) => ticket.outcome === "resolvedForward").length;
+        const rejectedDirectlyCount = trackedTickets.filter((ticket) => ticket.outcome === "rejectedDirectly").length;
+        const kpis = [
+          {
+            label: "Tickets in scope",
+            value: filteredTickets.length,
+            note: `${formatInteger(trackedTickets.length)} tracked outcomes`,
+            color: "var(--fpw-primary)",
+            soft: "var(--fpw-primary-soft)",
+            icon: "#",
+          },
+          {
+            label: "Resolved Forward",
+            value: resolvedForwardCount,
+            note: `${formatPercent(toPercent(resolvedForwardCount, filteredTickets.length))} of current scope`,
+            color: "var(--fpw-success)",
+            soft: "var(--fpw-success-soft)",
+            icon: "R",
+          },
+          {
+            label: "Rejected Directly",
+            value: rejectedDirectlyCount,
+            note: `${formatPercent(toPercent(rejectedDirectlyCount, filteredTickets.length))} of current scope`,
+            color: "var(--fpw-danger)",
+            soft: "var(--fpw-danger-soft)",
+            icon: "X",
+          },
+          {
+            label: "Teams in scope",
+            value: teamRows.length,
+            note: "Team-local denominator preserved",
+            color: "#566679",
+            soft: "#eef2f7",
+            icon: "T",
+          },
+        ];
+
+        kpiGrid.innerHTML = "";
+
+        kpis.forEach((kpi) => {
+          const card = document.createElement("article");
+          card.className = "panel kpi-card";
+          card.innerHTML = `
+            <div class="kpi-top">
+              <div>
+                <span class="kpi-label">${kpi.label}</span>
+                <span class="kpi-value">${formatInteger(kpi.value)}</span>
+              </div>
+              <div class="kpi-icon" style="background:${kpi.soft};color:${kpi.color}">${kpi.icon}</div>
+            </div>
+            <div class="kpi-note" style="color:${kpi.color}">${kpi.note}</div>
+          `;
+          kpiGrid.appendChild(card);
+        });
+      }
+
+      function renderOutcomes(filteredTickets) {
+        const denominator = filteredTickets.length;
+        const outcomeRows = [
+          "resolvedForward",
+          "rejectedDirectly",
+        ].map((key) => {
+          const count = filteredTickets.filter((ticket) => ticket.outcome === key).length;
+          return {
+            key,
+            count,
+            percent: toPercent(count, denominator),
+          };
+        });
+
+        outcomeList.innerHTML = "";
+        portfolioPill.textContent = `${formatInteger(denominator)} denominator`;
+
+        outcomeRows.forEach((row) => {
+          const button = document.createElement("button");
+          button.className = row.key === state.selectedOutcome ? "outcome-row is-active" : "outcome-row";
+          button.type = "button";
+          button.addEventListener("click", () => {
+            state.selectedOutcome = state.selectedOutcome === row.key ? null : row.key;
+            render();
+          });
+          button.innerHTML = `
+            <div class="outcome-row-top">
+              <strong>${outcomeMeta[row.key].label}</strong>
+              <div class="outcome-stats">
+                <span class="outcome-count">${formatInteger(row.count)}</span>
+                <span class="outcome-rate">${formatPercent(row.percent)}</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width:${Math.max(row.percent, 0)}%;background:${outcomeMeta[row.key].tone}"></div>
+            </div>
+          `;
+          outcomeList.appendChild(button);
+        });
+
+        selectionStrip.innerHTML = "";
+        if (state.selectedOutcome) {
+          const chip = document.createElement("button");
+          chip.className = "selection-chip";
+          chip.type = "button";
+          chip.textContent = `Outcome: ${outcomeMeta[state.selectedOutcome].label} ×`;
+          chip.addEventListener("click", () => {
+            state.selectedOutcome = null;
+            render();
+          });
+          selectionStrip.appendChild(chip);
+        }
+
+        if (state.selectedTeam) {
+          const chip = document.createElement("button");
+          chip.className = "selection-chip";
+          chip.type = "button";
+          chip.textContent = `Team: ${state.selectedTeam} ×`;
+          chip.addEventListener("click", () => {
+            state.selectedTeam = null;
+            render();
+          });
+          selectionStrip.appendChild(chip);
+        }
+      }
+
+      function renderTeams(filteredTickets, teamRows) {
+        teamTable.innerHTML = "";
+        teamPill.textContent = `${formatInteger(teamRows.length)} teams`;
+
+        teamRows.forEach((row) => {
+          const resolvedPercent = toPercent(row.resolvedForward, row.total);
+          const rejectedPercent = toPercent(row.rejectedDirectly, row.total);
+
+          const button = document.createElement("button");
+          button.className = row.team === state.selectedTeam ? "team-row is-active" : "team-row";
+          button.type = "button";
+          button.addEventListener("click", () => {
+            state.selectedTeam = state.selectedTeam === row.team ? null : row.team;
+            render();
+          });
+          button.innerHTML = `
+            <div class="team-row-top">
+              <div>
+                <div class="team-name">${row.team}</div>
+                <div class="team-meta">Team denominator: ${formatInteger(row.total)} tickets</div>
+              </div>
+              <span class="mono-badge">team %</span>
+            </div>
+            <div class="metric-lines">
+              <div class="metric-line">
+                <label>Resolved Forward</label>
+                <div class="bar-track"><div class="bar-fill" style="width:${resolvedPercent}%;background:var(--fpw-primary)"></div></div>
+                <strong>${formatPercent(resolvedPercent)}</strong>
+              </div>
+              <div class="metric-line">
+                <label>Rejected Directly</label>
+                <div class="bar-track"><div class="bar-fill" style="width:${rejectedPercent}%;background:var(--fpw-danger)"></div></div>
+                <strong>${formatPercent(rejectedPercent)}</strong>
+              </div>
+            </div>
+          `;
+          teamTable.appendChild(button);
+        });
+
+        if (teamRows.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.hidden = false;
+          empty.textContent = "No team rows available under the current scope.";
+          teamTable.appendChild(empty);
+        }
+      }
+
+      function getTableRows(filteredTickets) {
+        return filteredTickets.filter((ticket) => {
+          const matchesOutcome = !state.selectedOutcome || ticket.outcome === state.selectedOutcome;
+          const matchesTeam = !state.selectedTeam || ticket.team === state.selectedTeam;
+          return matchesOutcome && matchesTeam;
+        });
+      }
+
+      function renderTable(filteredTickets) {
+        const rows = getTableRows(filteredTickets);
+        tableBody.innerHTML = "";
+        tableCount.textContent = `rows = ${formatInteger(rows.length)}`;
+
+        const tableScopeBits = [];
+        if (state.selectedOutcome) {
+          tableScopeBits.push(outcomeMeta[state.selectedOutcome].label);
+        }
+        if (state.selectedTeam) {
+          tableScopeBits.push(state.selectedTeam);
+        }
+
+        tableSubtitle.textContent = tableScopeBits.length > 0
+          ? `Showing tickets narrowed by ${tableScopeBits.join(" / ")}.`
+          : "Showing all tickets in the current scope.";
+
+        if (rows.length === 0) {
+          emptyState.hidden = false;
+          return;
+        }
+
+        emptyState.hidden = true;
+
+        rows.forEach((ticket) => {
+          const row = document.createElement("tr");
+          const meta = outcomeMeta[ticket.outcome] || outcomeMeta.neutral;
+          row.innerHTML = `
+            <td><strong>${ticket.id}</strong></td>
+            <td><div class="ticket-title">${ticket.title}</div></td>
+            <td>${ticket.team}</td>
+            <td>${ticket.status}</td>
+            <td><span class="badge ${meta.badgeClass}">${meta.label}</span></td>
+            <td>${ticket.phase}</td>
+            <td>${ticket.group}</td>
+            <td>${ticket.project}</td>
+          `;
+          tableBody.appendChild(row);
+        });
+      }
+
+      function render() {
+        const filteredTickets = getFilteredTickets();
+        const trackedTickets = getTrackedOutcomeTickets(filteredTickets);
+        const teamRows = buildTeamRows(filteredTickets);
+
+        renderFilters();
+        renderKpis(filteredTickets, trackedTickets, teamRows);
+        renderOutcomes(filteredTickets);
+        renderTeams(filteredTickets, teamRows);
+        renderTable(filteredTickets);
+      }
+
+      searchInput.addEventListener("input", (event) => {
+        state.search = event.target.value.trim().toLowerCase();
+        render();
+      });
+
+      resetButton.addEventListener("click", () => {
+        state.filters = {
+          year: ["2026"],
+          project: [],
+          team: [],
+          aida: [],
+          phase: [],
+          market: [],
+          group: [],
+          leadModel: [],
+          assignedEcu: [],
+          pu: [],
+          solutionCluster: [],
+        };
+        state.search = "";
+        state.selectedOutcome = null;
+        state.selectedTeam = null;
+        searchInput.value = "";
+        render();
+      });
+
+      searchButton.addEventListener("click", () => {
+        searchInput.focus();
+        render();
+      });
+
+      toggleFiltersButton.addEventListener("click", () => {
+        state.filtersExpanded = !state.filtersExpanded;
+        state.openFilterKey = null;
+        render();
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!(event.target instanceof Element) || !event.target.closest(".filter-select-shell")) {
+          if (state.openFilterKey !== null) {
+            state.openFilterKey = null;
+            render();
+          }
+        }
+      });
+
+      legacyButton.addEventListener("click", () => {
+        window.alert("This action would navigate to /full-picture in the real app. The mock only demonstrates the new workbench layout and interactions.");
+      });
+
+      render();
+    </script>
+  </body>
+</html>
